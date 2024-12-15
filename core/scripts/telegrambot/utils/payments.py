@@ -1,76 +1,118 @@
 import base64
 import json
 import uuid
-from hashlib import md5
-import requests
+import hashlib
+import aiohttp
 import os
 from dotenv import load_dotenv
+import asyncio
+import logging
+import time
 
-load_dotenv()
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-MERCHANT_ID = os.getenv('CRYPTOMUS_MERCHANT_ID')
-PAYMENT_API_KEY = os.getenv('CRYPTOMUS_API_KEY')
+def load_payment_settings():
+    """Load payment settings from environment variables."""
+    load_dotenv()
+    return {
+        'enabled': bool(os.getenv('CRYPTOMUS_MERCHANT_ID') and os.getenv('CRYPTOMUS_API_KEY')),
+        'merchant_id': os.getenv('CRYPTOMUS_MERCHANT_ID'),
+        'payment_key': os.getenv('CRYPTOMUS_API_KEY')
+    }
 
-class CryptomusPayment:
-    def __init__(self):
-        self.merchant_id = MERCHANT_ID
-        self.payment_api_key = PAYMENT_API_KEY
-        self.base_url = "https://api.cryptomus.com/v1"
-
-    def _generate_sign(self, payload):
-        encoded_data = base64.b64encode(
-            json.dumps(payload).encode("utf-8")
-        ).decode("utf-8")
-        return md5(f"{encoded_data}{self.payment_api_key}".encode("utf-8")).hexdigest()
-
-    def create_payment(self, amount, plan_gb):
-        payment_id = str(uuid.uuid4())
-        payload = {
-            "amount": str(amount),
-            "currency": "USD",
-            "order_id": payment_id,
-            "network": "tron",
-            "url_callback": "https://your-callback-url.com/payment/callback",
-            "is_payment_multiple": False,
-            "lifetime": 3600,
-            "to_currency": "USDT",
-            "additional_data": json.dumps({
-                "plan_gb": plan_gb,
-                "payment_id": payment_id
-            })
-        }
-
-        headers = {
-            "merchant": self.merchant_id,
-            "sign": self._generate_sign(payload)
-        }
-
-        response = requests.post(
-            f"{self.base_url}/payment",
-            json=payload,
-            headers=headers
-        )
-
-        if response.status_code == 200:
-            return response.json()
+async def create_payment(amount: float, plan_gb: int) -> dict:
+    """Create a new payment in Cryptomus."""
+    settings = load_payment_settings()
+    if not settings['enabled']:
         return None
 
-    def check_payment_status(self, payment_id):
-        payload = {
-            "uuid": payment_id
-        }
+    order_id = str(uuid.uuid4())
+    invoice_data = {
+        "amount": str(amount),
+        "currency": "USD",
+        "order_id": order_id,
+        "url_return": "https://t.me/your_bot_username",
+        "is_payment_multiple": False,
+        "additional_data": json.dumps({
+            "plan_gb": plan_gb,
+            "payment_id": order_id
+        })
+    }
 
-        headers = {
-            "merchant": self.merchant_id,
-            "sign": self._generate_sign(payload)
-        }
+    encoded_data = base64.b64encode(
+        json.dumps(invoice_data).encode("utf-8")
+    ).decode("utf-8")
 
-        response = requests.post(
-            f"{self.base_url}/payment/info",
-            json=payload,
-            headers=headers
-        )
+    headers = {
+        "merchant": settings['merchant_id'],
+        "sign": hashlib.md5(
+            f"{encoded_data}{settings['payment_key']}".encode("utf-8")
+        ).hexdigest(),
+    }
 
-        if response.status_code == 200:
-            return response.json()
-        return None 
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.post(
+                url="https://api.cryptomus.com/v1/payment",
+                json=invoice_data
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"Created payment with Order ID: {order_id} for amount: ${amount}")
+                    return await response.json()
+    except Exception as e:
+        logger.error(f"Error creating payment: {e}")
+    return None
+
+async def check_payment_status(payment_id: str, chat_id: int, plan_gb: int) -> None:
+    """Check payment status and create config when paid."""
+    settings = load_payment_settings()
+    if not settings['enabled']:
+        return
+
+    invoice_data = {"uuid": payment_id}
+    encoded_data = base64.b64encode(
+        json.dumps(invoice_data).encode("utf-8")
+    ).decode("utf-8")
+
+    headers = {
+        "merchant": settings['merchant_id'],
+        "sign": hashlib.md5(
+            f"{encoded_data}{settings['payment_key']}".encode("utf-8")
+        ).hexdigest(),
+    }
+
+    logger.info(f"Starting payment status check for Payment ID: {payment_id}")
+
+    while True:
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(
+                    url="https://api.cryptomus.com/v1/payment/info",
+                    json=invoice_data
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result['result']['payment_status'] in ('paid', 'paid_over'):
+                            # Create user config after successful payment
+                            username = f"user_{chat_id}_{int(time.time())}"
+                            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e 30 -tid {chat_id}"
+                            result = run_cli_command(command)
+                            
+                            # Send success message through bot
+                            await bot.send_message(
+                                chat_id,
+                                f"✅ Payment received! Your config has been created.\n\n{result}"
+                            )
+                            return
+                        elif result['result']['payment_status'] == 'expired':
+                            await bot.send_message(
+                                chat_id,
+                                "❌ Payment session expired. Please try again."
+                            )
+                            return
+        except Exception as e:
+            logger.error(f"Error checking payment status: {e}")
+        
+        await asyncio.sleep(10) 
