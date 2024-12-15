@@ -1,4 +1,6 @@
 from telebot import types
+from utils.language import get_text
+
 
 def create_main_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
