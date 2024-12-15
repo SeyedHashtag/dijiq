@@ -13,6 +13,10 @@ FILES_TO_BACKUP=(
     "/etc/hysteria/users.json"
     "/etc/hysteria/config.json"
     "/etc/hysteria/.configs.env"
+    "/etc/hysteria/payments.json"
+    "/etc/hysteria/plans.json"
+    "/etc/hysteria/test_mode.json"
+    "/etc/hysteria/statistics.json"
 )
 
 zip -j "$BACKUP_FILE" "${FILES_TO_BACKUP[@]}" >/dev/null
