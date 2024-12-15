@@ -11,9 +11,18 @@ def create_cancel_markup():
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '💳 Payment Settings')
 def payment_settings(message):
+    # Show current status
+    current_merchant_id = os.getenv('CRYPTOMUS_MERCHANT_ID')
+    current_api_key = os.getenv('CRYPTOMUS_API_KEY')
+    
+    status_text = "Current Payment Settings:\n"
+    status_text += f"Merchant ID: {'✅ Configured' if current_merchant_id else '❌ Not configured'}\n"
+    status_text += f"API Key: {'✅ Configured' if current_api_key else '❌ Not configured'}\n\n"
+    status_text += "Please enter your Cryptomus Merchant ID:"
+    
     msg = bot.reply_to(
         message, 
-        "Please enter your Cryptomus Merchant ID:",
+        status_text,
         reply_markup=create_cancel_markup()
     )
     bot.register_next_step_handler(msg, process_merchant_id)
