@@ -131,7 +131,7 @@ def format_stats_message(stats, range_type):
 • Expired Users: {stats['expired_users']}
 
 📈 *Conversion Rate*
-• Payment Success Rate: {(stats['successful_payments'] / (stats['successful_payments'] + stats['failed_payments']) * 100):.1f}% if stats['successful_payments'] + stats['failed_payments'] > 0 else '0'}%"""
+• Payment Success Rate: { (stats['successful_payments'] / (stats['successful_payments'] + stats['failed_payments']) * 100):.1f }% if stats['successful_payments'] + stats['failed_payments'] > 0 else '0%'"""
 
     return message
 
