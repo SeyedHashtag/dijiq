@@ -1,4 +1,5 @@
-from telebot import types
+import asyncio
+from telebot.async_telebot import AsyncTeleBot
 from utils.common import create_main_markup
 from utils.adduser import *
 from utils.backup import *
@@ -9,6 +10,8 @@ from utils.search import *
 from utils.serverinfo import *
 from utils.client import *
 from utils.admin_payment import *
+
+bot = AsyncTeleBot(API_TOKEN)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -29,5 +32,8 @@ def send_welcome(message):
         )
         bot.reply_to(message, welcome_text, reply_markup=markup)
 
+async def main():
+    await bot.polling(non_stop=True)
+
 if __name__ == '__main__':
-    bot.polling(none_stop=True)
+    asyncio.run(main())
