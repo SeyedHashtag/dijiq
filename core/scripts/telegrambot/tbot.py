@@ -15,6 +15,14 @@ from utils.statistics import *
 from utils.plan_management import *
 from utils.help_management import *
 from utils.test_mode import *
+from utils.anti_spam import *
+
+# Anti-spam handler should be first to check all non-admin messages
+@bot.message_handler(func=lambda message: not is_admin(message.from_user.id), content_types=['text'])
+def check_message_spam(message):
+    if check_spam(message):
+        return
+    # Continue with normal message handling
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
