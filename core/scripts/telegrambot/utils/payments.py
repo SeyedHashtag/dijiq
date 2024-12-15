@@ -1,48 +1,76 @@
-import asyncio
 import base64
 import json
 import uuid
 from hashlib import md5
-import aiohttp
+import requests
 import os
 from dotenv import load_dotenv
-import time
 
 load_dotenv()
 
-async def create_invoice(url: str, invoice_data: dict):
-    encoded_data = base64.b64encode(
-        json.dumps(invoice_data).encode("utf-8")
-    ).decode("utf-8")
+MERCHANT_ID = os.getenv('CRYPTOMUS_MERCHANT_ID')
+PAYMENT_API_KEY = os.getenv('CRYPTOMUS_API_KEY')
 
-    async with aiohttp.ClientSession(headers={
-        "merchant": os.getenv('CRYPTOMUS_MERCHANT_ID'),
-        "sign": md5(f"{encoded_data}{os.getenv('CRYPTOMUS_API_KEY')}".encode("utf-8")).hexdigest(),
-    }) as session:
-        async with session.post(url=url, json=invoice_data) as response:
-            if not response.ok:
-                raise ValueError(await response.json())
-            
-            return await response.json()
+class CryptomusPayment:
+    def __init__(self):
+        self.merchant_id = MERCHANT_ID
+        self.payment_api_key = PAYMENT_API_KEY
+        self.base_url = "https://api.cryptomus.com/v1"
 
-async def check_invoice_paid(payment_id: str, bot, chat_id: int, plan_gb: int):
-    while True:
-        try:
-            invoice_data = await create_invoice(
-                url="https://api.cryptomus.com/v1/payment/info",
-                invoice_data={"uuid": payment_id},
-            )
+    def _generate_sign(self, payload):
+        encoded_data = base64.b64encode(
+            json.dumps(payload).encode("utf-8")
+        ).decode("utf-8")
+        return md5(f"{encoded_data}{self.payment_api_key}".encode("utf-8")).hexdigest()
 
-            if invoice_data['result']['payment_status'] in ('paid', 'paid_over'):
-                username = f"user_{chat_id}_{int(time.time())}"
-                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e 30 -tid {chat_id}"
-                result = run_cli_command(command)
-                await bot.send_message(chat_id, f"✅ Payment received! Your config has been created.\n\n{result}")
-                break
-            else:
-                print(f"Payment {payment_id} not paid yet")
+    def create_payment(self, amount, plan_gb):
+        payment_id = str(uuid.uuid4())
+        payload = {
+            "amount": str(amount),
+            "currency": "USD",
+            "order_id": payment_id,
+            "network": "tron",
+            "url_callback": "https://your-callback-url.com/payment/callback",
+            "is_payment_multiple": False,
+            "lifetime": 3600,
+            "to_currency": "USDT",
+            "additional_data": json.dumps({
+                "plan_gb": plan_gb,
+                "payment_id": payment_id
+            })
+        }
 
-        except Exception as e:
-            print(f"Error checking payment status: {e}")
-            
-        await asyncio.sleep(30) 
+        headers = {
+            "merchant": self.merchant_id,
+            "sign": self._generate_sign(payload)
+        }
+
+        response = requests.post(
+            f"{self.base_url}/payment",
+            json=payload,
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    def check_payment_status(self, payment_id):
+        payload = {
+            "uuid": payment_id
+        }
+
+        headers = {
+            "merchant": self.merchant_id,
+            "sign": self._generate_sign(payload)
+        }
+
+        response = requests.post(
+            f"{self.base_url}/payment/info",
+            json=payload,
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        return None 
