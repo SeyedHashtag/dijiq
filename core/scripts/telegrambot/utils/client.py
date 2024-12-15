@@ -4,6 +4,7 @@ from utils.common import create_main_markup, create_purchase_markup, create_down
 from utils.payments import CryptomusPayment
 import threading
 import time
+import asyncio
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -93,47 +94,44 @@ def handle_purchase(call):
         bot.answer_callback_query(call.id, "Invalid plan selected")
         return
 
-    # Create payment
-    payment = payment_processor.create_payment(amount, plan_gb)
-    
-    if not payment or 'result' not in payment:
-        bot.reply_to(
-            call.message,
-            "❌ Failed to create payment. Please try again later or contact support.",
-            reply_markup=create_main_markup(is_admin=False)
+    # Create payment asynchronously
+    async def create_payment_async():
+        payment = await create_payment(amount, plan_gb)
+        
+        if not payment or 'result' not in payment:
+            bot.reply_to(
+                call.message,
+                "❌ Failed to create payment. Please try again later or contact support.",
+                reply_markup=create_main_markup(is_admin=False)
+            )
+            return
+
+        payment_id = payment['result']['uuid']
+        payment_url = payment['result']['url']
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("💳 Pay Now", url=payment_url))
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=(
+                f"💰 Payment for {plan_gb}GB Plan\n\n"
+                f"Amount: ${amount:.2f}\n"
+                f"Payment ID: {payment_id}\n\n"
+                "Click the button below to proceed with payment.\n"
+                "The config will be created automatically after payment is confirmed."
+            ),
+            reply_markup=markup
         )
-        return
 
-    payment_id = payment['result']['uuid']
-    payment_url = payment['result']['url']
-    
-    # Store payment session
-    payment_sessions[payment_id] = {
-        'chat_id': call.message.chat.id,
-        'plan_gb': plan_gb
-    }
-    
-    # Start payment checking thread
-    threading.Thread(
-        target=check_payment_status,
-        args=(payment_id, call.message.chat.id, plan_gb)
-    ).start()
+        # Start payment status checking
+        asyncio.create_task(
+            check_payment_status(payment_id, call.message.chat.id, plan_gb)
+        )
 
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("💳 Pay Now", url=payment_url))
-    
-    bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=(
-            f"💰 Payment for {plan_gb}GB Plan\n\n"
-            f"Amount: ${amount:.2f}\n"
-            f"Payment ID: {payment_id}\n\n"
-            "Click the button below to proceed with payment.\n"
-            "The config will be created automatically after payment is confirmed."
-        ),
-        reply_markup=markup
-    )
+    # Run the async function
+    asyncio.run(create_payment_async())
 
 @bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def show_downloads(message):
