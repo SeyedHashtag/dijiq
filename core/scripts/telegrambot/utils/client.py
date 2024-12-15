@@ -1,16 +1,9 @@
 from telebot import types
 from utils.command import *
 from utils.common import create_main_markup, create_purchase_markup, create_downloads_markup
-from utils.payments import CryptomusPayment
-import threading
-import time
+from utils.payments import create_invoice, check_invoice_paid
 import asyncio
-
-# Initialize payment processor
-payment_processor = CryptomusPayment()
-
-# Store payment sessions
-payment_sessions = {}
+import uuid
 
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
@@ -54,32 +47,8 @@ def show_purchase_options(message):
         reply_markup=create_purchase_markup()
     )
 
-def check_payment_status(payment_id, chat_id, plan_gb):
-    while True:
-        status = payment_processor.check_payment_status(payment_id)
-        if status and status['result']['payment_status'] in ('paid', 'paid_over'):
-            # Create user config after successful payment
-            username = f"user_{chat_id}_{int(time.time())}"
-            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e 30 -tid {chat_id}"
-            result = run_cli_command(command)
-            
-            bot.send_message(
-                chat_id,
-                f"✅ Payment received! Your config has been created.\n\n{result}"
-            )
-            del payment_sessions[payment_id]
-            break
-        elif status and status['result']['payment_status'] == 'expired':
-            bot.send_message(
-                chat_id,
-                "❌ Payment session expired. Please try again."
-            )
-            del payment_sessions[payment_id]
-            break
-        time.sleep(30)
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
-def handle_purchase(call):
+async def handle_purchase(call):
     plan_gb = int(call.data.split(':')[1])
     
     # Set price based on plan
@@ -91,28 +60,43 @@ def handle_purchase(call):
     amount = prices.get(plan_gb)
     
     if not amount:
-        bot.answer_callback_query(call.id, "Invalid plan selected")
+        await bot.answer_callback_query(call.id, "Invalid plan selected")
         return
 
-    # Create payment asynchronously
-    async def create_payment_async():
-        payment = await create_payment(amount, plan_gb)
-        
-        if not payment or 'result' not in payment:
-            bot.reply_to(
+    try:
+        # Create payment
+        invoice_data = await create_invoice(
+            url="https://api.cryptomus.com/v1/payment",
+            invoice_data={
+                "amount": str(amount),
+                "currency": "USD",
+                "id": str(uuid.uuid4()),
+            },
+        )
+
+        if not invoice_data or 'result' not in invoice_data:
+            await bot.reply_to(
                 call.message,
                 "❌ Failed to create payment. Please try again later or contact support.",
                 reply_markup=create_main_markup(is_admin=False)
             )
             return
 
-        payment_id = payment['result']['uuid']
-        payment_url = payment['result']['url']
-        
+        payment_id = invoice_data['result']['uuid']
+        payment_url = invoice_data['result']['url']
+
+        # Start payment checking task
+        asyncio.create_task(check_invoice_paid(
+            payment_id, 
+            bot, 
+            call.message.chat.id, 
+            plan_gb
+        ))
+
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("💳 Pay Now", url=payment_url))
         
-        bot.edit_message_text(
+        await bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=(
@@ -125,13 +109,13 @@ def handle_purchase(call):
             reply_markup=markup
         )
 
-        # Start payment status checking
-        asyncio.create_task(
-            check_payment_status(payment_id, call.message.chat.id, plan_gb)
+    except Exception as e:
+        print(f"Error creating payment: {e}")
+        await bot.reply_to(
+            call.message,
+            "❌ An error occurred. Please try again later or contact support.",
+            reply_markup=create_main_markup(is_admin=False)
         )
-
-    # Run the async function
-    asyncio.run(create_payment_async())
 
 @bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def show_downloads(message):
