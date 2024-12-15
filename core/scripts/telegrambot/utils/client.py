@@ -96,6 +96,22 @@ def handle_purchase(call):
     # Create payment
     payment = payment_processor.create_payment(amount, plan_gb)
     
+    if "error" in payment:
+        error_message = payment["error"]
+        if "credentials not configured" in error_message:
+            bot.reply_to(
+                call.message,
+                "❌ Payment system is not configured yet. Please contact support.",
+                reply_markup=create_main_markup(is_admin=False)
+            )
+        else:
+            bot.reply_to(
+                call.message,
+                f"❌ Payment Error: {error_message}\nPlease try again later or contact support.",
+                reply_markup=create_main_markup(is_admin=False)
+            )
+        return
+
     if not payment or 'result' not in payment:
         bot.reply_to(
             call.message,
