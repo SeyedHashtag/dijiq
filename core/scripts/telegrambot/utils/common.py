@@ -1,4 +1,5 @@
 from telebot import types
+from utils.test_mode import load_test_mode
 
 def create_main_markup(is_admin=False):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -8,7 +9,7 @@ def create_main_markup(is_admin=False):
         markup.row('➕ Add User', '👤 Show User')
         markup.row('❌ Delete User', '📊 Server Info')
         markup.row('💾 Backup Server', '💳 Payment Settings')
-        markup.row('📝 Edit Plans')
+        markup.row('📝 Edit Plans', '🔧 Payment Test')
     else:
         # Client menu
         markup.row('📱 My Configs', '💰 Purchase Plan')
