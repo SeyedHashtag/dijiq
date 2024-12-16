@@ -9,6 +9,7 @@ from utils.search import *
 from utils.serverinfo import *
 from utils.client import *
 from utils.admin_payment import *
+from utils.admin_plans import *
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
