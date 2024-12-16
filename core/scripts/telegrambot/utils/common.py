@@ -8,6 +8,7 @@ def create_main_markup(is_admin=False):
         markup.row('➕ Add User', '👤 Show User')
         markup.row('❌ Delete User', '📊 Server Info')
         markup.row('💾 Backup Server', '💳 Payment Settings')
+        markup.row('📝 Edit Plans')
     else:
         # Client menu
         markup.row('📱 My Configs', '💰 Purchase Plan')
@@ -17,11 +18,18 @@ def create_main_markup(is_admin=False):
 
 def create_purchase_markup():
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("30 GB - $1.80 💰", callback_data="purchase:30"),
-        types.InlineKeyboardButton("60 GB - $3.00 💰", callback_data="purchase:60"),
-        types.InlineKeyboardButton("100 GB - $4.20 💰", callback_data="purchase:100")
-    )
+    
+    # Load plans from file
+    from utils.admin_plans import load_plans
+    plans = load_plans()
+    
+    # Create buttons for each plan
+    for gb, details in plans.items():
+        markup.add(types.InlineKeyboardButton(
+            f"{gb} GB - ${details['price']} 💰",
+            callback_data=f"purchase:{gb}"
+        ))
+    
     return markup
 
 def create_downloads_markup():
