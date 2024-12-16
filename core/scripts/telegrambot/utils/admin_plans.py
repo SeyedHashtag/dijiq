@@ -178,3 +178,80 @@ def handle_plan_navigation(call):
             message_id=call.message.message_id,
             reply_markup=create_plans_markup()
         ) 
+
+@bot.callback_query_handler(func=lambda call: call.data == "add_plan")
+def handle_add_plan(call):
+    msg = bot.edit_message_text(
+        "Enter the plan size in GB (e.g., 30):",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+    bot.register_next_step_handler(msg, process_new_plan_gb)
+
+def process_new_plan_gb(message):
+    try:
+        gb = int(message.text.strip())
+        plans = load_plans()
+        
+        if str(gb) in plans:
+            bot.reply_to(
+                message,
+                "This plan size already exists. Please choose a different size:",
+                reply_markup=create_main_markup(is_admin=True)
+            )
+            return
+        
+        msg = bot.reply_to(message, f"Enter the price for {gb}GB plan (e.g., 1.80):")
+        bot.register_next_step_handler(msg, process_new_plan_price, gb)
+    except ValueError:
+        bot.reply_to(
+            message,
+            "Invalid input. Please enter a number.",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+def process_new_plan_price(message, gb):
+    try:
+        price = float(message.text.strip())
+        if price <= 0:
+            raise ValueError("Price must be greater than 0")
+            
+        msg = bot.reply_to(message, f"Enter the duration in days for {gb}GB plan (e.g., 30):")
+        bot.register_next_step_handler(msg, process_new_plan_days, gb, price)
+    except ValueError as e:
+        error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
+        bot.reply_to(
+            message,
+            f"❌ {error_msg}. Please enter a valid number.",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+def process_new_plan_days(message, gb, price):
+    try:
+        days = int(message.text.strip())
+        if days <= 0:
+            raise ValueError("Days must be greater than 0")
+            
+        plans = load_plans()
+        plans[str(gb)] = {"price": price, "days": days}
+        save_plans(plans)
+        
+        bot.reply_to(
+            message,
+            f"✅ New plan added successfully:\n{gb}GB - ${price} - {days} days",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+        
+        # Show updated plans list
+        bot.send_message(
+            message.chat.id,
+            "Current Plans:",
+            reply_markup=create_plans_markup()
+        )
+    except ValueError as e:
+        error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
+        bot.reply_to(
+            message,
+            f"❌ {error_msg}. Please enter a valid number.",
+            reply_markup=create_main_markup(is_admin=True)
+        ) 
