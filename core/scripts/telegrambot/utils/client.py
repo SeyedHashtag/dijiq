@@ -3,6 +3,8 @@ from utils.command import *
 from utils.common import create_main_markup, create_purchase_markup, create_downloads_markup
 from utils.payments import CryptomusPayment
 from utils.admin_plans import load_plans
+from datetime import datetime
+from utils.payment_records import add_payment_record, update_payment_status
 import threading
 import time
 
@@ -62,18 +64,32 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             plans = load_plans()
             plan_days = plans[str(plan_gb)]['days']
             
-            # Create user config after successful payment
-            username = f"user_{chat_id}_{int(time.time())}"
+            # Create username using telegram ID and timestamp
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            username = f"{chat_id}d{timestamp}"
+            
+            # Create user config
             command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days} -tid {chat_id}"
             result = run_cli_command(command)
             
+            # Update payment record
+            update_payment_status(payment_id, 'completed')
+            
+            # Extract config from result
+            config_text = extract_config_from_result(result)
+            
             bot.send_message(
                 chat_id,
-                f"✅ Payment received! Your config has been created.\n\n{result}"
+                f"✅ Payment received! Your config has been created.\n\n"
+                f"Username: {username}\n"
+                f"Traffic: {plan_gb}GB\n"
+                f"Duration: {plan_days} days\n\n"
+                f"Config:\n{config_text}"
             )
             del payment_sessions[payment_id]
             break
         elif status and status['result']['payment_status'] == 'expired':
+            update_payment_status(payment_id, 'expired')
             bot.send_message(
                 chat_id,
                 "❌ Payment session expired. Please try again."
@@ -81,6 +97,11 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             del payment_sessions[payment_id]
             break
         time.sleep(30)
+
+def extract_config_from_result(result):
+    # Add logic to extract config from CLI result
+    # This depends on your CLI output format
+    return result
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase(call):
@@ -130,6 +151,17 @@ def handle_purchase(call):
         'chat_id': call.message.chat.id,
         'plan_gb': plan_gb
     }
+    
+    # Record payment information
+    payment_record = {
+        'user_id': call.message.chat.id,
+        'plan_gb': plan_gb,
+        'amount': amount,
+        'status': 'pending',
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'payment_url': payment_url
+    }
+    add_payment_record(payment_id, payment_record)
     
     # Start payment checking thread
     threading.Thread(
