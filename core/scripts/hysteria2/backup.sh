@@ -15,7 +15,7 @@ FILES_TO_BACKUP=(
     "/etc/hysteria/core/scripts/telegrambot/.env"
     "/etc/hysteria/.configs.env"
     "/etc/hysteria/payments.json"
-    "/etc/hysteria/plans.json"
+    "/etc/hysteria/core/scripts/telegrambot/plans.json"
     "/etc/hysteria/test_mode.json"
     "/etc/hysteria/statistics.json"
 )
