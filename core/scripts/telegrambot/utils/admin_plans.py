@@ -139,11 +139,11 @@ def process_plan_detail_edit(message, gb, field):
         )
     except ValueError as e:
         error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
-        bot.reply_to(
+        msg = bot.reply_to(
             message,
-            f"❌ {error_msg}. Please enter a valid number.",
-            reply_markup=create_main_markup(is_admin=True)
+            f"❌ {error_msg}. Please enter a valid number."
         )
+        bot.register_next_step_handler(msg, process_plan_detail_edit, gb, field)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_plan:'))
 def handle_plan_delete(call):
@@ -194,21 +194,21 @@ def process_new_plan_gb(message):
         plans = load_plans()
         
         if str(gb) in plans:
-            bot.reply_to(
+            msg = bot.reply_to(
                 message,
-                "This plan size already exists. Please choose a different size:",
-                reply_markup=create_main_markup(is_admin=True)
+                "This plan size already exists. Please choose a different size:"
             )
+            bot.register_next_step_handler(msg, process_new_plan_gb)
             return
         
         msg = bot.reply_to(message, f"Enter the price for {gb}GB plan (e.g., 1.80):")
         bot.register_next_step_handler(msg, process_new_plan_price, gb)
     except ValueError:
-        bot.reply_to(
+        msg = bot.reply_to(
             message,
-            "Invalid input. Please enter a number.",
-            reply_markup=create_main_markup(is_admin=True)
+            "Invalid input. Please enter a number."
         )
+        bot.register_next_step_handler(msg, process_new_plan_gb)
 
 def process_new_plan_price(message, gb):
     try:
@@ -220,11 +220,11 @@ def process_new_plan_price(message, gb):
         bot.register_next_step_handler(msg, process_new_plan_days, gb, price)
     except ValueError as e:
         error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
-        bot.reply_to(
+        msg = bot.reply_to(
             message,
-            f"❌ {error_msg}. Please enter a valid number.",
-            reply_markup=create_main_markup(is_admin=True)
+            f"❌ {error_msg}. Please enter a valid number."
         )
+        bot.register_next_step_handler(msg, process_new_plan_price, gb)
 
 def process_new_plan_days(message, gb, price):
     try:
@@ -238,8 +238,7 @@ def process_new_plan_days(message, gb, price):
         
         bot.reply_to(
             message,
-            f"✅ New plan added successfully:\n{gb}GB - ${price} - {days} days",
-            reply_markup=create_main_markup(is_admin=True)
+            f"✅ New plan added successfully:\n{gb}GB - ${price} - {days} days"
         )
         
         # Show updated plans list
@@ -250,8 +249,8 @@ def process_new_plan_days(message, gb, price):
         )
     except ValueError as e:
         error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
-        bot.reply_to(
+        msg = bot.reply_to(
             message,
-            f"❌ {error_msg}. Please enter a valid number.",
-            reply_markup=create_main_markup(is_admin=True)
-        ) 
+            f"❌ {error_msg}. Please enter a valid number."
+        )
+        bot.register_next_step_handler(msg, process_new_plan_days, gb, price)
