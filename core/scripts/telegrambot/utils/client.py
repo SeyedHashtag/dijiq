@@ -4,13 +4,12 @@ from utils.common import create_main_markup, create_purchase_markup, create_down
 from utils.payments import CryptomusPayment
 from utils.admin_plans import load_plans
 from datetime import datetime
-import qrcode
-import io
-import base64
 from utils.payment_records import add_payment_record, update_payment_status
 import threading
 import time
 from utils.test_mode import load_test_mode
+import qrcode
+import io
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -18,88 +17,87 @@ payment_processor = CryptomusPayment()
 # Store payment sessions
 payment_sessions = {}
 
-def format_bytes(bytes_value):
-    gb = bytes_value / (1024 ** 3)
-    return f"{gb:.2f}"
-
-def create_config_qr(config_text):
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(config_text)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Convert image to bytes
-    bio = io.BytesIO()
-    img.save(bio, format='PNG')
-    bio.seek(0)
-    return bio
-
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
-    user_id = str(message.from_user.id)
     command = f"python3 {CLI_PATH} list-users"
     result = run_cli_command(command)
     
     try:
         users = json.loads(result)
-        user_configs = []
+        found = False
         
         for username, details in users.items():
-            if username.startswith(f"{user_id}d"):
-                used_traffic = details.get('used_download_bytes', 0) + details.get('used_upload_bytes', 0)
-                max_traffic = details.get('max_download_bytes', 0)
-                remaining_days = details.get('remaining_days', 0)
-                total_days = details.get('expiration_days', 0)
+            if username.startswith(f"{message.from_user.id}d"):
+                found = True
                 
-                user_configs.append({
-                    'username': username,
-                    'used_traffic': format_bytes(used_traffic),
-                    'max_traffic': format_bytes(max_traffic),
-                    'remaining_days': remaining_days,
-                    'total_days': total_days,
-                    'config': details.get('config', '')
-                })
-        
-        if not user_configs:
-            bot.reply_to(message, "You don't have any active configs. Use the Purchase Plan option to get started!")
-            return
-            
-        for config in user_configs:
-            text = (
-                f"📱 Config: {config['username']}\n"
-                f"📊 Traffic: {config['used_traffic']}/{config['max_traffic']} GB\n"
-                f"📅 Days: {config['remaining_days']}/{config['total_days']}\n\n"
-                f"📝 Config Text:\n{config['config']}"
-            )
-            
-            # Create and send QR code
-            if config['config']:
-                qr_bio = create_config_qr(config['config'])
+                # Get IPv4 config
+                command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
+                config_v4 = run_cli_command(command).replace("IPv4:\n", "").strip()
+                
+                # Create QR code
+                qr = qrcode.make(config_v4)
+                bio = io.BytesIO()
+                qr.save(bio, 'PNG')
+                bio.seek(0)
+                
+                # Format message like in edituser.py
+                caption = (
+                    f"User Information:\n\n"
+                    f"Username: {username}\n"
+                    f"Traffic Used: {details.get('used_download_bytes', 0) / (1024**3):.2f} GB\n"
+                    f"Traffic Limit: {details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
+                    f"Days Remaining: {details.get('remaining_days', 0)}\n"
+                    f"Account Creation: {details.get('account_creation_date', 'Unknown')}\n"
+                    f"Last Reset: {details.get('last_reset', 'Never')}\n"
+                    f"Status: {'Active' if details.get('active', False) else 'Inactive'}\n\n"
+                    f"`{config_v4}`"
+                )
+                
                 bot.send_photo(
                     message.chat.id,
-                    qr_bio,
-                    caption=text,
-                    reply_markup=create_main_markup(is_admin=False)
+                    photo=bio,
+                    caption=caption,
+                    parse_mode="Markdown"
                 )
-            else:
-                bot.reply_to(message, text)
+        
+        if not found:
+            bot.reply_to(message, "You don't have any active configs. Use the Purchase Plan option to get started!")
             
     except json.JSONDecodeError:
         bot.reply_to(message, "Error retrieving configs. Please try again later.")
 
-@bot.message_handler(func=lambda message: message.text == '💰 Purchase Plan')
-def show_purchase_options(message):
-    bot.reply_to(
-        message,
-        "Select a plan to purchase:",
-        reply_markup=create_purchase_markup()
-    )
+def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
+    try:
+        # Get IPv4 config like in adduser.py
+        command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
+        config_v4 = run_cli_command(command).replace("IPv4:\n", "").strip()
+        
+        # Create QR code
+        qr = qrcode.make(config_v4)
+        bio = io.BytesIO()
+        qr.save(bio, 'PNG')
+        bio.seek(0)
+        
+        # Format caption like in adduser.py
+        caption = (
+            f"{result_text}\n\n"
+            f"`{config_v4}`"
+        )
+        
+        bot.send_photo(
+            chat_id,
+            photo=bio,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=create_main_markup(is_admin=False)
+        )
+    except Exception as e:
+        bot.send_message(chat_id, f"Error generating config QR code: {str(e)}")
 
 def check_payment_status(payment_id, chat_id, plan_gb):
     while True:
         status = payment_processor.check_payment_status(payment_id)
         if status and status['result']['payment_status'] in ('paid', 'paid_over'):
-            # Load plan details
             plans = load_plans()
             plan_days = plans[str(plan_gb)]['days']
             
@@ -110,8 +108,7 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             result = run_cli_command(command)
             
             update_payment_status(payment_id, 'completed')
-            config_text = extract_config_from_result(result)
-            send_config_to_user(chat_id, username, plan_gb, plan_days, config_text)
+            send_new_config(chat_id, username, plan_gb, plan_days, result)
             
             del payment_sessions[payment_id]
             break
@@ -125,36 +122,18 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             break
         time.sleep(30)
 
-def extract_config_from_result(result):
-    try:
-        # Parse the JSON result
-        data = json.loads(result)
-        # Return the config string
-        return data.get('config', '')
-    except:
-        return result
-
-def send_config_to_user(chat_id, username, plan_gb, plan_days, config_text):
-    # Create message text
-    message_text = (
-        f"✅ Config created successfully!\n\n"
-        f"Username: {username}\n"
-        f"Traffic: {plan_gb}GB\n"
-        f"Duration: {plan_days} days\n\n"
-        f"📝 Config Text:\n{config_text}"
+@bot.message_handler(func=lambda message: message.text == '💰 Purchase Plan')
+def show_purchase_options(message):
+    bot.reply_to(
+        message,
+        "Select a plan to purchase:",
+        reply_markup=create_purchase_markup()
     )
-    
-    # Create and send QR code with config
-    if config_text:
-        qr_bio = create_config_qr(config_text)
-        bot.send_photo(
-            chat_id,
-            qr_bio,
-            caption=message_text,
-            reply_markup=create_main_markup(is_admin=False)
-        )
-    else:
-        bot.send_message(chat_id, message_text)
+
+def extract_config_from_result(result):
+    # Add logic to extract config from CLI result
+    # This depends on your CLI output format
+    return result
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase(call):
@@ -197,7 +176,6 @@ def handle_purchase(call):
         
         # Extract config from result
         config_text = extract_config_from_result(result)
-        send_config_to_user(call.message.chat.id, username, plan_gb, plan_days, config_text)
         
         bot.edit_message_text(
             chat_id=call.message.chat.id,
