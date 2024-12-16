@@ -61,35 +61,43 @@ def check_payment_status(payment_id, chat_id, plan_gb):
     while True:
         status = payment_processor.check_payment_status(payment_id)
         if status and status['result']['payment_status'] in ('paid', 'paid_over'):
-            # Load plan details
-            plans = load_plans()
-            plan_days = plans[str(plan_gb)]['days']
-            
-            # Create username using telegram ID and timestamp
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            username = f"{chat_id}d{timestamp}"
-            
-            # Convert GB to bytes
-            traffic_bytes = plan_gb * 1024 * 1024 * 1024
-            
-            # Create user config with bytes
-            command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {chat_id}"
-            result = run_cli_command(command)
-            
-            # Update payment record
-            update_payment_status(payment_id, 'completed')
-            
-            # Extract config from result
-            config_text = extract_config_from_result(result)
-            
-            bot.send_message(
-                chat_id,
-                f"✅ Payment received! Your config has been created.\n\n"
-                f"Username: {username}\n"
-                f"Traffic: {plan_gb}GB\n"
-                f"Duration: {plan_days} days\n\n"
-                f"Config:\n{config_text}"
-            )
+            try:
+                # Load plan details
+                plans = load_plans()
+                plan_days = plans[str(plan_gb)]['days']
+                
+                # Create username using telegram ID and timestamp
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                username = f"{chat_id}d{timestamp}"
+                
+                # Convert GB to bytes (ensure plan_gb is int)
+                traffic_bytes = int(plan_gb) * 1024 * 1024 * 1024
+                
+                # Create user config with bytes
+                command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {chat_id}"
+                print(f"DEBUG: Running command: {command}")  # Debug print
+                result = run_cli_command(command)
+                
+                # Update payment record
+                update_payment_status(payment_id, 'completed')
+                
+                # Extract config from result
+                config_text = extract_config_from_result(result)
+                
+                bot.send_message(
+                    chat_id,
+                    f"✅ Payment received! Your config has been created.\n\n"
+                    f"Username: {username}\n"
+                    f"Traffic: {plan_gb}GB\n"
+                    f"Duration: {plan_days} days\n\n"
+                    f"Config:\n{config_text}"
+                )
+            except Exception as e:
+                print(f"DEBUG: Error in config creation: {str(e)}")  # Debug print
+                bot.send_message(
+                    chat_id,
+                    "❌ Error creating config. Please contact support."
+                )
             del payment_sessions[payment_id]
             break
         elif status and status['result']['payment_status'] == 'expired':
@@ -122,47 +130,56 @@ def handle_purchase(call):
     
     # Check if test mode is enabled
     if load_test_mode():
-        # Create test payment record
-        payment_id = f"test_{int(time.time())}"
-        payment_record = {
-            'user_id': call.message.chat.id,
-            'plan_gb': plan_gb,
-            'amount': amount,
-            'status': 'test_mode',
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'payment_url': 'N/A',
-            'is_test': True
-        }
-        add_payment_record(payment_id, payment_record)
-        
-        # Create user config immediately
-        plan_days = plans[str(plan_gb)]['days']
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        username = f"{call.message.chat.id}d{timestamp}"
-        
-        # Convert GB to bytes
-        traffic_bytes = plan_gb * 1024 * 1024 * 1024
-        
-        command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {call.message.chat.id}"
-        result = run_cli_command(command)
-        
-        # Update payment record
-        update_payment_status(payment_id, 'completed')
-        
-        # Extract config from result
-        config_text = extract_config_from_result(result)
-        
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=(
-                "✅ Test Mode: Config created successfully!\n\n"
-                f"Username: {username}\n"
-                f"Traffic: {plan_gb}GB\n"
-                f"Duration: {plan_days} days\n\n"
-                f"Config:\n{config_text}"
+        try:
+            # Create test payment record
+            payment_id = f"test_{int(time.time())}"
+            payment_record = {
+                'user_id': call.message.chat.id,
+                'plan_gb': plan_gb,
+                'amount': amount,
+                'status': 'test_mode',
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'payment_url': 'N/A',
+                'is_test': True
+            }
+            add_payment_record(payment_id, payment_record)
+            
+            # Create user config immediately
+            plan_days = plans[str(plan_gb)]['days']
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            username = f"{call.message.chat.id}d{timestamp}"
+            
+            # Convert GB to bytes (ensure plan_gb is int)
+            traffic_bytes = int(plan_gb) * 1024 * 1024 * 1024
+            
+            command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {call.message.chat.id}"
+            print(f"DEBUG: Running command: {command}")  # Debug print
+            result = run_cli_command(command)
+            
+            # Update payment record
+            update_payment_status(payment_id, 'completed')
+            
+            # Extract config from result
+            config_text = extract_config_from_result(result)
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=(
+                    "✅ Test Mode: Config created successfully!\n\n"
+                    f"Username: {username}\n"
+                    f"Traffic: {plan_gb}GB\n"
+                    f"Duration: {plan_days} days\n\n"
+                    f"Config:\n{config_text}"
+                )
             )
-        )
+        except Exception as e:
+            print(f"DEBUG: Error in test mode config creation: {str(e)}")  # Debug print
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="❌ Error creating config. Please contact support."
+            )
         return
     
     # Normal payment flow continues here...
