@@ -79,21 +79,38 @@ def handle_add_plan(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_plan:"))
 def handle_plan_select(call):
-    bot.answer_callback_query(call.id)
-    index = int(call.data.split(':')[1])
-    _, _, sorted_plans = create_plans_markup()
-    
-    if 0 <= index < len(sorted_plans):
-        gb, plan = sorted_plans[index]
-        bot.edit_message_text(
-            f"📦 Editing {gb}GB Plan:\n\n"
-            f"💰 Current Price: ${plan['price']}\n"
-            f"📅 Current Days: {plan['days']}\n\n"
-            "Select what to edit:",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=create_edit_plan_markup(gb)
-        )
+    try:
+        bot.answer_callback_query(call.id)
+        print(f"DEBUG: Received select callback: {call.data}")  # Debug print
+        
+        index = int(call.data.split(':')[1])
+        _, _, sorted_plans = create_plans_markup()
+        
+        if 0 <= index < len(sorted_plans):
+            gb, plan = sorted_plans[index]
+            print(f"DEBUG: Selected plan - GB: {gb}, Details: {plan}")  # Debug print
+            
+            # Create markup with the actual GB value, not the index
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("💰 Edit Price", callback_data=f"edit_plan_price:{gb}"),
+                types.InlineKeyboardButton("📅 Edit Days", callback_data=f"edit_plan_days:{gb}")
+            )
+            markup.row(types.InlineKeyboardButton("🗑️ Delete Plan", callback_data=f"confirm_delete_plan:{gb}"))
+            markup.row(types.InlineKeyboardButton("⬅️ Back", callback_data="back_to_plans"))
+            
+            bot.edit_message_text(
+                f"📦 Editing {gb}GB Plan:\n\n"
+                f"💰 Current Price: ${plan['price']}\n"
+                f"📅 Current Days: {plan['days']}\n\n"
+                "Select what to edit:",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
+    except Exception as e:
+        print(f"DEBUG: Error in handle_plan_select: {str(e)}")  # Debug print
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("edit_plan_price:", "edit_plan_days:")))
 def handle_plan_detail_edit(call):
@@ -108,6 +125,9 @@ def handle_plan_detail_edit(call):
         print(f"DEBUG: Loaded plans: {plans}")  # Debug print
         print(f"DEBUG: Looking for GB: {gb}")   # Debug print
         
+        if gb not in plans:
+            raise ValueError(f"Plan with {gb}GB not found")
+            
         current_value = plans[gb][field]
         print(f"DEBUG: Current value: {current_value}")  # Debug print
         
@@ -121,6 +141,16 @@ def handle_plan_detail_edit(call):
     except Exception as e:
         print(f"DEBUG: Error in handle_plan_detail_edit: {str(e)}")  # Debug print
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+        
+        # Return to plan list on error
+        markup, plans_text, _ = create_plans_markup()
+        plans_text += "\nSelect a plan number to edit:"
+        bot.edit_message_text(
+            plans_text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_delete_plan:"))
 def handle_confirm_delete_plan(call):
