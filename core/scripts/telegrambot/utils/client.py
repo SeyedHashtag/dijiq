@@ -2,6 +2,7 @@ from telebot import types
 from utils.command import *
 from utils.common import create_main_markup, create_purchase_markup, create_downloads_markup
 from utils.payments import CryptomusPayment
+from utils.admin_plans import load_plans
 import threading
 import time
 
@@ -57,9 +58,13 @@ def check_payment_status(payment_id, chat_id, plan_gb):
     while True:
         status = payment_processor.check_payment_status(payment_id)
         if status and status['result']['payment_status'] in ('paid', 'paid_over'):
+            # Load plan details
+            plans = load_plans()
+            plan_days = plans[str(plan_gb)]['days']
+            
             # Create user config after successful payment
             username = f"user_{chat_id}_{int(time.time())}"
-            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e 30 -tid {chat_id}"
+            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days} -tid {chat_id}"
             result = run_cli_command(command)
             
             bot.send_message(
@@ -81,18 +86,15 @@ def check_payment_status(payment_id, chat_id, plan_gb):
 def handle_purchase(call):
     plan_gb = int(call.data.split(':')[1])
     
-    # Set price based on plan
-    prices = {
-        30: 1.80,
-        60: 3.00,
-        100: 4.20
-    }
-    amount = prices.get(plan_gb)
+    # Load plans from file
+    plans = load_plans()
     
-    if not amount:
+    if str(plan_gb) not in plans:
         bot.answer_callback_query(call.id, "Invalid plan selected")
         return
 
+    amount = plans[str(plan_gb)]['price']
+    
     # Create payment
     payment = payment_processor.create_payment(amount, plan_gb)
     
