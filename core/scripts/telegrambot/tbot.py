@@ -14,7 +14,10 @@ from utils.admin_test_mode import *
 from utils.admin_support import *
 from utils.admin_broadcast import *
 from utils.admin_stats import *
-from utils.client_handlers import handle_client_start, register_client_handlers
+from utils.client_handlers import ClientHandlers
+
+# Initialize client handlers
+client_handlers = ClientHandlers(bot)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -22,10 +25,10 @@ def send_welcome(message):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Panel!", reply_markup=markup)
     else:
-        handle_client_start(message)
+        client_handlers.handle_client_start(message)
 
 # Register client handlers
-register_client_handlers(bot)
+client_handlers.register_handlers()
 
 if __name__ == '__main__':
     bot.polling(none_stop=True)
