@@ -1,6 +1,6 @@
 from telebot import types
 from utils.command import bot, is_admin
-from utils.languages import LanguageManager
+from utils.languages import LanguageManager, LANGUAGES, TRANSLATIONS
 from utils.client import show_my_configs, show_purchase_options, show_downloads, show_support
 
 # Initialize language manager
@@ -31,7 +31,10 @@ def handle_language_selection(message):
     if is_admin(message.from_user.id):
         return
 
-    lang_code = lang_manager.get_language_code(message.text)
+    lang_code = LANGUAGES.get(message.text)
+    if not lang_code:
+        return
+
     lang_manager.set_user_language(message.from_user.id, lang_code)
     
     # Show confirmation and main menu
@@ -51,15 +54,23 @@ def handle_language_selection(message):
 def handle_client_menu(message):
     """Handle client menu button clicks"""
     user_lang = lang_manager.get_user_language(message.from_user.id)
-    translations = lang_manager.TRANSLATIONS[user_lang]
     
-    if message.text == translations['my_configs']:
+    # Get all possible menu items for all languages
+    menu_items = {
+        'my_configs': [lang['my_configs'] for lang in TRANSLATIONS.values()],
+        'purchase_plan': [lang['purchase_plan'] for lang in TRANSLATIONS.values()],
+        'downloads': [lang['downloads'] for lang in TRANSLATIONS.values()],
+        'support': [lang['support'] for lang in TRANSLATIONS.values()]
+    }
+    
+    # Check which menu item was clicked
+    if message.text in menu_items['my_configs']:
         show_my_configs(message)
-    elif message.text == translations['purchase_plan']:
+    elif message.text in menu_items['purchase_plan']:
         show_purchase_options(message)
-    elif message.text == translations['downloads']:
+    elif message.text in menu_items['downloads']:
         show_downloads(message)
-    elif message.text == translations['support']:
+    elif message.text in menu_items['support']:
         show_support(message)
 
 def register_handlers():
@@ -68,15 +79,21 @@ def register_handlers():
     # Language selection handler
     bot.register_message_handler(
         handle_language_selection,
-        func=lambda message: message.text in lang_manager.LANGUAGES.keys()
+        func=lambda message: not is_admin(message.from_user.id) and message.text in LANGUAGES.keys()
     )
     
-    # Client menu handlers
+    # Client menu handlers - collect all possible menu items in all languages
+    all_menu_items = []
+    for lang in TRANSLATIONS.values():
+        all_menu_items.extend([
+            lang['my_configs'],
+            lang['purchase_plan'],
+            lang['downloads'],
+            lang['support']
+        ])
+    
+    # Register the menu handler
     bot.register_message_handler(
         handle_client_menu,
-        func=lambda message: not is_admin(message.from_user.id) and message.text in [
-            lang['my_configs'] for lang in lang_manager.TRANSLATIONS.values()] +
-            [lang['purchase_plan'] for lang in lang_manager.TRANSLATIONS.values()] +
-            [lang['downloads'] for lang in lang_manager.TRANSLATIONS.values()] +
-            [lang['support'] for lang in lang_manager.TRANSLATIONS.values()]
+        func=lambda message: not is_admin(message.from_user.id) and message.text in all_menu_items
     ) 
