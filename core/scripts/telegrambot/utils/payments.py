@@ -34,7 +34,6 @@ class CryptomusPayment:
             "amount": str(amount),
             "currency": "USD",
             "order_id": payment_id,
-            "network": "tron",
             "url_callback": "https://your-callback-url.com/payment/callback",
             "is_payment_multiple": False,
             "lifetime": 3600,
