@@ -16,6 +16,7 @@ FILES=(
     "/etc/hysteria/core/scripts/telegrambot/plans.json"
     "/etc/hysteria/test_mode.json"
     "/etc/hysteria/core/scripts/telegrambot/support_info.json"
+    "/etc/hysteria/core/scripts/telegrambot/user_languages.json"
 )
 
 echo "Backing up files to $TEMP_DIR"
