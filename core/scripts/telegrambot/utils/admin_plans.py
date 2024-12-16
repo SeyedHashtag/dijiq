@@ -97,71 +97,100 @@ def handle_plan_select(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("edit_plan_price:", "edit_plan_days:")))
 def handle_plan_detail_edit(call):
-    bot.answer_callback_query(call.id)
-    action, gb = call.data.split(':')
-    field = "price" if "price" in action else "days"
-    
-    plans = load_plans()
-    current_value = plans[gb][field]
-    
-    msg = bot.edit_message_text(
-        f"Current {field}: {current_value}\n"
-        f"Enter new {field} for {gb}GB plan:",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
-    bot.register_next_step_handler(msg, process_plan_detail_edit, gb, field)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_delete_plan:"))
-def handle_confirm_delete_plan(call):
-    bot.answer_callback_query(call.id)
-    gb = call.data.split(':')[1]
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("✅ Yes", callback_data=f"delete_plan:{gb}"),
-        types.InlineKeyboardButton("❌ No", callback_data=f"edit_plan:{gb}")
-    )
-    
-    bot.edit_message_text(
-        f"❗ Are you sure you want to delete the {gb}GB plan?",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=markup
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_plan:"))
-def handle_plan_delete(call):
-    bot.answer_callback_query(call.id)
-    gb = call.data.split(':')[1]
-    plans = load_plans()
-    
-    if gb in plans:
-        del plans[gb]
-        save_plans(plans)
+    try:
+        bot.answer_callback_query(call.id)
+        print(f"DEBUG: Received callback data: {call.data}")  # Debug print
         
-        bot.edit_message_text(
-            f"✅ Plan {gb}GB deleted successfully!\n\nCurrent Plans:",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=create_plans_markup()
-        )
-
-@bot.callback_query_handler(func=lambda call: call.data in ["back_to_plans", "cancel_plan_edit"])
-def handle_plan_navigation(call):
-    bot.answer_callback_query(call.id)
-    if call.data == "cancel_plan_edit":
-        bot.edit_message_text(
-            "Operation canceled.",
+        action, gb = call.data.split(':')
+        field = "price" if "price" in action else "days"
+        
+        plans = load_plans()
+        print(f"DEBUG: Loaded plans: {plans}")  # Debug print
+        print(f"DEBUG: Looking for GB: {gb}")   # Debug print
+        
+        current_value = plans[gb][field]
+        print(f"DEBUG: Current value: {current_value}")  # Debug print
+        
+        msg = bot.edit_message_text(
+            f"Current {field}: {current_value}\n"
+            f"Enter new {field} for {gb}GB plan:",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )
-    else:
+        bot.register_next_step_handler(msg, process_plan_detail_edit, gb, field)
+    except Exception as e:
+        print(f"DEBUG: Error in handle_plan_detail_edit: {str(e)}")  # Debug print
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_delete_plan:"))
+def handle_confirm_delete_plan(call):
+    try:
+        bot.answer_callback_query(call.id)
+        print(f"DEBUG: Received delete confirmation callback: {call.data}")  # Debug print
+        
+        gb = call.data.split(':')[1]
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ Yes", callback_data=f"delete_plan:{gb}"),
+            types.InlineKeyboardButton("❌ No", callback_data=f"select_plan:{gb}")  # Changed this to select_plan
+        )
+        
         bot.edit_message_text(
-            "📋 Current Plans:\nSelect a plan to edit or add a new one:",
+            f"❗ Are you sure you want to delete the {gb}GB plan?",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            reply_markup=create_plans_markup()
+            reply_markup=markup
         )
+    except Exception as e:
+        print(f"DEBUG: Error in handle_confirm_delete_plan: {str(e)}")  # Debug print
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_plan:"))
+def handle_plan_delete(call):
+    try:
+        bot.answer_callback_query(call.id)
+        print(f"DEBUG: Received delete callback: {call.data}")  # Debug print
+        
+        gb = call.data.split(':')[1]
+        plans = load_plans()
+        
+        if gb in plans:
+            del plans[gb]
+            save_plans(plans)
+            
+            markup, plans_text, _ = create_plans_markup()  # Get the new markup and text
+            plans_text += "\nSelect a plan number to edit:"
+            
+            bot.edit_message_text(
+                plans_text,
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
+        else:
+            bot.answer_callback_query(call.id, text="Plan not found!")
+    except Exception as e:
+        print(f"DEBUG: Error in handle_plan_delete: {str(e)}")  # Debug print
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+@bot.callback_query_handler(func=lambda call: call.data in ["back_to_plans", "cancel_plan_edit"])
+def handle_plan_navigation(call):
+    try:
+        bot.answer_callback_query(call.id)
+        print(f"DEBUG: Received navigation callback: {call.data}")  # Debug print
+        
+        markup, plans_text, _ = create_plans_markup()
+        plans_text += "\nSelect a plan number to edit:"
+        
+        bot.edit_message_text(
+            plans_text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+    except Exception as e:
+        print(f"DEBUG: Error in handle_plan_navigation: {str(e)}")  # Debug print
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
 # Processing Functions
 def process_new_plan_gb(message):
