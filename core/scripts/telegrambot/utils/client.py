@@ -4,6 +4,9 @@ from utils.common import create_main_markup, create_purchase_markup, create_down
 from utils.payments import CryptomusPayment
 from utils.admin_plans import load_plans
 from datetime import datetime
+import qrcode
+import io
+import base64
 from utils.payment_records import add_payment_record, update_payment_status
 import threading
 import time
@@ -14,6 +17,22 @@ payment_processor = CryptomusPayment()
 
 # Store payment sessions
 payment_sessions = {}
+
+def format_bytes(bytes_value):
+    gb = bytes_value / (1024 ** 3)
+    return f"{gb:.2f}"
+
+def create_config_qr(config_text):
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(config_text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Convert image to bytes
+    bio = io.BytesIO()
+    img.save(bio, format='PNG')
+    bio.seek(0)
+    return bio
 
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
@@ -26,12 +45,19 @@ def show_my_configs(message):
         user_configs = []
         
         for username, details in users.items():
-            # Assuming you store telegram_id in user details
-            if details.get('telegram_id') == user_id:
+            if username.startswith(f"{user_id}d"):
+                used_traffic = details.get('used_download_bytes', 0) + details.get('used_upload_bytes', 0)
+                max_traffic = details.get('max_download_bytes', 0)
+                remaining_days = details.get('remaining_days', 0)
+                total_days = details.get('expiration_days', 0)
+                
                 user_configs.append({
                     'username': username,
-                    'traffic': details['max_download_bytes'] / (1024 ** 3),
-                    'days': details['expiration_days']
+                    'used_traffic': format_bytes(used_traffic),
+                    'max_traffic': format_bytes(max_traffic),
+                    'remaining_days': remaining_days,
+                    'total_days': total_days,
+                    'config': details.get('config', '')
                 })
         
         if not user_configs:
@@ -41,10 +67,22 @@ def show_my_configs(message):
         for config in user_configs:
             text = (
                 f"📱 Config: {config['username']}\n"
-                f"📊 Traffic: {config['traffic']:.2f} GB\n"
-                f"📅 Days: {config['days']}"
+                f"📊 Traffic: {config['used_traffic']}/{config['max_traffic']} GB\n"
+                f"📅 Days: {config['remaining_days']}/{config['total_days']}\n\n"
+                f"📝 Config Text:\n{config['config']}"
             )
-            bot.reply_to(message, text)
+            
+            # Create and send QR code
+            if config['config']:
+                qr_bio = create_config_qr(config['config'])
+                bot.send_photo(
+                    message.chat.id,
+                    qr_bio,
+                    caption=text,
+                    reply_markup=create_main_markup(is_admin=False)
+                )
+            else:
+                bot.reply_to(message, text)
             
     except json.JSONDecodeError:
         bot.reply_to(message, "Error retrieving configs. Please try again later.")
@@ -65,28 +103,16 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             plans = load_plans()
             plan_days = plans[str(plan_gb)]['days']
             
-            # Create username using telegram ID and timestamp
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             username = f"{chat_id}d{timestamp}"
             
-            # Create user config
             command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
             result = run_cli_command(command)
             
-            # Update payment record
             update_payment_status(payment_id, 'completed')
-            
-            # Extract config from result
             config_text = extract_config_from_result(result)
+            send_config_to_user(chat_id, username, plan_gb, plan_days, config_text)
             
-            bot.send_message(
-                chat_id,
-                f"✅ Payment received! Your config has been created.\n\n"
-                f"Username: {username}\n"
-                f"Traffic: {plan_gb}GB\n"
-                f"Duration: {plan_days} days\n\n"
-                f"Config:\n{config_text}"
-            )
             del payment_sessions[payment_id]
             break
         elif status and status['result']['payment_status'] == 'expired':
@@ -100,9 +126,35 @@ def check_payment_status(payment_id, chat_id, plan_gb):
         time.sleep(30)
 
 def extract_config_from_result(result):
-    # Add logic to extract config from CLI result
-    # This depends on your CLI output format
-    return result
+    try:
+        # Parse the JSON result
+        data = json.loads(result)
+        # Return the config string
+        return data.get('config', '')
+    except:
+        return result
+
+def send_config_to_user(chat_id, username, plan_gb, plan_days, config_text):
+    # Create message text
+    message_text = (
+        f"✅ Config created successfully!\n\n"
+        f"Username: {username}\n"
+        f"Traffic: {plan_gb}GB\n"
+        f"Duration: {plan_days} days\n\n"
+        f"📝 Config Text:\n{config_text}"
+    )
+    
+    # Create and send QR code with config
+    if config_text:
+        qr_bio = create_config_qr(config_text)
+        bot.send_photo(
+            chat_id,
+            qr_bio,
+            caption=message_text,
+            reply_markup=create_main_markup(is_admin=False)
+        )
+    else:
+        bot.send_message(chat_id, message_text)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase(call):
@@ -145,6 +197,7 @@ def handle_purchase(call):
         
         # Extract config from result
         config_text = extract_config_from_result(result)
+        send_config_to_user(call.message.chat.id, username, plan_gb, plan_days, config_text)
         
         bot.edit_message_text(
             chat_id=call.message.chat.id,
