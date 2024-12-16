@@ -27,7 +27,8 @@ def show_my_configs(message):
         found = False
         
         for username, details in users.items():
-            if username.startswith(f"{message.from_user.id}d"):
+            # Check if config belongs to user and is not blocked
+            if username.startswith(f"{message.from_user.id}d") and not details.get('blocked', False):
                 found = True
                 
                 # Get IPv4 config
@@ -40,17 +41,13 @@ def show_my_configs(message):
                 qr.save(bio, 'PNG')
                 bio.seek(0)
                 
-                # Format message like in edituser.py
+                # Format message with the exact style requested
                 caption = (
-                    f"User Information:\n\n"
-                    f"Username: {username}\n"
-                    f"Traffic Used: {details.get('used_download_bytes', 0) / (1024**3):.2f} GB\n"
-                    f"Traffic Limit: {details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
-                    f"Days Remaining: {details.get('remaining_days', 0)}\n"
-                    f"Account Creation: {details.get('account_creation_date', 'Unknown')}\n"
-                    f"Last Reset: {details.get('last_reset', 'Never')}\n"
-                    f"Status: {'Active' if details.get('active', False) else 'Inactive'}\n\n"
-                    f"`{config_v4}`"
+                    f"📱 Config: {username}\n"
+                    f"📊 Traffic: {details.get('used_download_bytes', 0) / (1024**3):.2f}/{details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
+                    f"📅 Days: {details.get('remaining_days', 0)}/{details.get('expiration_days', 0)}\n\n"
+                    f"📝 Config Text:\n"
+                    f"{config_v4}"
                 )
                 
                 bot.send_photo(
@@ -68,7 +65,7 @@ def show_my_configs(message):
 
 def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
     try:
-        # Get IPv4 config like in adduser.py
+        # Get IPv4 config
         command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
         config_v4 = run_cli_command(command).replace("IPv4:\n", "").strip()
         
@@ -78,10 +75,13 @@ def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
         qr.save(bio, 'PNG')
         bio.seek(0)
         
-        # Format caption like in adduser.py
+        # Format caption with the exact style requested
         caption = (
-            f"{result_text}\n\n"
-            f"`{config_v4}`"
+            f"📱 Config: {username}\n"
+            f"📊 Traffic: 0.00/{plan_gb:.2f} GB\n"
+            f"📅 Days: 0/{plan_days}\n\n"
+            f"📝 Config Text:\n"
+            f"{config_v4}"
         )
         
         bot.send_photo(
