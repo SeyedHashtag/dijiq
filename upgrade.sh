@@ -12,7 +12,7 @@ FILES=(
     "/etc/hysteria/core/scripts/telegrambot/.env"
     "/etc/hysteria/core/scripts/singbox/.env"
     "/etc/hysteria/core/scripts/normalsub/.env"
-    "/etc/hysteria/payments.json"
+    "/etc/hysteria/core/scripts/telegrambot/payments.json"
     "/etc/hysteria/core/scripts/telegrambot/plans.json"
     "/etc/hysteria/test_mode.json"
     "/etc/hysteria/statistics.json"
