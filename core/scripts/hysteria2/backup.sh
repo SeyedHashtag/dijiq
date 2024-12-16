@@ -12,6 +12,7 @@ FILES_TO_BACKUP=(
     "/etc/hysteria/ca.crt"
     "/etc/hysteria/users.json"
     "/etc/hysteria/config.json"
+    "/etc/hysteria/core/scripts/telegrambot/.env"
     "/etc/hysteria/.configs.env"
     "/etc/hysteria/payments.json"
     "/etc/hysteria/plans.json"
