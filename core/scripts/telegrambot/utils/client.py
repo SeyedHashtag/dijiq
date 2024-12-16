@@ -79,7 +79,7 @@ def check_payment_status(payment_id, chat_id, plan_gb):
                     traffic_bytes = plan_gb * 1024 * 1024 * 1024
                     print(f"DEBUG: traffic_bytes value: {traffic_bytes}")  # Debug print
                     
-                    command = f"python3 {CLI_PATH} add-user -u {username} --traffic-limit {plan_gb} -e {plan_days} --telegram-id {chat_id}"
+                    command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
                     print(f"DEBUG: Running command: {command}")  # Debug print
                     
                     # Send debug info to user
@@ -170,7 +170,7 @@ def handle_purchase(call):
                 traffic_bytes = plan_gb * 1024 * 1024 * 1024
                 print(f"DEBUG: traffic_bytes value: {traffic_bytes}")  # Debug print
                 
-                command = f"python3 {CLI_PATH} add-user -u {username} --traffic-limit {plan_gb} -e {plan_days} --telegram-id {call.message.chat.id}"
+                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
                 print(f"DEBUG: Running command: {command}")  # Debug print
                 
                 # Send debug info to user
