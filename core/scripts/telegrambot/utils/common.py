@@ -10,7 +10,7 @@ def create_main_markup(is_admin=False):
         markup.row('❌ Delete User', '📊 Server Info')
         markup.row('💾 Backup Server', '💳 Payment Settings')
         markup.row('📝 Edit Plans', '🔧 Payment Test')
-        markup.row('📞 Edit Support')
+        markup.row('📞 Edit Support', '📢 Broadcast Message')
     else:
         # Client menu
         markup.row('📱 My Configs', '💰 Purchase Plan')
