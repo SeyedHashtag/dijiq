@@ -7,6 +7,7 @@ from datetime import datetime
 from utils.payment_records import add_payment_record, update_payment_status
 import threading
 import time
+from utils.test_mode import load_test_mode
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -116,7 +117,49 @@ def handle_purchase(call):
 
     amount = plans[str(plan_gb)]['price']
     
-    # Create payment
+    # Check if test mode is enabled
+    if load_test_mode():
+        # Create test payment record
+        payment_id = f"test_{int(time.time())}"
+        payment_record = {
+            'user_id': call.message.chat.id,
+            'plan_gb': plan_gb,
+            'amount': amount,
+            'status': 'test_mode',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'payment_url': 'N/A',
+            'is_test': True
+        }
+        add_payment_record(payment_id, payment_record)
+        
+        # Create user config immediately
+        plan_days = plans[str(plan_gb)]['days']
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        username = f"{call.message.chat.id}d{timestamp}"
+        
+        command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days} -tid {call.message.chat.id}"
+        result = run_cli_command(command)
+        
+        # Update payment record
+        update_payment_status(payment_id, 'completed')
+        
+        # Extract config from result
+        config_text = extract_config_from_result(result)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=(
+                "✅ Test Mode: Config created successfully!\n\n"
+                f"Username: {username}\n"
+                f"Traffic: {plan_gb}GB\n"
+                f"Duration: {plan_days} days\n\n"
+                f"Config:\n{config_text}"
+            )
+        )
+        return
+    
+    # Normal payment flow continues here...
     payment = payment_processor.create_payment(amount, plan_gb)
     
     if "error" in payment:
