@@ -61,7 +61,7 @@ def check_payment_status(payment_id, chat_id, plan_gb):
     try:
         # Clean up the plan_gb value at the start
         plan_gb = int(float(plan_gb))
-        print(f"DEBUG: check_payment_status plan_gb value: {plan_gb}")  # Debug print
+        debug_msg = f"DEBUG Info:\nOriginal plan_gb: {plan_gb}"
         
         while True:
             status = payment_processor.check_payment_status(payment_id)
@@ -81,6 +81,12 @@ def check_payment_status(payment_id, chat_id, plan_gb):
                     
                     command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {chat_id}"
                     print(f"DEBUG: Running command: {command}")  # Debug print
+                    
+                    # Send debug info to user
+                    debug_msg += f"\nBytes calculation: {plan_gb} * 1024 * 1024 * 1024 = {traffic_bytes}"
+                    debug_msg += f"\nFull command: {command}"
+                    bot.send_message(chat_id, debug_msg)
+                    
                     result = run_cli_command(command)
                     
                     # Update payment record
@@ -166,6 +172,13 @@ def handle_purchase(call):
                 
                 command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {call.message.chat.id}"
                 print(f"DEBUG: Running command: {command}")  # Debug print
+                
+                # Send debug info to user
+                debug_msg = f"DEBUG Info:\nOriginal plan_gb: {plan_gb}"
+                debug_msg += f"\nBytes calculation: {plan_gb} * 1024 * 1024 * 1024 = {traffic_bytes}"
+                debug_msg += f"\nFull command: {command}"
+                bot.send_message(call.message.chat.id, debug_msg)
+                
                 result = run_cli_command(command)
                 
                 # Update payment record
