@@ -69,8 +69,11 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             username = f"{chat_id}d{timestamp}"
             
-            # Create user config
-            command = f"python3 {CLI_PATH} add-user -t {plan_gb} -e {plan_days} -u {username} -tid {chat_id}"
+            # Convert GB to bytes
+            traffic_bytes = plan_gb * 1024 * 1024 * 1024
+            
+            # Create user config with bytes
+            command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {chat_id}"
             result = run_cli_command(command)
             
             # Update payment record
@@ -137,7 +140,10 @@ def handle_purchase(call):
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         username = f"{call.message.chat.id}d{timestamp}"
         
-        command = f"python3 {CLI_PATH} add-user -t {plan_gb} -e {plan_days} -u {username} -tid {call.message.chat.id}"
+        # Convert GB to bytes
+        traffic_bytes = plan_gb * 1024 * 1024 * 1024
+        
+        command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_bytes} -e {plan_days} -tid {call.message.chat.id}"
         result = run_cli_command(command)
         
         # Update payment record
