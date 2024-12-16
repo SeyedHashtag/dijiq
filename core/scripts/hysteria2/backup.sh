@@ -18,6 +18,7 @@ FILES_TO_BACKUP=(
     "/etc/hysteria/core/scripts/telegrambot/plans.json"
     "/etc/hysteria/test_mode.json"
     "/etc/hysteria/core/scripts/telegrambot/support_info.json"
+    "/etc/hysteria/core/scripts/telegrambot/user_languages.json"
 )
 
 zip -j "$BACKUP_FILE" "${FILES_TO_BACKUP[@]}" >/dev/null
