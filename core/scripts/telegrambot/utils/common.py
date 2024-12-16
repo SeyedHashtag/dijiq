@@ -11,7 +11,6 @@ def create_main_markup(is_admin=False):
         markup.row('💾 Backup Server', '💳 Payment Settings')
         markup.row('📝 Edit Plans', '🔧 Payment Test')
         markup.row('📞 Edit Support', '📢 Broadcast Message')
-        markup.row('📊 Statistics')
     else:
         # Client menu
         markup.row('📱 My Configs', '💰 Purchase Plan')
