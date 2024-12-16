@@ -34,10 +34,8 @@ class CryptomusPayment:
             "amount": str(amount),
             "currency": "USD",
             "order_id": payment_id,
-            "url_callback": "https://your-callback-url.com/payment/callback",
             "is_payment_multiple": False,
             "lifetime": 3600,
-            "to_currency": "USDT",
             "additional_data": json.dumps({
                 "plan_gb": plan_gb,
                 "payment_id": payment_id
