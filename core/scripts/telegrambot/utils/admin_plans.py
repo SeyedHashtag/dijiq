@@ -6,6 +6,7 @@ import os
 
 PLANS_FILE = '/etc/hysteria/core/scripts/telegrambot/plans.json'
 
+# Helper Functions
 def load_plans():
     try:
         if os.path.exists(PLANS_FILE):
@@ -13,8 +14,6 @@ def load_plans():
                 return json.load(f)
     except Exception:
         pass
-    
-    # Default plans if file doesn't exist
     return {
         "30": {"price": 1.80, "days": 30},
         "60": {"price": 3.00, "days": 30},
@@ -27,10 +26,8 @@ def save_plans(plans):
         json.dump(plans, f, indent=4)
 
 def create_plans_markup():
-    markup = types.InlineKeyboardMarkup(row_width=1)  # Changed to row_width=1 for better layout
+    markup = types.InlineKeyboardMarkup(row_width=1)
     plans = load_plans()
-    
-    # Sort plans by GB size
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
     
     for gb, details in sorted_plans:
@@ -55,6 +52,7 @@ def create_edit_plan_markup(gb):
     markup.row(types.InlineKeyboardButton("⬅️ Back", callback_data="back_to_plans"))
     return markup
 
+# Message Handlers
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📝 Edit Plans')
 def edit_plans(message):
     bot.reply_to(
@@ -63,30 +61,54 @@ def edit_plans(message):
         reply_markup=create_plans_markup()
     )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_plan:'))
-def handle_plan_edit(call):
-    try:
-        gb = call.data.split(':')[1]
-        plans = load_plans()
-        plan = plans.get(gb, {})
-        
-        # Answer the callback to remove loading state
-        bot.answer_callback_query(call.id)
-        
-        bot.edit_message_text(
-            f"📦 Editing {gb}GB Plan:\n\n"
-            f"💰 Current Price: ${plan['price']}\n"
-            f"📅 Current Days: {plan['days']}\n\n"
-            "Select what to edit:",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=create_edit_plan_markup(gb)
-        )
-    except Exception as e:
-        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+# Callback Handlers
+@bot.callback_query_handler(func=lambda call: call.data == "add_plan")
+def handle_add_plan(call):
+    bot.answer_callback_query(call.id)
+    msg = bot.edit_message_text(
+        "Enter the plan size in GB (e.g., 30):",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+    bot.register_next_step_handler(msg, process_new_plan_gb)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_delete_plan:'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("edit_plan:"))
+def handle_plan_edit(call):
+    bot.answer_callback_query(call.id)
+    gb = call.data.split(':')[1]
+    plans = load_plans()
+    plan = plans.get(gb, {})
+    
+    bot.edit_message_text(
+        f"📦 Editing {gb}GB Plan:\n\n"
+        f"💰 Current Price: ${plan['price']}\n"
+        f"📅 Current Days: {plan['days']}\n\n"
+        "Select what to edit:",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=create_edit_plan_markup(gb)
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("edit_plan_price:", "edit_plan_days:")))
+def handle_plan_detail_edit(call):
+    bot.answer_callback_query(call.id)
+    action, gb = call.data.split(':')
+    field = "price" if "price" in action else "days"
+    
+    plans = load_plans()
+    current_value = plans[gb][field]
+    
+    msg = bot.edit_message_text(
+        f"Current {field}: {current_value}\n"
+        f"Enter new {field} for {gb}GB plan:",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+    bot.register_next_step_handler(msg, process_plan_detail_edit, gb, field)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("confirm_delete_plan:"))
 def handle_confirm_delete_plan(call):
+    bot.answer_callback_query(call.id)
     gb = call.data.split(':')[1]
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -101,64 +123,9 @@ def handle_confirm_delete_plan(call):
         reply_markup=markup
     )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_plan_price:') or call.data.startswith('edit_plan_days:'))
-def handle_plan_detail_edit(call):
-    try:
-        action, gb = call.data.split(':')
-        is_price = 'price' in action
-        field_name = 'price' if is_price else 'days'
-        
-        # Answer the callback to remove loading state
-        bot.answer_callback_query(call.id)
-        
-        plans = load_plans()
-        current_value = plans[gb][field_name]
-        
-        msg = bot.edit_message_text(
-            f"Current {field_name}: {current_value}\n"
-            f"Enter new {field_name} for {gb}GB plan:",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id
-        )
-        bot.register_next_step_handler(msg, process_plan_detail_edit, gb, field_name)
-    except Exception as e:
-        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
-
-def process_plan_detail_edit(message, gb, field):
-    try:
-        value = float(message.text.strip()) if field == 'price' else int(message.text.strip())
-        
-        if value <= 0:
-            raise ValueError(f"{field.capitalize()} must be greater than 0")
-        
-        plans = load_plans()
-        plans[gb][field] = value
-        save_plans(plans)
-        
-        # Show success message
-        bot.reply_to(
-            message,
-            f"✅ Plan updated successfully!\n\n"
-            f"New {field}: {value}",
-            reply_markup=create_main_markup(is_admin=True)
-        )
-        
-        # Show updated plans list
-        bot.send_message(
-            message.chat.id,
-            "📋 Current Plans:",
-            reply_markup=create_plans_markup()
-        )
-    except ValueError as e:
-        error_msg = str(e) if "could not convert" in str(e) else str(e)
-        bot.reply_to(
-            message,
-            f"❌ Error: {error_msg}",
-            reply_markup=create_main_markup(is_admin=True)
-        )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_plan:'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_plan:"))
 def handle_plan_delete(call):
+    bot.answer_callback_query(call.id)
     gb = call.data.split(':')[1]
     plans = load_plans()
     
@@ -172,11 +139,10 @@ def handle_plan_delete(call):
             message_id=call.message.message_id,
             reply_markup=create_plans_markup()
         )
-    else:
-        bot.answer_callback_query(call.id, "Plan not found!")
 
 @bot.callback_query_handler(func=lambda call: call.data in ["back_to_plans", "cancel_plan_edit"])
 def handle_plan_navigation(call):
+    bot.answer_callback_query(call.id)
     if call.data == "cancel_plan_edit":
         bot.edit_message_text(
             "Operation canceled.",
@@ -189,17 +155,9 @@ def handle_plan_navigation(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             reply_markup=create_plans_markup()
-        ) 
+        )
 
-@bot.callback_query_handler(func=lambda call: call.data == "add_plan")
-def handle_add_plan(call):
-    msg = bot.edit_message_text(
-        "Enter the plan size in GB (e.g., 30):",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
-    bot.register_next_step_handler(msg, process_new_plan_gb)
-
+# Processing Functions
 def process_new_plan_gb(message):
     try:
         gb = int(message.text.strip())
@@ -227,14 +185,13 @@ def process_new_plan_price(message, gb):
         price = float(message.text.strip())
         if price <= 0:
             raise ValueError("Price must be greater than 0")
-            
+        
         msg = bot.reply_to(message, f"Enter the duration in days for {gb}GB plan (e.g., 30):")
         bot.register_next_step_handler(msg, process_new_plan_days, gb, price)
     except ValueError as e:
-        error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
         bot.reply_to(
             message,
-            f"❌ {error_msg}. Please enter a valid number.",
+            f"❌ Error: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )
 
@@ -243,7 +200,7 @@ def process_new_plan_days(message, gb, price):
         days = int(message.text.strip())
         if days <= 0:
             raise ValueError("Days must be greater than 0")
-            
+        
         plans = load_plans()
         plans[str(gb)] = {"price": price, "days": days}
         save_plans(plans)
@@ -254,16 +211,43 @@ def process_new_plan_days(message, gb, price):
             reply_markup=create_main_markup(is_admin=True)
         )
         
-        # Show updated plans list
         bot.send_message(
             message.chat.id,
-            "Current Plans:",
+            "📋 Current Plans:",
             reply_markup=create_plans_markup()
         )
     except ValueError as e:
-        error_msg = str(e) if str(e) != "could not convert string to float: ''" else "Invalid input"
         bot.reply_to(
             message,
-            f"❌ {error_msg}. Please enter a valid number.",
+            f"❌ Error: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+def process_plan_detail_edit(message, gb, field):
+    try:
+        value = float(message.text.strip()) if field == 'price' else int(message.text.strip())
+        if value <= 0:
+            raise ValueError(f"{field.capitalize()} must be greater than 0")
+        
+        plans = load_plans()
+        plans[gb][field] = value
+        save_plans(plans)
+        
+        bot.reply_to(
+            message,
+            f"✅ Plan updated successfully!\n\n"
+            f"New {field}: {value}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+        
+        bot.send_message(
+            message.chat.id,
+            "📋 Current Plans:",
+            reply_markup=create_plans_markup()
+        )
+    except ValueError as e:
+        bot.reply_to(
+            message,
+            f"❌ Error: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         ) 
