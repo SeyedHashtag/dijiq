@@ -26,21 +26,28 @@ def save_plans(plans):
         json.dump(plans, f, indent=4)
 
 def create_plans_markup():
-    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup = types.InlineKeyboardMarkup(row_width=3)
     plans = load_plans()
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
     
-    for gb, details in sorted_plans:
-        markup.add(types.InlineKeyboardButton(
-            f"📦 {gb}GB - ${details['price']} - {details['days']}d",
-            callback_data=f"edit_plan:{gb}"
-        ))
+    # Create plan list text
+    plans_text = "📋 Current Plans:\n\n"
+    for i, (gb, details) in enumerate(sorted_plans, 1):
+        plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d\n"
     
-    markup.row(
-        types.InlineKeyboardButton("➕ Add Plan", callback_data="add_plan"),
-        types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_plan_edit")
-    )
-    return markup
+    # Create numbered buttons
+    buttons = []
+    for i in range(len(sorted_plans)):
+        buttons.append(types.InlineKeyboardButton(str(i + 1), callback_data=f"select_plan:{i}"))
+    
+    # Add buttons in rows of 3
+    for i in range(0, len(buttons), 3):
+        markup.row(*buttons[i:i+3])
+    
+    # Add Plan button
+    markup.row(types.InlineKeyboardButton("➕ Add Plan", callback_data="add_plan"))
+    
+    return markup, plans_text, sorted_plans
 
 def create_edit_plan_markup(gb):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -55,11 +62,9 @@ def create_edit_plan_markup(gb):
 # Message Handlers
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📝 Edit Plans')
 def edit_plans(message):
-    bot.reply_to(
-        message,
-        "📋 Current Plans:\nSelect a plan to edit or add a new one:",
-        reply_markup=create_plans_markup()
-    )
+    markup, plans_text, _ = create_plans_markup()
+    plans_text += "\nSelect a plan number to edit:"
+    bot.reply_to(message, plans_text, reply_markup=markup)
 
 # Callback Handlers
 @bot.callback_query_handler(func=lambda call: call.data == "add_plan")
@@ -72,22 +77,23 @@ def handle_add_plan(call):
     )
     bot.register_next_step_handler(msg, process_new_plan_gb)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("edit_plan:"))
-def handle_plan_edit(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_plan:"))
+def handle_plan_select(call):
     bot.answer_callback_query(call.id)
-    gb = call.data.split(':')[1]
-    plans = load_plans()
-    plan = plans.get(gb, {})
+    index = int(call.data.split(':')[1])
+    _, _, sorted_plans = create_plans_markup()
     
-    bot.edit_message_text(
-        f"📦 Editing {gb}GB Plan:\n\n"
-        f"💰 Current Price: ${plan['price']}\n"
-        f"📅 Current Days: {plan['days']}\n\n"
-        "Select what to edit:",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=create_edit_plan_markup(gb)
-    )
+    if 0 <= index < len(sorted_plans):
+        gb, plan = sorted_plans[index]
+        bot.edit_message_text(
+            f"📦 Editing {gb}GB Plan:\n\n"
+            f"💰 Current Price: ${plan['price']}\n"
+            f"📅 Current Days: {plan['days']}\n\n"
+            "Select what to edit:",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=create_edit_plan_markup(gb)
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("edit_plan_price:", "edit_plan_days:")))
 def handle_plan_detail_edit(call):
