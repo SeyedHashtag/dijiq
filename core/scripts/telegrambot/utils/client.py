@@ -10,6 +10,7 @@ import time
 from utils.test_mode import load_test_mode
 import qrcode
 import io
+from utils.admin_support import get_support_text
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -264,18 +265,13 @@ def handle_purchase(call):
 
 @bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def show_downloads(message):
+    markup = create_downloads_markup()  # Get the markup first
     bot.reply_to(
         message,
         "Download our apps:",
-        reply_markup=create_downloads_markup()
+        reply_markup=markup
     )
 
 @bot.message_handler(func=lambda message: message.text == '📞 Support')
 def show_support(message):
-    support_text = (
-        "Need help? Contact our support:\n\n"
-        "📱 Telegram: @your_support_username\n"
-        "📧 Email: support@yourdomain.com\n"
-        "⏰ Working hours: 24/7"
-    )
-    bot.reply_to(message, support_text) 
+    bot.reply_to(message, get_support_text()) 
