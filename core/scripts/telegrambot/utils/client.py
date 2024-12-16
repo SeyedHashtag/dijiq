@@ -31,9 +31,12 @@ def show_my_configs(message):
             if username.startswith(f"{message.from_user.id}d") and not details.get('blocked', False):
                 found = True
                 
-                # Get IPv4 config
+                # Get IPv4 config and clean up the warning message
                 command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
-                config_v4 = run_cli_command(command).replace("IPv4:\n", "").strip()
+                config_v4 = run_cli_command(command)
+                # Remove the warning message and clean up the text
+                config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
+                config_v4 = config_v4.replace("IPv4:\n", "").strip()
                 
                 # Create QR code
                 qr = qrcode.make(config_v4)
@@ -47,7 +50,7 @@ def show_my_configs(message):
                     f"📊 Traffic: {details.get('used_download_bytes', 0) / (1024**3):.2f}/{details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
                     f"📅 Days: {details.get('remaining_days', 0)}/{details.get('expiration_days', 0)}\n\n"
                     f"📝 Config Text:\n"
-                    f"{config_v4}"
+                    f"`{config_v4}`"
                 )
                 
                 bot.send_photo(
@@ -81,7 +84,7 @@ def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
             f"📊 Traffic: 0.00/{plan_gb:.2f} GB\n"
             f"📅 Days: 0/{plan_days}\n\n"
             f"📝 Config Text:\n"
-            f"{config_v4}"
+            f"`{config_v4}`"
         )
         
         bot.send_photo(
