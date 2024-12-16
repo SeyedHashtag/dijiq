@@ -11,6 +11,9 @@ from utils.test_mode import load_test_mode
 import qrcode
 import io
 from utils.admin_support import get_support_text
+from utils.languages import get_user_language, get_text
+import json
+from io import BytesIO
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -18,54 +21,122 @@ payment_processor = CryptomusPayment()
 # Store payment sessions
 payment_sessions = {}
 
-@bot.message_handler(func=lambda message: message.text == '📱 My Configs')
-def show_my_configs(message):
+def get_user_configs(user_id):
     command = f"python3 {CLI_PATH} list-users"
     result = run_cli_command(command)
     
     try:
         users = json.loads(result)
-        found = False
+        user_configs = []
         
         for username, details in users.items():
-            # Check if config belongs to user and is not blocked
-            if username.startswith(f"{message.from_user.id}d") and not details.get('blocked', False):
-                found = True
-                
-                # Get IPv4 config and clean up the warning message
-                command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
-                config_v4 = run_cli_command(command)
-                # Remove the warning message and clean up the text
-                config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
-                config_v4 = config_v4.replace("IPv4:\n", "").strip()
-                
-                # Create QR code
-                qr = qrcode.make(config_v4)
-                bio = io.BytesIO()
-                qr.save(bio, 'PNG')
-                bio.seek(0)
-                
-                # Format message with the exact style requested
-                caption = (
-                    f"📱 Config: {username}\n"
-                    f"📊 Traffic: {details.get('used_download_bytes', 0) / (1024**3):.2f}/{details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
-                    f"📅 Days: {details.get('remaining_days', 0)}/{details.get('expiration_days', 0)}\n\n"
-                    f"📝 Config Text:\n"
-                    f"`{config_v4}`"
-                )
-                
-                bot.send_photo(
-                    message.chat.id,
-                    photo=bio,
-                    caption=caption,
-                    parse_mode="Markdown"
-                )
+            if username.startswith(str(user_id)):
+                if not details.get('blocked', True):
+                    user_configs.append({
+                        'username': username,
+                        'configs': details.get('configs', []),
+                        'traffic': details.get('traffic', 0),
+                        'expire': details.get('expire', 0)
+                    })
+        return user_configs
+    except:
+        return []
+
+def format_config_text(config_data, lang_code):
+    try:
+        traffic_gb = round(float(config_data.get('traffic', 0)) / (1024 * 1024 * 1024), 2)
+        expire_date = datetime.fromtimestamp(config_data.get('expire', 0)).strftime('%Y-%m-%d')
         
-        if not found:
-            bot.reply_to(message, "You don't have any active configs. Use the Purchase Plan option to get started!")
+        if lang_code == 'fa':
+            return (
+                f"🔰 اطلاعات پیکربندی:\n\n"
+                f"🔹 نام کاربری: {config_data.get('username')}\n"
+                f"🔹 ترافیک: {traffic_gb} GB\n"
+                f"🔹 تاریخ انقضا: {expire_date}\n"
+            )
+        elif lang_code == 'tk':
+            return (
+                f"🔰 Konfigurasiýa maglumatlary:\n\n"
+                f"🔹 Ulanyjy ady: {config_data.get('username')}\n"
+                f"🔹 Trafik: {traffic_gb} GB\n"
+                f"🔹 Möhleti: {expire_date}\n"
+            )
+        elif lang_code == 'hi':
+            return (
+                f"🔰 कॉन्फ़िगरेशन जानकारी:\n\n"
+                f"🔹 उपयोगकर्ता नाम: {config_data.get('username')}\n"
+                f"🔹 ट्रैफ़िक: {traffic_gb} GB\n"
+                f"🔹 समाप्ति तिथि: {expire_date}\n"
+            )
+        elif lang_code == 'ar':
+            return (
+                f"🔰 معلومات الإعداد:\n\n"
+                f"🔹 اسم المستخدم: {config_data.get('username')}\n"
+                f"🔹 حركة المرور: {traffic_gb} GB\n"
+                f"🔹 تاريخ الانتهاء: {expire_date}\n"
+            )
+        elif lang_code == 'ru':
+            return (
+                f"🔰 Информация о конфигурации:\n\n"
+                f"🔹 Имя пользователя: {config_data.get('username')}\n"
+                f"🔹 Трафик: {traffic_gb} GB\n"
+                f"🔹 Дата окончания: {expire_date}\n"
+            )
+        else:  # Default to English
+            return (
+                f"🔰 Configuration Info:\n\n"
+                f"🔹 Username: {config_data.get('username')}\n"
+                f"🔹 Traffic: {traffic_gb} GB\n"
+                f"🔹 Expiry Date: {expire_date}\n"
+            )
+    except Exception as e:
+        print(f"Error formatting config text: {str(e)}")
+        return "Error formatting configuration information."
+
+def send_config_details(message, config):
+    user_lang = get_user_language(message.from_user.id)
+    
+    # Send config text
+    config_text = format_config_text(config, user_lang)
+    bot.reply_to(message, config_text, reply_markup=create_client_markup(user_lang))
+    
+    # Generate and send QR codes for each config URL
+    for config_url in config.get('configs', []):
+        try:
+            # Generate QR code
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(config_url)
+            qr.make(fit=True)
             
-    except json.JSONDecodeError:
-        bot.reply_to(message, "Error retrieving configs. Please try again later.")
+            # Create image
+            img = qr.make_image(fill_color="black", back_color="white")
+            bio = BytesIO()
+            img.save(bio, 'PNG')
+            bio.seek(0)
+            
+            # Send QR code image
+            bot.send_photo(message.chat.id, bio)
+            
+            # Send config URL as text
+            bot.send_message(message.chat.id, f"`{config_url}`", parse_mode='Markdown')
+        except Exception as e:
+            print(f"Error sending config details: {str(e)}")
+            continue
+
+def show_user_configs(message):
+    user_lang = get_user_language(message.from_user.id)
+    configs = get_user_configs(message.from_user.id)
+    
+    if not configs:
+        bot.reply_to(
+            message,
+            get_text(user_lang, 'no_configs'),
+            reply_markup=create_client_markup(user_lang)
+        )
+        return
+    
+    for config in configs:
+        send_config_details(message, config)
 
 def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
     try:
