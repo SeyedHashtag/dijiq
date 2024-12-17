@@ -121,7 +121,7 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             break
 
         payment_status = status['result'].get('payment_status', '')
-        amount_paid = float(status['result'].get('paid_amount', 0))
+        amount_paid = float(status['result'].get('amount_paid', 0))
         amount_required = float(status['result'].get('amount', 0))
 
         # Check various payment statuses
