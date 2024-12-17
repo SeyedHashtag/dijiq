@@ -5,6 +5,7 @@ from utils.payments import CryptomusPayment
 from utils.admin_plans import load_plans
 from datetime import datetime
 from utils.payment_records import add_payment_record, update_payment_status
+from utils.spam_protection import spam_protection
 import threading
 import time
 from utils.test_mode import load_test_mode
@@ -20,6 +21,10 @@ payment_sessions = {}
 
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
+    if not spam_protection.can_send_message(message.from_user.id):
+        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
+        return
+
     command = f"python3 {CLI_PATH} list-users"
     result = run_cli_command(command)
     
@@ -35,7 +40,6 @@ def show_my_configs(message):
                 # Get IPv4 config and clean up the warning message
                 command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
                 config_v4 = run_cli_command(command)
-                # Remove the warning message and clean up the text
                 config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
                 config_v4 = config_v4.replace("IPv4:\n", "").strip()
                 
@@ -45,7 +49,6 @@ def show_my_configs(message):
                 qr.save(bio, 'PNG')
                 bio.seek(0)
                 
-                # Format message with the exact style requested
                 caption = (
                     f"📱 Config: {username}\n"
                     f"📊 Traffic: {details.get('used_download_bytes', 0) / (1024**3):.2f}/{details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
@@ -102,21 +105,15 @@ def check_payment_status(payment_id, chat_id, plan_gb):
     while True:
         status = payment_processor.check_payment_status(payment_id)
         
-        # First check if there's an error in the response
         if "error" in status:
-            bot.send_message(
-                chat_id,
-                f"❌ Error checking payment status: {status['error']}\nPlease contact support."
-            )
+            bot.send_message(chat_id, f"❌ Error checking payment status: {status['error']}\nPlease contact support.")
+            spam_protection.remove_payment_link(chat_id, payment_id)
             del payment_sessions[payment_id]
             break
 
-        # Check if we have a valid result
         if not status or 'result' not in status:
-            bot.send_message(
-                chat_id,
-                "❌ Invalid payment status response. Please contact support."
-            )
+            bot.send_message(chat_id, "❌ Invalid payment status response. Please contact support.")
+            spam_protection.remove_payment_link(chat_id, payment_id)
             del payment_sessions[payment_id]
             break
 
@@ -130,68 +127,49 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             amount_paid = 0
             amount_required = 0
 
-        # Check payment status
         if payment_status == 'paid':
             if amount_paid < amount_required:
-                # Underpaid
                 bot.send_message(
                     chat_id,
                     f"⚠️ Payment underpaid (${amount_paid:.2f} of ${amount_required:.2f})\n"
                     "Please contact support."
                 )
                 update_payment_status(payment_id, 'underpaid')
-                del payment_sessions[payment_id]
-                break
             elif amount_paid > amount_required:
-                # Overpaid but process anyway
                 plans = load_plans()
                 plan_days = plans[str(plan_gb)]['days']
-                
                 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
                 username = f"{chat_id}d{timestamp}"
-                
                 command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
                 result = run_cli_command(command)
-                
                 update_payment_status(payment_id, 'completed_overpaid')
                 send_new_config(chat_id, username, plan_gb, plan_days, result)
-                
                 bot.send_message(
                     chat_id,
                     f"⚠️ Note: Payment was overpaid (${amount_paid:.2f} of ${amount_required:.2f})\n"
                     "Please contact support for a refund."
                 )
-                
-                del payment_sessions[payment_id]
-                break
             else:
-                # Exact payment
                 plans = load_plans()
                 plan_days = plans[str(plan_gb)]['days']
-                
                 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
                 username = f"{chat_id}d{timestamp}"
-                
                 command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
                 result = run_cli_command(command)
-                
                 update_payment_status(payment_id, 'completed')
                 send_new_config(chat_id, username, plan_gb, plan_days, result)
-                
-                del payment_sessions[payment_id]
-                break
             
-        elif payment_status == 'expired':
-            # Payment expired
-            bot.send_message(
-                chat_id,
-                "❌ Payment session expired. Please try again."
-            )
-            update_payment_status(payment_id, 'expired')
+            spam_protection.remove_payment_link(chat_id, payment_id)
             del payment_sessions[payment_id]
             break
             
-        # If still pending, wait and check again
+        elif payment_status == 'expired':
+            bot.send_message(chat_id, "❌ Payment session expired. Please try again.")
+            update_payment_status(payment_id, 'expired')
+            spam_protection.remove_payment_link(chat_id, payment_id)
+            del payment_sessions[payment_id]
+            break
+            
         time.sleep(30)
 
 @bot.message_handler(func=lambda message: message.text == '💰 Purchase Plan')
@@ -209,6 +187,19 @@ def extract_config_from_result(result):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase(call):
+    if not spam_protection.can_send_message(call.from_user.id):
+        bot.answer_callback_query(call.id, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
+        return
+
+    if not spam_protection.can_create_payment(call.from_user.id):
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            "⚠️ You have too many active payment links. Please wait for them to expire or complete existing payments.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+
     plan_gb = int(call.data.split(':')[1])
     
     # Load plans from file
@@ -243,26 +234,11 @@ def handle_purchase(call):
         command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
         result = run_cli_command(command)
         
-        # Update payment record
         update_payment_status(payment_id, 'completed')
-        
-        # Extract config from result
-        config_text = extract_config_from_result(result)
-        
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=(
-                "✅ Test Mode: Config created successfully!\n\n"
-                f"Username: {username}\n"
-                f"Traffic: {plan_gb}GB\n"
-                f"Duration: {plan_days} days\n\n"
-                f"Config:\n{config_text}"
-            )
-        )
+        send_new_config(call.message.chat.id, username, plan_gb, plan_days, result)
         return
-    
-    # Normal payment flow continues here...
+
+    # Normal payment flow
     payment = payment_processor.create_payment(amount, plan_gb)
     
     if "error" in payment:
@@ -291,6 +267,9 @@ def handle_purchase(call):
 
     payment_id = payment['result']['uuid']
     payment_url = payment['result']['url']
+    
+    # Add payment link to spam protection
+    spam_protection.add_payment_link(call.message.chat.id, payment_id)
     
     # Store payment session
     payment_sessions[payment_id] = {
@@ -333,13 +312,17 @@ def handle_purchase(call):
 
 @bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def show_downloads(message):
-    markup = create_downloads_markup()  # Get the markup first
-    bot.reply_to(
-        message,
-        "Download our apps:",
-        reply_markup=markup
-    )
+    if not spam_protection.can_send_message(message.from_user.id):
+        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
+        return
+
+    markup = create_downloads_markup()
+    bot.reply_to(message, "Download our apps:", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text == '📞 Support')
 def show_support(message):
-    bot.reply_to(message, get_support_text()) 
+    if not spam_protection.can_send_message(message.from_user.id):
+        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
+        return
+
+    bot.reply_to(message, get_support_text())
