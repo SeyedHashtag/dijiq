@@ -13,7 +13,8 @@ from utils.admin_plans import *
 from utils.admin_test_mode import *
 from utils.admin_support import *
 from utils.admin_broadcast import *
-from utils.client_welcome import handle_start, register_handlers
+from utils.clientwelcome import handle_start, register_handlers
+from utils.spam_protection import spam_protection
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -21,6 +22,9 @@ def send_welcome(message):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Panel!", reply_markup=markup)
     else:
+        if not spam_protection.can_send_message(message.from_user.id):
+            bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
+            return
         handle_start(message)
 
 # Register client handlers
