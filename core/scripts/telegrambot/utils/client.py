@@ -120,38 +120,66 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             del payment_sessions[payment_id]
             break
 
-        payment_status = status['result'].get('payment_status', '')
-        amount_paid = float(status['result'].get('amount_paid', 0))
-        amount_required = float(status['result'].get('amount', 0))
+        result = status['result']
+        payment_status = result.get('status', '')
+        
+        try:
+            amount_paid = float(result.get('amount_paid_usd', 0))
+            amount_required = float(result.get('amount_usd', 0))
+        except (ValueError, TypeError):
+            amount_paid = 0
+            amount_required = 0
 
-        # Check various payment statuses
-        if payment_status == 'paid' and amount_paid >= amount_required:
-            # Payment successful
-            plans = load_plans()
-            plan_days = plans[str(plan_gb)]['days']
-            
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            username = f"{chat_id}d{timestamp}"
-            
-            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
-            result = run_cli_command(command)
-            
-            update_payment_status(payment_id, 'completed')
-            send_new_config(chat_id, username, plan_gb, plan_days, result)
-            
-            del payment_sessions[payment_id]
-            break
-            
-        elif payment_status == 'paid' and amount_paid < amount_required:
-            # Underpaid
-            bot.send_message(
-                chat_id,
-                f"⚠️ Payment underpaid. Paid: ${amount_paid}, Required: ${amount_required}\n"
-                "Please contact support."
-            )
-            update_payment_status(payment_id, 'underpaid')
-            del payment_sessions[payment_id]
-            break
+        # Check payment status
+        if payment_status == 'paid':
+            if amount_paid < amount_required:
+                # Underpaid
+                bot.send_message(
+                    chat_id,
+                    f"⚠️ Payment underpaid (${amount_paid:.2f} of ${amount_required:.2f})\n"
+                    "Please contact support."
+                )
+                update_payment_status(payment_id, 'underpaid')
+                del payment_sessions[payment_id]
+                break
+            elif amount_paid > amount_required:
+                # Overpaid but process anyway
+                plans = load_plans()
+                plan_days = plans[str(plan_gb)]['days']
+                
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                username = f"{chat_id}d{timestamp}"
+                
+                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
+                result = run_cli_command(command)
+                
+                update_payment_status(payment_id, 'completed_overpaid')
+                send_new_config(chat_id, username, plan_gb, plan_days, result)
+                
+                bot.send_message(
+                    chat_id,
+                    f"⚠️ Note: Payment was overpaid (${amount_paid:.2f} of ${amount_required:.2f})\n"
+                    "Please contact support for a refund."
+                )
+                
+                del payment_sessions[payment_id]
+                break
+            else:
+                # Exact payment
+                plans = load_plans()
+                plan_days = plans[str(plan_gb)]['days']
+                
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                username = f"{chat_id}d{timestamp}"
+                
+                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
+                result = run_cli_command(command)
+                
+                update_payment_status(payment_id, 'completed')
+                send_new_config(chat_id, username, plan_gb, plan_days, result)
+                
+                del payment_sessions[payment_id]
+                break
             
         elif payment_status == 'expired':
             # Payment expired
@@ -160,29 +188,6 @@ def check_payment_status(payment_id, chat_id, plan_gb):
                 "❌ Payment session expired. Please try again."
             )
             update_payment_status(payment_id, 'expired')
-            del payment_sessions[payment_id]
-            break
-            
-        elif payment_status == 'paid_over':
-            # Overpaid but still process
-            plans = load_plans()
-            plan_days = plans[str(plan_gb)]['days']
-            
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            username = f"{chat_id}d{timestamp}"
-            
-            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
-            result = run_cli_command(command)
-            
-            update_payment_status(payment_id, 'completed_overpaid')
-            send_new_config(chat_id, username, plan_gb, plan_days, result)
-            
-            bot.send_message(
-                chat_id,
-                f"⚠️ Note: Payment was overpaid. Paid: ${amount_paid}, Required: ${amount_required}\n"
-                "Please contact support for assistance."
-            )
-            
             del payment_sessions[payment_id]
             break
             
