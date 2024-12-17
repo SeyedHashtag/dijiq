@@ -81,7 +81,20 @@ class CryptomusPayment:
             )
 
             if response.status_code == 200:
-                return response.json()
+                result = response.json()
+                # Add debug logging
+                print(f"Payment status response: {json.dumps(result, indent=2)}")
+                
+                # Extract and normalize payment data
+                if 'result' in result:
+                    payment_data = result['result']
+                    # Ensure consistent field names
+                    payment_data['amount_paid'] = float(payment_data.get('paid_amount', 0))
+                    payment_data['amount'] = float(payment_data.get('amount', 0))
+                    payment_data['payment_status'] = payment_data.get('status', '')
+                    result['result'] = payment_data
+                
+                return result
             return {"error": f"API Error: {response.text}"}
         except Exception as e:
             return {"error": f"Request Error: {str(e)}"} 
