@@ -13,20 +13,7 @@ from utils.admin_plans import *
 from utils.admin_test_mode import *
 from utils.admin_support import *
 from utils.admin_broadcast import *
-from utils.client_welcome import handle_start, register_handlers
-from utils.spam_protection import spam_protection
-
-@bot.middleware_handler(update_types=['message'])
-def handle_messages(bot_instance, message):
-    # Skip spam protection for admins
-    if is_admin(message.from_user.id):
-        return message
-        
-    # Check for spam
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a minute and try again.")
-        return None
-    return message
+from core.scripts.telegrambot.utils.client_welcome import handle_start, register_handlers
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
