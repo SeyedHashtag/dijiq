@@ -9,10 +9,6 @@ lang_manager = LanguageManager()
 
 def handle_start(message):
     """Handle /start command for regular users"""
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
     if str(message.from_user.id) not in lang_manager.user_languages:
         markup = lang_manager.create_language_markup()
         bot.reply_to(
