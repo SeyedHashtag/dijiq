@@ -5,13 +5,13 @@ from utils.payments import CryptomusPayment
 from utils.admin_plans import load_plans
 from datetime import datetime
 from utils.payment_records import add_payment_record, update_payment_status
-from utils.spam_protection import spam_protection
 import threading
 import time
 from utils.test_mode import load_test_mode
 import qrcode
 import io
 from utils.admin_support import get_support_text
+from utils.spam_protection import SpamProtection
 
 # Initialize payment processor
 payment_processor = CryptomusPayment()
@@ -19,12 +19,11 @@ payment_processor = CryptomusPayment()
 # Store payment sessions
 payment_sessions = {}
 
+# Initialize spam protection
+spam_protection = SpamProtection()
+
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
     command = f"python3 {CLI_PATH} list-users"
     result = run_cli_command(command)
     
@@ -40,6 +39,7 @@ def show_my_configs(message):
                 # Get IPv4 config and clean up the warning message
                 command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
                 config_v4 = run_cli_command(command)
+                # Remove the warning message and clean up the text
                 config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
                 config_v4 = config_v4.replace("IPv4:\n", "").strip()
                 
@@ -49,6 +49,7 @@ def show_my_configs(message):
                 qr.save(bio, 'PNG')
                 bio.seek(0)
                 
+                # Format message with the exact style requested
                 caption = (
                     f"📱 Config: {username}\n"
                     f"📊 Traffic: {details.get('used_download_bytes', 0) / (1024**3):.2f}/{details.get('max_download_bytes', 0) / (1024**3):.2f} GB\n"
@@ -70,7 +71,8 @@ def show_my_configs(message):
     except json.JSONDecodeError:
         bot.reply_to(message, "Error retrieving configs. Please try again later.")
 
-def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
+def send_new_config(chat_id, username, plan_gb, plan_days, result):
+    """Send new config to user with QR code and text"""
     try:
         # Get IPv4 config
         command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
@@ -82,7 +84,7 @@ def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
         qr.save(bio, 'PNG')
         bio.seek(0)
         
-        # Format caption with the exact style requested
+        # Format caption
         caption = (
             f"📱 Config: {username}\n"
             f"📊 Traffic: 0.00/{plan_gb:.2f} GB\n"
@@ -128,6 +130,13 @@ def check_payment_status(payment_id, chat_id, plan_gb):
             amount_required = 0
 
         if payment_status == 'paid':
+            plans = load_plans()
+            plan_days = plans[str(plan_gb)]['days']
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            username = f"{chat_id}d{timestamp}"
+            command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
+            result = run_cli_command(command)
+
             if amount_paid < amount_required:
                 bot.send_message(
                     chat_id,
@@ -136,12 +145,6 @@ def check_payment_status(payment_id, chat_id, plan_gb):
                 )
                 update_payment_status(payment_id, 'underpaid')
             elif amount_paid > amount_required:
-                plans = load_plans()
-                plan_days = plans[str(plan_gb)]['days']
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                username = f"{chat_id}d{timestamp}"
-                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
-                result = run_cli_command(command)
                 update_payment_status(payment_id, 'completed_overpaid')
                 send_new_config(chat_id, username, plan_gb, plan_days, result)
                 bot.send_message(
@@ -150,12 +153,6 @@ def check_payment_status(payment_id, chat_id, plan_gb):
                     "Please contact support for a refund."
                 )
             else:
-                plans = load_plans()
-                plan_days = plans[str(plan_gb)]['days']
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                username = f"{chat_id}d{timestamp}"
-                command = f"python3 {CLI_PATH} add-user -u {username} -t {plan_gb} -e {plan_days}"
-                result = run_cli_command(command)
                 update_payment_status(payment_id, 'completed')
                 send_new_config(chat_id, username, plan_gb, plan_days, result)
             
@@ -187,10 +184,6 @@ def extract_config_from_result(result):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase(call):
-    if not spam_protection.can_send_message(call.from_user.id):
-        bot.answer_callback_query(call.id, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
     if not spam_protection.can_create_payment(call.from_user.id):
         bot.answer_callback_query(call.id)
         bot.edit_message_text(
@@ -312,17 +305,13 @@ def handle_purchase(call):
 
 @bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def show_downloads(message):
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
-    markup = create_downloads_markup()
-    bot.reply_to(message, "Download our apps:", reply_markup=markup)
+    markup = create_downloads_markup()  # Get the markup first
+    bot.reply_to(
+        message,
+        "Download our apps:",
+        reply_markup=markup
+    )
 
 @bot.message_handler(func=lambda message: message.text == '📞 Support')
 def show_support(message):
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
-    bot.reply_to(message, get_support_text())
+    bot.reply_to(message, get_support_text()) 
