@@ -5,11 +5,29 @@ define_colors
 update_env_file() {
     local api_token=$1
     local admin_user_ids=$2
+    local env_file="/etc/hysteria/core/scripts/telegrambot/.env"
 
-    cat <<EOL > /etc/hysteria/core/scripts/telegrambot/.env
+    # Save existing Cryptomus credentials if they exist
+    local merchant_id=""
+    local api_key=""
+    if [ -f "$env_file" ]; then
+        merchant_id=$(grep CRYPTOMUS_MERCHANT_ID "$env_file" | cut -d '=' -f2)
+        api_key=$(grep CRYPTOMUS_API_KEY "$env_file" | cut -d '=' -f2)
+    fi
+
+    # Create new .env file
+    cat <<EOL > "$env_file"
 API_TOKEN=$api_token
 ADMIN_USER_IDS=[$admin_user_ids]
 EOL
+
+    # Add back Cryptomus credentials if they existed
+    if [ ! -z "$merchant_id" ]; then
+        echo "CRYPTOMUS_MERCHANT_ID=$merchant_id" >> "$env_file"
+    fi
+    if [ ! -z "$api_key" ]; then
+        echo "CRYPTOMUS_API_KEY=$api_key" >> "$env_file"
+    fi
 }
 
 create_service_file() {
