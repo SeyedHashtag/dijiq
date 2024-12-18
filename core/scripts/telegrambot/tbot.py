@@ -13,7 +13,7 @@ from utils.admin_plans import *
 from utils.admin_test_mode import *
 from utils.admin_support import *
 from utils.admin_broadcast import *
-from utils.clientwelcome import handle_start, register_handlers
+from utils.client_welcome import handle_start, register_handlers
 from utils.spam_protection import spam_protection
 
 @bot.middleware_handler(update_types=['message'])
