@@ -2,7 +2,6 @@ from telebot import types
 from utils.command import bot, is_admin
 from utils.languages import LanguageManager, LANGUAGES, TRANSLATIONS
 from utils.client import show_my_configs, show_purchase_options, show_downloads, show_support
-from utils.spam_protection import spam_protection
 
 # Initialize language manager
 lang_manager = LanguageManager()
@@ -32,10 +31,6 @@ def handle_language_selection(message):
     if is_admin(message.from_user.id):
         return
 
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-
     lang_code = LANGUAGES.get(message.text)
     if not lang_code:
         return
@@ -58,13 +53,6 @@ def handle_language_selection(message):
 
 def handle_client_menu(message):
     """Handle client menu button clicks"""
-    if is_admin(message.from_user.id):
-        return
-
-    if not spam_protection.can_send_message(message.from_user.id):
-        bot.reply_to(message, "⚠️ You are sending messages too quickly. Please wait a moment and try again.")
-        return
-        
     user_lang = lang_manager.get_user_language(message.from_user.id)
     
     # Get all possible menu items for all languages
