@@ -69,9 +69,11 @@ def show_my_configs(message):
 
 def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
     try:
-        # Get IPv4 config
+        # Get IPv4 config and clean up the warning message
         command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
-        config_v4 = run_cli_command(command).replace("IPv4:\n", "").strip()
+        config_v4 = run_cli_command(command)
+        config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
+        config_v4 = config_v4.replace("IPv4:\n", "").strip()
         
         # Create QR code
         qr = qrcode.make(config_v4)
@@ -79,7 +81,6 @@ def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
         qr.save(bio, 'PNG')
         bio.seek(0)
         
-        # Format caption with the exact style requested
         caption = (
             f"📱 Config: {username}\n"
             f"📊 Traffic: 0.00/{plan_gb:.2f} GB\n"
@@ -96,7 +97,7 @@ def send_new_config(chat_id, username, plan_gb, plan_days, result_text):
             reply_markup=create_main_markup(is_admin=False)
         )
     except Exception as e:
-        bot.send_message(chat_id, f"Error generating config QR code: {str(e)}")
+        bot.send_message(chat_id, f"Error generating config: {str(e)}")
 
 def check_payment_status(payment_id, chat_id, plan_gb):
     while True:
