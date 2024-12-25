@@ -8,6 +8,7 @@ from utils.payment_records import add_payment_record, update_payment_status
 import threading
 import time
 from utils.test_mode import load_test_mode
+from utils.test_config import has_used_test_config, mark_test_config_used
 import qrcode
 import io
 from utils.admin_support import get_support_text
@@ -17,6 +18,55 @@ payment_processor = CryptomusPayment()
 
 # Store payment sessions
 payment_sessions = {}
+
+@bot.message_handler(func=lambda message: message.text == '🎁 Test Config')
+def handle_test_config(message):
+    if has_used_test_config(message.from_user.id):
+        bot.reply_to(
+            message,
+            "❌ You have already used your test config. Please purchase a plan to get a new config.",
+            reply_markup=create_main_markup(is_admin=False)
+        )
+        return
+
+    # Create test config
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    username = f"{message.from_user.id}d{timestamp}"
+    
+    # 1GB traffic limit and 30 days expiration
+    command = f"python3 {CLI_PATH} add-user -u {username} -t 1 -e 30"
+    result = run_cli_command(command)
+    
+    # Get IPv4 config and clean up the warning message
+    command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 4"
+    config_v4 = run_cli_command(command)
+    config_v4 = config_v4.replace("Warning: IP4 or IP6 is not set in configs.env. Fetching from ip.gs...\n", "")
+    config_v4 = config_v4.replace("IPv4:\n", "").strip()
+    
+    # Create QR code
+    qr = qrcode.make(config_v4)
+    bio = io.BytesIO()
+    qr.save(bio, 'PNG')
+    bio.seek(0)
+    
+    caption = (
+        f"📱 Config: {username}\n"
+        f"📊 Traffic: 0.00/1.00 GB\n"
+        f"📅 Days: 0/30\n\n"
+        f"📝 Config Text:\n"
+        f"`{config_v4}`"
+    )
+    
+    # Mark test config as used
+    mark_test_config_used(message.from_user.id)
+    
+    bot.send_photo(
+        message.chat.id,
+        photo=bio,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=create_main_markup(is_admin=False)
+    )
 
 @bot.message_handler(func=lambda message: message.text == '📱 My Configs')
 def show_my_configs(message):
