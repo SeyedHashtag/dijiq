@@ -181,9 +181,11 @@ hysteria2_get_user_handler() {
     expiration_date=$(date -d "$account_creation_date + $expiration_days days" +"%Y-%m-%d")
     current_date=$(date +"%Y-%m-%d")
     used_days=$(( ( $(date -d "$current_date" +%s) - $(date -d "$account_creation_date" +%s) ) / 86400 ))
+    
     if [[ $used_days -gt $expiration_days ]]; then
         used_days=$expiration_days
     fi
+    
     echo -e "${green}User Details:${NC}"
     echo -e "Username:         $username"
     echo -e "Password:         $password"
@@ -592,7 +594,7 @@ display_main_menu() {
     echo -e "${green}• IP: ${NC}$IP                ${green}• RAM: ${NC}$RAM"
 
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
-        echo -e "Hysteria2 Core Version: ${cyan}$HCVERSION${NC}"
+        check_core_version
         check_version
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
     echo -e "${yellow}                   ☼ Services Status ☼                   ${NC}"
