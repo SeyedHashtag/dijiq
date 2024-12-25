@@ -163,7 +163,7 @@ hysteria2_get_user_handler() {
     done
 
     user_data=$(python3 "$CLI_PATH" get-user --username "$username" 2>/dev/null)
-    
+
     if [[ $? -ne 0 ]]; then
         echo -e "${red}Error:${NC} User '$username' not found."
         return 1
@@ -185,11 +185,11 @@ hysteria2_get_user_handler() {
     expiration_date=$(date -d "$account_creation_date + $expiration_days days" +"%Y-%m-%d")
     current_date=$(date +"%Y-%m-%d")
     used_days=$(( ( $(date -d "$current_date" +%s) - $(date -d "$account_creation_date" +%s) ) / 86400 ))
-    
+
     if [[ $used_days -gt $expiration_days ]]; then
         used_days=$expiration_days
     fi
-    
+
     echo -e "${green}User Details:${NC}"
     echo -e "Username:         $username"
     echo -e "Password:         $password"
