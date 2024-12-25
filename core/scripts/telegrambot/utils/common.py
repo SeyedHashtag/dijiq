@@ -15,6 +15,7 @@ def create_main_markup(is_admin=False):
         # Client menu
         markup.row('📱 My Configs', '💰 Purchase Plan')
         markup.row('⬇️ Downloads', '📞 Support')
+        markup.row('🎁 Test Config')
     
     return markup
 
