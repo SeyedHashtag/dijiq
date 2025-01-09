@@ -29,7 +29,7 @@ TRANSLATIONS = {
         'my_configs': "📱 پیکربندی‌های من",
         'purchase_plan': "💰 خرید پلن",
         'downloads': "⬇️ دانلود‌ها",
-        'support': "📞 پشتیبانی"
+        'support': "📞 پشتیبانی",
         'test_config': "🎁 کانفیگ تست"
     },
     'tk': {
@@ -39,7 +39,7 @@ TRANSLATIONS = {
         'my_configs': "📱 Meniň konfigurasiýalarym",
         'purchase_plan': "💰 Meýilnama satyn al",
         'downloads': "⬇️ Ýüklemeler",
-        'support': "📞 Goldaw"
+        'support': "📞 Goldaw",
         'test_config': "🎁 Synag konfigurasiýasy"
     },
     'ar': {
@@ -49,7 +49,7 @@ TRANSLATIONS = {
         'my_configs': "📱 إعداداتي",
         'purchase_plan': "💰 شراء باقة",
         'downloads': "⬇️ التحميلات",
-        'support': "📞 الدعم"
+        'support': "📞 الدعم",
         'test_config': "🎁 اختبار التكوين"
     },
     'ru': {
@@ -59,7 +59,7 @@ TRANSLATIONS = {
         'my_configs': "📱 Мои конфигурации",
         'purchase_plan': "💰 Купить план",
         'downloads': "⬇️ Загрузки",
-        'support': "📞 Поддержка"
+        'support': "📞 Поддержка",
         'test_config': "🎁 Тестовая конфигурация"
     }
 }
