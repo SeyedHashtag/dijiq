@@ -19,7 +19,8 @@ TRANSLATIONS = {
         'my_configs': "📱 My Configs",
         'purchase_plan': "💰 Purchase Plan",
         'downloads': "⬇️ Downloads",
-        'support': "📞 Support"
+        'support': "📞 Support",
+        'test_config': "🎁 Test Config"
     },
     'fa': {
         'welcome': "به سرویس VPN ما خوش آمدید! 🌐\n\nدر اینجا می‌توانید:\n📱 مشاهده پیکربندی‌ها\n💰 خرید پلن جدید\n⬇️ دانلود اپلیکیشن‌ها\n📞 پشتیبانی\n\nلطفاً از منوی زیر شروع کنید!",
@@ -29,6 +30,7 @@ TRANSLATIONS = {
         'purchase_plan': "💰 خرید پلن",
         'downloads': "⬇️ دانلود‌ها",
         'support': "📞 پشتیبانی"
+        'test_config': "🎁 کانفیگ تست"
     },
     'tk': {
         'welcome': "VPN Hyzmatymyza hoş geldiňiz! 🌐\n\nBu ýerde siz:\n📱 Konfigurasiýalaryňyzy görüp bilersiňiz\n💰 Täze meýilnama satyn alyp bilersiňiz\n⬇️ Programmalarymyzy ýükläp bilersiňiz\n📞 Goldaw alyp bilersiňiz\n\nBaşlamak üçin aşakdaky menýuny ulanyň!",
@@ -38,6 +40,7 @@ TRANSLATIONS = {
         'purchase_plan': "💰 Meýilnama satyn al",
         'downloads': "⬇️ Ýüklemeler",
         'support': "📞 Goldaw"
+        'test_config': "🎁 Synag konfigurasiýasy"
     },
     'ar': {
         'welcome': "مرحباً بك في خدمة VPN! 🌐\n\nهنا يمكنك:\n📱 عرض الإعدادات\n💰 شراء باقات جديدة\n⬇️ تحميل تطبيقاتنا\n📞 الدعم الفني\n\nيرجى استخدام القائمة أدناه للبدء!",
@@ -47,6 +50,7 @@ TRANSLATIONS = {
         'purchase_plan': "💰 شراء باقة",
         'downloads': "⬇️ التحميلات",
         'support': "📞 الدعم"
+        'test_config': "🎁 اختبار التكوين"
     },
     'ru': {
         'welcome': "Добро пожаловать в наш VPN сервис! 🌐\n\nЗдесь вы можете:\n📱 Просмотреть ваши конфигурации\n💰 Купить новые планы\n⬇️ Скачать наши приложения\n📞 Получить поддержку\n\nИспользуйте меню ниже, чтобы начать!",
@@ -56,6 +60,7 @@ TRANSLATIONS = {
         'purchase_plan': "💰 Купить план",
         'downloads': "⬇️ Загрузки",
         'support': "📞 Поддержка"
+        'test_config': "🎁 Тестовая конфигурация"
     }
 }
 
@@ -115,6 +120,9 @@ class LanguageManager:
         markup.row(
             TRANSLATIONS[lang_code]['downloads'],
             TRANSLATIONS[lang_code]['support']
+        )
+        markup.row(
+            TRANSLATIONS[lang_code]['test_config']
         )
         return markup
 
