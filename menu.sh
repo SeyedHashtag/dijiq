@@ -267,7 +267,9 @@ hysteria2_show_user_uri_handler() {
     fi
 
     if [[ -n "$flags" ]]; then
-        python3 $CLI_PATH show-user-uri --username "$username" -a -qr $flags
+        python3 $CLI_PATH show-user-uri -u "$username" -a -qr $flags
+    else
+        python3 $CLI_PATH show-user-uri -u "$username" -a -qr
     fi
 }
 
@@ -707,9 +709,10 @@ display_advance_menu() {
     echo -e "${cyan}[9] ${NC}↝ Change SNI Hysteria2"
     echo -e "${cyan}[10] ${NC}↝ Manage OBFS"
     echo -e "${cyan}[11] ${NC}↝ Change IPs(4-6)"
-    echo -e "${cyan}[12] ${NC}↝ Restart Hysteria2"
-    echo -e "${cyan}[13] ${NC}↝ Update Core Hysteria2"
-    echo -e "${red}[14] ${NC}↝ Uninstall Hysteria2"
+    echo -e "${cyan}[12] ${NC}↝ Update geo Files"
+    echo -e "${cyan}[13] ${NC}↝ Restart Hysteria2"
+    echo -e "${cyan}[14] ${NC}↝ Update Core Hysteria2"
+    echo -e "${red}[15] ${NC}↝ Uninstall Hysteria2"
     echo -e "${red}[0] ${NC}↝ Back to Main Menu"
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
     echo -ne "${yellow}➜ Enter your option: ${NC}"
@@ -734,9 +737,10 @@ advance_menu() {
             9) hysteria2_change_sni_handler ;;
             10) obfs_handler ;;
             11) edit_ips ;;
-            12) python3 $CLI_PATH restart-hysteria2 ;;
-            13) python3 $CLI_PATH update-hysteria2 ;;
-            14) python3 $CLI_PATH uninstall-hysteria2 ;;
+            12) python3 $CLI_PATH update-geo ;;
+            13) python3 $CLI_PATH restart-hysteria2 ;;
+            14) python3 $CLI_PATH update-hysteria2 ;;
+            15) python3 $CLI_PATH uninstall-hysteria2 ;;
             0) return ;;
             *) echo "Invalid option. Please try again." ;;
         esac
@@ -744,7 +748,6 @@ advance_menu() {
         read -rp "Press Enter to continue..."
     done
 }
-
 # Main function to run the script
 define_colors
 main_menu
