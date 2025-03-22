@@ -33,7 +33,7 @@ class VpnApiClient:
             Exception: If API call fails
         """
         # Ensure the endpoint has the correct format - may need adjustment based on your API
-        endpoint = "/users/"
+        endpoint = "/v1/users/"
         if not endpoint.startswith('/'):
             endpoint = '/' + endpoint
         
