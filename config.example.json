@@ -1,0 +1,5 @@
+{
+  "telegram_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "vpn_api_url": "https://your-vpn-api-url.com",
+  "admin_users": [123456789]
+}
