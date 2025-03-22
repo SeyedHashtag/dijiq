@@ -1,4 +1,5 @@
 import logging
+import os
 from telegram.ext import Updater
 from src.utils.config import load_config
 from src.bot.handlers import setup_handlers
@@ -9,6 +10,10 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Set debug level for API client if DEBUG environment variable is set
+if os.environ.get('DEBUG', '').lower() in ('true', '1', 'yes'):
+    logging.getLogger('src.api.vpn_client').setLevel(logging.DEBUG)
 
 def main():
     """Start the bot."""

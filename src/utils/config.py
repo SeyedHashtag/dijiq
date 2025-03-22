@@ -1,26 +1,45 @@
-import json
 import os
 from typing import Dict, Any, List
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 
 def load_config() -> Dict[str, Any]:
     """
-    Load configuration from config.json file.
+    Load configuration from environment variables.
     
     Returns:
         Dictionary with configuration values
+        
+    Raises:
+        EnvironmentError: If required environment variables are not set
     """
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                              'config.json')
+    telegram_token = os.environ.get('TELEGRAM_TOKEN')
+    vpn_api_url = os.environ.get('VPN_API_URL')
+    admin_users_str = os.environ.get('ADMIN_USERS')
     
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(
-            f"Configuration file not found at {config_path}. "
-            "Please copy config.example.json to config.json and update the values."
-        )
+    # Check if all required environment variables are set
+    if not telegram_token:
+        raise EnvironmentError("TELEGRAM_TOKEN environment variable is not set")
     
-    with open(config_path, 'r') as f:
-        return json.load(f)
+    if not vpn_api_url:
+        raise EnvironmentError("VPN_API_URL environment variable is not set")
+    
+    if not admin_users_str:
+        raise EnvironmentError("ADMIN_USERS environment variable is not set")
+    
+    # Parse admin users from comma-separated string to list of integers
+    try:
+        admin_users = [int(id.strip()) for id in admin_users_str.split(',')]
+    except ValueError:
+        raise EnvironmentError("ADMIN_USERS must be a comma-separated list of numeric Telegram user IDs")
+    
+    return {
+        "telegram_token": telegram_token,
+        "vpn_api_url": vpn_api_url,
+        "admin_users": admin_users
+    }
 
 
 def is_admin(user_id: int) -> bool:

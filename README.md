@@ -20,7 +20,7 @@ This will:
 - Install all required packages
 - Clone the repository to /opt/dijiq
 - Set up a Python virtual environment
-- Ask for your Telegram bot token and API URL
+- Ask for your credentials and set up environment variables
 - Create a systemd service for auto-starting the bot
 - Add a convenient command alias
 
@@ -31,12 +31,33 @@ This will:
    ```
    pip install -r requirements.txt
    ```
-3. Copy `config.example.json` to `config.json` and update with your settings:
+3. Set required environment variables:
    ```
-   cp config.example.json config.json
+   cp .env.example .env
+   # Edit .env with your credentials
    ```
-4. Edit `config.json` with your Telegram bot token and API URL
-5. Add your Telegram user ID to the `admin_users` list
+4. Start the bot:
+   ```
+   python main.py
+   ```
+
+## Environment Variables
+
+The bot requires the following environment variables:
+
+- `TELEGRAM_TOKEN`: Your Telegram bot token
+- `VPN_API_URL`: URL of your VPN service API
+- `ADMIN_USERS`: Comma-separated list of Telegram user IDs with admin access
+
+You can set these directly in your environment for production use:
+
+```bash
+export TELEGRAM_TOKEN="your_token_here"
+export VPN_API_URL="https://your-api-url.com"
+export ADMIN_USERS="123456789,987654321"
+```
+
+Or use a `.env` file which will be loaded automatically.
 
 ## Usage
 
@@ -56,14 +77,6 @@ After installation, you can:
 - `/start` - Start the bot and show main menu
 - `/adduser` - Start the process of adding a new user
 - `/help` - Show help information
-
-## Configuration
-
-The `config.json` file contains:
-
-- `telegram_token`: Your Telegram bot token
-- `vpn_api_url`: URL of your VPN service API
-- `admin_users`: List of Telegram user IDs allowed to use the bot
 
 ## License
 

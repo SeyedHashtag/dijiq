@@ -82,8 +82,8 @@ setup_dijiq() {
     source venv/bin/activate
     pip install -r requirements.txt && echo -e "Installed Python requirements ${GREEN}$CHECKMARK${NC}"
     
-    # Configure the bot
-    if [ ! -f "config.json" ]; then
+    # Configure the bot using environment variables
+    if [ ! -f ".env" ]; then
         echo -e "${YELLOW}Please provide the following credentials for your bot:${NC}"
         
         # Ask for Telegram bot token
@@ -95,21 +95,27 @@ setup_dijiq() {
         # Ask for admin Telegram user ID
         read -p "Enter your Telegram user ID (for admin access): " admin_id
         
-        # Create the config file
-        cat > config.json << EOF
-{
-  "telegram_token": "$telegram_token",
-  "vpn_api_url": "$api_url",
-  "admin_users": [$admin_id]
-}
+        # Create the .env file
+        cat > "$INSTALL_DIR/.env" << EOF
+# Telegram Bot Token
+TELEGRAM_TOKEN=$telegram_token
+
+# VPN API URL
+VPN_API_URL=$api_url
+
+# Admin User IDs (comma-separated list)
+ADMIN_USERS=$admin_id
 EOF
-        echo -e "Configuration file created ${GREEN}$CHECKMARK${NC}"
+        echo -e "Environment configuration file created ${GREEN}$CHECKMARK${NC}"
+        
+        # Also configure systemd service to use these environment variables
+        setup_env_service=true
     else
-        echo -e "Configuration file already exists ${GREEN}$CHECKMARK${NC}"
+        echo -e "Environment configuration file already exists ${GREEN}$CHECKMARK${NC}"
     fi
 }
 
-# Create a systemd service for auto-start
+# Create a systemd service for auto-start with environment variables
 create_service() {
     cat > /etc/systemd/system/dijiq.service << EOF
 [Unit]
@@ -123,6 +129,7 @@ WorkingDirectory=/opt/dijiq
 ExecStart=/opt/dijiq/venv/bin/python /opt/dijiq/main.py
 Restart=always
 RestartSec=10
+# Environment variables are loaded from .env file using python-dotenv
 
 [Install]
 WantedBy=multi-user.target
@@ -157,6 +164,9 @@ main() {
     echo -e "- ${YELLOW}Status${NC}: systemctl status dijiq"
     echo -e "- ${RED}Stop${NC}:  systemctl stop dijiq"
     echo -e "${YELLOW}You can also run the bot manually using the 'dijiq' command after restarting your shell.${NC}"
+    
+    echo -e "${YELLOW}SECURITY NOTE: For production use, consider setting environment variables directly${NC}"
+    echo -e "${YELLOW}in the system rather than using a .env file for better security.${NC}"
     
     read -p "Do you want to start the bot now? (y/n) " -n 1 -r
     echo
