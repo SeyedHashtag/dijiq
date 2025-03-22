@@ -18,6 +18,7 @@ def load_config() -> Dict[str, Any]:
     telegram_token = os.environ.get('TELEGRAM_TOKEN')
     vpn_api_url = os.environ.get('VPN_API_URL')
     admin_users_str = os.environ.get('ADMIN_USERS')
+    api_key = os.environ.get('API_KEY')
     
     # Check if all required environment variables are set
     if not telegram_token:
@@ -38,7 +39,8 @@ def load_config() -> Dict[str, Any]:
     return {
         "telegram_token": telegram_token,
         "vpn_api_url": vpn_api_url,
-        "admin_users": admin_users
+        "admin_users": admin_users,
+        "api_key": api_key  # Can be None if not set
     }
 
 

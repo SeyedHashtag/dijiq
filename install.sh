@@ -95,6 +95,9 @@ setup_dijiq() {
         # Ask for admin Telegram user ID
         read -p "Enter your Telegram user ID (for admin access): " admin_id
         
+        # Ask for API key (optional)
+        read -p "Enter your VPN API key (leave blank if not required): " api_key
+        
         # Create the .env file
         cat > "$INSTALL_DIR/.env" << EOF
 # Telegram Bot Token
@@ -105,11 +108,14 @@ VPN_API_URL=$api_url
 
 # Admin User IDs (comma-separated list)
 ADMIN_USERS=$admin_id
+
+# API Key for authentication
+API_KEY=$api_key
+
+# Set to false by default, can be enabled for debugging
+DEBUG=false
 EOF
         echo -e "Environment configuration file created ${GREEN}$CHECKMARK${NC}"
-        
-        # Also configure systemd service to use these environment variables
-        setup_env_service=true
     else
         echo -e "Environment configuration file already exists ${GREEN}$CHECKMARK${NC}"
     fi

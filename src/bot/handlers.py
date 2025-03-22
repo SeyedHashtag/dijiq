@@ -20,7 +20,10 @@ USERNAME, PASSWORD, TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(5)
 
 # Load configuration
 config = load_config()
-vpn_client = VpnApiClient(config['vpn_api_url'])
+vpn_client = VpnApiClient(
+    base_url=config['vpn_api_url'],
+    api_key=config.get('api_key')  # Pass API key if available
+)
 
 # Command handlers
 def start(update: Update, context: CallbackContext) -> None:

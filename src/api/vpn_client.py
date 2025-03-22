@@ -7,10 +7,15 @@ from src.models.user import VpnUser
 logger = logging.getLogger(__name__)
 
 class VpnApiClient:
-    def __init__(self, base_url: str, auth_token: Optional[str] = None):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, auth_token: Optional[str] = None):
         self.base_url = base_url.rstrip('/')
         self.headers = {"Content-Type": "application/json"}
         
+        # Add API key to headers if provided
+        if api_key:
+            self.headers["X-API-Key"] = api_key
+        
+        # Add Bearer token if provided (alternative authentication method)
         if auth_token:
             self.headers["Authorization"] = f"Bearer {auth_token}"
     
