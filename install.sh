@@ -149,8 +149,7 @@ EOF
 # Create a bash alias for controlling the bot
 create_alias() {
     if ! grep -q "alias dijiq=" ~/.bashrc; then
-        # Change from main.py to cli.py to avoid starting a second bot instance
-        echo "alias dijiq='/usr/local/bin/dijiq'" >> ~/.bashrc
+        echo "alias dijiq='cd /opt/dijiq && source venv/bin/activate && python cli.py'" >> ~/.bashrc
         echo -e "Created 'dijiq' command alias ${GREEN}$CHECKMARK${NC}"
     fi
 }
@@ -161,14 +160,7 @@ create_symlink() {
     
     cat > "$SYMLINK_PATH" << EOF
 #!/bin/bash
-# Check if we're running directly or with arguments
-if [ \$# -eq 0 ]; then
-    # When run without arguments, show the CLI status instead of starting a bot instance
-    cd /opt/dijiq && source venv/bin/activate && python cli.py
-else
-    # With arguments, pass them to the CLI
-    cd /opt/dijiq && source venv/bin/activate && python cli.py "\$@"
-fi
+cd /opt/dijiq && source venv/bin/activate && python cli.py "\$@"
 EOF
     
     chmod +x "$SYMLINK_PATH"
