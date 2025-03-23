@@ -6,8 +6,10 @@ A Telegram bot for managing VPN users through your service API.
 
 - Add new VPN users with custom settings
 - Automatic secure password generation
+- Automatic username generation based on Telegram ID
 - Role-based access control
 - Modular design for easy extension
+- Automatic updates via built-in updater
 
 ## Quick Installation (Linux)
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=Dijiq VPN Bot Update Service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dijiq/update.sh
+User=root

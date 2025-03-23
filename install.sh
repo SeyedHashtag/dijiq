@@ -205,6 +205,30 @@ EOF
     echo -e "Created 'dijiq' command in /usr/local/bin ${GREEN}$CHECKMARK${NC}"
 }
 
+# Set up automatic updater
+setup_updater() {
+    echo -e "${GREEN}Setting up automatic updater...${NC}"
+    
+    # Install systemd timer and service for auto-updates
+    cp "$INSTALL_DIR/systemd/dijiq-updater.service" /etc/systemd/system/
+    cp "$INSTALL_DIR/systemd/dijiq-updater.timer" /etc/systemd/system/
+    
+    # Make update script executable
+    chmod +x "$INSTALL_DIR/update.sh"
+    
+    # Create log file
+    touch /var/log/dijiq-update.log
+    chmod 644 /var/log/dijiq-update.log
+    
+    # Enable and start the timer
+    systemctl daemon-reload
+    systemctl enable dijiq-updater.timer
+    systemctl start dijiq-updater.timer
+    
+    echo -e "Automatic updater configured ${GREEN}$CHECKMARK${NC}"
+    echo -e "The bot will check for updates daily"
+}
+
 # Main installation process
 main() {
     echo -e "${GREEN}Installing Dijiq VPN Bot...${NC}"
@@ -215,6 +239,7 @@ main() {
     create_service
     create_alias
     create_symlink
+    setup_updater  # Add this line to set up the automatic updater
     
     echo -e "${GREEN}Installation complete!${NC}"
     echo -e "${YELLOW}The bot has been installed as a system service.${NC}"
