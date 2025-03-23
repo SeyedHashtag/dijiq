@@ -8,6 +8,7 @@ A Telegram bot for managing VPN users through your service API.
 - Automatic secure password generation
 - Role-based access control
 - Modular design for easy extension
+- Command-line interface for management
 
 ## Quick Installation (Linux)
 
@@ -71,7 +72,14 @@ After installation, you can:
   systemctl stop dijiq    # Stop the bot
   ```
 
-- Run manually with the `dijiq` command (after restarting your shell)
+- Use the CLI command:
+  ```
+  dijiq                   # Show bot status
+  dijiq start             # Start the bot
+  dijiq stop              # Stop the bot
+  dijiq restart           # Restart the bot
+  dijiq update            # Check for and apply updates
+  ```
 
 ### Bot Commands
 
