@@ -6,6 +6,7 @@ from telegram.ext import (
     MessageHandler, 
     Filters
 )
+import datetime
 from src.models.user import VpnUser
 from src.api.vpn_client import VpnApiClient
 from src.utils.config import load_config, is_admin
@@ -17,7 +18,7 @@ from src.bot.keyboards import (
 )
 
 # Conversation states
-USERNAME, TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(4)  # Removed PASSWORD state
+TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(3)  # Removed USERNAME state
 
 # Load configuration
 config = load_config()
@@ -25,6 +26,11 @@ vpn_client = VpnApiClient(
     base_url=config['vpn_api_url'],
     api_key=config.get('api_key')  # Pass API key if available
 )
+
+def generate_username(user_id):
+    """Generate a username based on Telegram ID and timestamp."""
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"{user_id}d{timestamp}"
 
 # Command handlers
 def start(update: Update, context: CallbackContext) -> None:
@@ -60,7 +66,7 @@ def help_command(update: Update, context: CallbackContext) -> None:
 
 # Add user conversation
 def add_user_start(update: Update, context: CallbackContext) -> int:
-    """Start the add user conversation."""
+    """Start the add user conversation and generate username automatically."""
     user = update.effective_user
     
     if not is_admin(user.id):
@@ -69,36 +75,20 @@ def add_user_start(update: Update, context: CallbackContext) -> int:
         )
         return ConversationHandler.END
     
-    update.message.reply_text(
-        "Let's add a new VPN user.\n\n"
-        "What should be the username? (letters and numbers only)",
-        reply_markup=get_cancel_keyboard()
-    )
-    return USERNAME
-
-def username_handler(update: Update, context: CallbackContext) -> int:
-    """Handle username input and generate random password."""
-    username = update.message.text.strip()
-    
-    # Validate username
-    if not username.isalnum():
-        update.message.reply_text(
-            "Username must contain only letters and numbers. Please try again:"
-        )
-        return USERNAME
-    
-    # Store username and generate random password
+    # Generate username automatically using the user's Telegram ID and timestamp
+    username = generate_username(user.id)
     context.user_data['username'] = username
+    
+    # Generate random password
     context.user_data['password'] = generate_random_password(32)
     
-    # Skip to traffic limit input
     update.message.reply_text(
+        "Let's add a new VPN user.\n\n"
         f"Username: {username}\n\n"
-        "Now, enter the traffic limit in GB (e.g., 50):"
+        "Enter the traffic limit in GB (e.g., 50):",
+        reply_markup=get_cancel_keyboard()
     )
     return TRAFFIC_LIMIT
-
-# The password_handler function is removed since we're generating passwords automatically
 
 def traffic_limit_handler(update: Update, context: CallbackContext) -> int:
     """Handle traffic limit input."""
@@ -202,8 +192,7 @@ add_user_conversation_handler = ConversationHandler(
         MessageHandler(Filters.regex('^➕ Add New User$'), add_user_start)
     ],
     states={
-        USERNAME: [MessageHandler(Filters.text & ~Filters.command, username_handler)],
-        # PASSWORD state is removed
+        # USERNAME state is removed as it's generated automatically
         TRAFFIC_LIMIT: [MessageHandler(Filters.text & ~Filters.command, traffic_limit_handler)],
         EXPIRATION_DAYS: [MessageHandler(Filters.text & ~Filters.command, expiration_days_handler)],
         CONFIRMATION: [MessageHandler(Filters.text & ~Filters.command, confirmation_handler)]
