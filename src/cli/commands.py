@@ -29,6 +29,11 @@ def get_service_status():
 
 def start_service():
     """Start the dijiq service."""
+    # Check if the service is already running to prevent conflicts
+    if get_service_status() == "running":
+        console.print("[yellow]The bot service is already running.[/yellow]")
+        return
+        
     try:
         subprocess.run(["sudo", "systemctl", "start", "dijiq"], check=True)
         console.print("[green]Service started successfully![/green]")
@@ -62,7 +67,7 @@ def check_updates():
         
         # Display changelog
         changelog = get_changelog(current_version, latest_version)
-        if changelog:
+        if (changelog):
             console.print(Panel(
                 changelog,
                 title="[bold]Changelog[/bold]",
@@ -132,8 +137,16 @@ def show_status():
     
     console.print(table)
     
+    # Add helpful command hints
+    console.print("\n[bold]Available commands:[/bold]")
+    console.print("  [cyan]dijiq start[/cyan]    - Start the bot service")
+    console.print("  [cyan]dijiq stop[/cyan]     - Stop the bot service")
+    console.print("  [cyan]dijiq restart[/cyan]  - Restart the bot service")
+    console.print("  [cyan]dijiq update[/cyan]   - Check for and apply updates")
+    console.print("  [cyan]dijiq status[/cyan]   - Show this status screen")
+    
     if is_update_available:
-        console.print("[yellow]To update, run: dijiq update[/yellow]")
+        console.print("\n[yellow]Update available! Run: dijiq update[/yellow]")
 
 def run_cli():
     """Run the CLI application."""
