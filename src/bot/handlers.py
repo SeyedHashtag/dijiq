@@ -9,6 +9,7 @@ from telegram.ext import (
 from src.models.user import VpnUser
 from src.api.vpn_client import VpnApiClient
 from src.utils.config import load_config, is_admin
+from src.utils.password import generate_random_password
 from src.bot.keyboards import (
     get_main_menu_keyboard, 
     get_cancel_keyboard,
@@ -16,7 +17,7 @@ from src.bot.keyboards import (
 )
 
 # Conversation states
-USERNAME, PASSWORD, TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(5)
+USERNAME, TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(4)  # Removed PASSWORD state
 
 # Load configuration
 config = load_config()
@@ -76,7 +77,7 @@ def add_user_start(update: Update, context: CallbackContext) -> int:
     return USERNAME
 
 def username_handler(update: Update, context: CallbackContext) -> int:
-    """Handle username input."""
+    """Handle username input and generate random password."""
     username = update.message.text.strip()
     
     # Validate username
@@ -86,28 +87,18 @@ def username_handler(update: Update, context: CallbackContext) -> int:
         )
         return USERNAME
     
+    # Store username and generate random password
     context.user_data['username'] = username
+    context.user_data['password'] = generate_random_password(32)
+    
+    # Skip to traffic limit input
     update.message.reply_text(
         f"Username: {username}\n\n"
-        "Now, please enter a password:",
-    )
-    return PASSWORD
-
-def password_handler(update: Update, context: CallbackContext) -> int:
-    """Handle password input."""
-    password = update.message.text.strip()
-    
-    if len(password) < 6:
-        update.message.reply_text(
-            "Password must be at least 6 characters long. Please try again:"
-        )
-        return PASSWORD
-    
-    context.user_data['password'] = password
-    update.message.reply_text(
         "Now, enter the traffic limit in GB (e.g., 50):"
     )
     return TRAFFIC_LIMIT
+
+# The password_handler function is removed since we're generating passwords automatically
 
 def traffic_limit_handler(update: Update, context: CallbackContext) -> int:
     """Handle traffic limit input."""
@@ -138,7 +129,7 @@ def expiration_days_handler(update: Update, context: CallbackContext) -> int:
         
         context.user_data['expiration_days'] = expiration_days
         
-        # Show summary for confirmation
+        # Show summary for confirmation (including the generated password)
         update.message.reply_text(
             "Please confirm the following information:\n\n"
             f"Username: {context.user_data['username']}\n"
@@ -212,7 +203,7 @@ add_user_conversation_handler = ConversationHandler(
     ],
     states={
         USERNAME: [MessageHandler(Filters.text & ~Filters.command, username_handler)],
-        PASSWORD: [MessageHandler(Filters.text & ~Filters.command, password_handler)],
+        # PASSWORD state is removed
         TRAFFIC_LIMIT: [MessageHandler(Filters.text & ~Filters.command, traffic_limit_handler)],
         EXPIRATION_DAYS: [MessageHandler(Filters.text & ~Filters.command, expiration_days_handler)],
         CONFIRMATION: [MessageHandler(Filters.text & ~Filters.command, confirmation_handler)]
