@@ -98,9 +98,9 @@ update_bot() {
     log_message "${GREEN}Update completed successfully! New version: $(cat VERSION)${NC}"
     
     # Display changelog if available
-    if [ -f "CHANGELOG.md" ]; then
+    if [ -f "changelog" ]; then
         log_message "${YELLOW}Changelog:${NC}"
-        cat CHANGELOG.md | head -n 10 >> "$LOG_FILE"  # Log first 10 lines
+        cat changelog | head -n 10 >> "$LOG_FILE"  # Log first 10 lines
     fi
     
     return 0
