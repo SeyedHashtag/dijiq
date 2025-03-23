@@ -1,4 +1,4 @@
-from telegram import Update, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ParseMode
 from telegram.ext import (
     CallbackContext, 
     ConversationHandler, 
@@ -17,10 +17,6 @@ from src.bot.keyboards import (
     get_cancel_keyboard,
     get_remove_keyboard
 )
-from src.db.storage import Database
-
-# Initialize the database
-db = Database()
 
 # Conversation states
 TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(3)
@@ -45,69 +41,32 @@ def start(update: Update, context: CallbackContext) -> None:
     """Start command handler."""
     user = update.effective_user
     
-    # Store or update user in database (whether admin or client)
-    if user.id:
-        db.add_client(
-            telegram_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name
+    if not is_admin(user.id):
+        update.message.reply_text(
+            "Sorry, you are not authorized to use this bot."
         )
+        return
     
-    # Different experience for admins vs regular clients
-    if is_admin(user.id):
-        # Admin interface
-        update.message.reply_text(
-            f"Hello {user.first_name}! I'm your VPN User Management Bot.\n\n"
-            "As an admin, you can manage users and plans:",
-            reply_markup=get_main_menu_keyboard()
-        )
-    else:
-        # Client interface
-        keyboard = [
-            [InlineKeyboardButton("📦 View Plans", callback_data="view_plans")],
-            [InlineKeyboardButton("📊 My Subscriptions", callback_data="my_subscriptions")],
-            [InlineKeyboardButton("📋 Payment History", callback_data="payment_history")],
-            [InlineKeyboardButton("ℹ️ Help & Support", callback_data="help_support")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        update.message.reply_text(
-            f"Hello {user.first_name}! Welcome to the VPN service.\n\n"
-            "What would you like to do today?",
-            reply_markup=reply_markup
-        )
+    update.message.reply_text(
+        f"Hello {user.first_name}! I'm your VPN User Management Bot.\n\n"
+        "Use the keyboard below to navigate:",
+        reply_markup=get_main_menu_keyboard()
+    )
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Help command handler."""
-    user = update.effective_user
-    
-    if is_admin(user.id):
-        # Admin help
-        update.message.reply_text(
-            "🔹 *VPN User Management Bot Help* 🔹\n\n"
-            "*Admin Commands*:\n"
-            "/start - Start the bot\n"
-            "/adduser - Add a new VPN user\n"
-            "/plans - Manage subscription plans\n"
-            "/addplan - Add a new subscription plan\n"
-            "/editplan - Edit an existing plan\n"
-            "/deleteplan - Delete/deactivate a plan\n"
-            "/help - Show this help message",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    else:
-        # Client help
-        update.message.reply_text(
-            "🔹 *VPN Service Help* 🔹\n\n"
-            "*Commands*:\n"
-            "/start - Main menu\n"
-            "/plans - View available plans\n"
-            "/subscriptions - View your active subscriptions\n"
-            "/help - Show this help message\n\n"
-            "For further assistance, please contact support.",
-            parse_mode=ParseMode.MARKDOWN
-        )
+    update.message.reply_text(
+        "🔹 *VPN User Management Bot Help* 🔹\n\n"
+        "*Commands*:\n"
+        "/start - Start the bot\n"
+        "/adduser - Add a new VPN user\n"
+        "/help - Show this help message\n\n"
+        "*Adding a user*:\n"
+        "1. Click '➕ Add New User' or use /adduser\n"
+        "2. Follow the prompts to enter user details\n"
+        "3. Confirm the information",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 # Add user conversation
 def add_user_start(update: Update, context: CallbackContext) -> int:
@@ -286,6 +245,5 @@ def setup_handlers(dispatcher):
     dispatcher.add_handler(CommandHandler("help", help_command))
     dispatcher.add_handler(add_user_conversation_handler)
     
-    # Note: We no longer have a fallback handler that sends all text to start
-    # This is intentional to avoid conflicts with client handlers
-    # Only add admin-specific fallbacks here
+    # Add a fallback handler
+    dispatcher.add_handler(MessageHandler(Filters.text, start))
