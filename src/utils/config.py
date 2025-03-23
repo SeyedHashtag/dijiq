@@ -20,6 +20,14 @@ def load_config() -> Dict[str, Any]:
     admin_users_str = os.environ.get('ADMIN_USERS')
     api_key = os.environ.get('API_KEY')
     
+    # VPN configuration parameters
+    vpn_server = os.environ.get('VPN_SERVER')
+    vpn_port = os.environ.get('VPN_PORT')
+    obfs_password = os.environ.get('OBFS_PASSWORD')
+    pin_sha256 = os.environ.get('PIN_SHA256')
+    insecure = os.environ.get('INSECURE', '1')  # Default to 1 (true) if not set
+    sni = os.environ.get('SNI')
+    
     # Check if all required environment variables are set
     if not telegram_token:
         raise EnvironmentError("TELEGRAM_TOKEN environment variable is not set")
@@ -40,7 +48,13 @@ def load_config() -> Dict[str, Any]:
         "telegram_token": telegram_token,
         "vpn_api_url": vpn_api_url,
         "admin_users": admin_users,
-        "api_key": api_key  # Can be None if not set
+        "api_key": api_key,  # Can be None if not set
+        "vpn_server": vpn_server,
+        "vpn_port": vpn_port,
+        "obfs_password": obfs_password,
+        "pin_sha256": pin_sha256,
+        "insecure": insecure,
+        "sni": sni
     }
 
 
