@@ -149,22 +149,9 @@ EOF
 # Create a bash alias for controlling the bot
 create_alias() {
     if ! grep -q "alias dijiq=" ~/.bashrc; then
-        echo "alias dijiq='cd /opt/dijiq && source venv/bin/activate && python cli.py'" >> ~/.bashrc
+        echo "alias dijiq='cd /opt/dijiq && source venv/bin/activate && python main.py'" >> ~/.bashrc
         echo -e "Created 'dijiq' command alias ${GREEN}$CHECKMARK${NC}"
     fi
-}
-
-# Create a symlink for global access
-create_symlink() {
-    SYMLINK_PATH="/usr/local/bin/dijiq"
-    
-    cat > "$SYMLINK_PATH" << EOF
-#!/bin/bash
-cd /opt/dijiq && source venv/bin/activate && python cli.py "\$@"
-EOF
-    
-    chmod +x "$SYMLINK_PATH"
-    echo -e "Created 'dijiq' command in /usr/local/bin ${GREEN}$CHECKMARK${NC}"
 }
 
 # Main installation process
@@ -176,7 +163,6 @@ main() {
     setup_dijiq
     create_service
     create_alias
-    create_symlink
     
     echo -e "${GREEN}Installation complete!${NC}"
     echo -e "${YELLOW}The bot has been installed as a system service.${NC}"
