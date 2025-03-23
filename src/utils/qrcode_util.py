@@ -27,12 +27,9 @@ def get_vpn_config_url(username: str, password: str) -> str:
     insecure = os.environ.get('INSECURE', '1')
     sni = os.environ.get('SNI', 'example.com')
     
-    # URL encode the password (: is replaced with %3A)
-    encoded_password = urllib.parse.quote(password)
-    
-    # Format the URL
+    # Format the URL (password is already URL-encoded with %3A)
     config_url = (
-        f"hy2://{username}%3A{encoded_password}@{server}:{port}?"
+        f"hy2://{username}%3A{password}@{server}:{port}?"
         f"obfs=salamander&obfs-password={obfs_password}&"
         f"pinSHA256={pin_sha256}&insecure={insecure}&sni={sni}#{username}-IPv4"
     )
