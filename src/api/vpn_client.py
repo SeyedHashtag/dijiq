@@ -1,23 +1,40 @@
 import requests
+import json
 import logging
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 from src.models.user import VpnUser
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 class VpnApiClient:
-    def __init__(self, base_url: str, api_key: Optional[str] = None, auth_token: Optional[str] = None):
-        self.base_url = base_url.rstrip('/')
-        self.headers = {"Content-Type": "application/json"}
+    def __init__(self, base_url: str, api_key: Optional[str] = None):
+        """
+        Initialize the VPN API client.
         
-        # Add API key to headers if provided
+        Args:
+            base_url: Base URL of the API
+            api_key: API key or token for authentication
+        """
+        # Ensure base URL ends with a slash
+        if not base_url.endswith('/'):
+            base_url += '/'
+            
+        self.base_url = base_url
+        self.api_key = api_key
+        
+        # Define API endpoints
+        self.users_endpoint = f"{self.base_url}api/v1/users/"
+        
+        # Set default headers
+        self.headers = {
+            'accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+        
+        # Add authorization if token is provided
         if api_key:
-            self.headers["X-API-Key"] = api_key
-        
-        # Add Bearer token if provided (alternative authentication method)
-        if auth_token:
-            self.headers["Authorization"] = f"Bearer {auth_token}"
+            self.headers['Authorization'] = api_key
     
     def add_user(self, user: VpnUser) -> Dict[str, Any]:
         """
@@ -32,20 +49,26 @@ class VpnApiClient:
         Raises:
             Exception: If API call fails
         """
-        # Ensure the endpoint has the correct format - may need adjustment based on your API
-        endpoint = "/v1/users/"
-        if not endpoint.startswith('/'):
-            endpoint = '/' + endpoint
+        # Prepare the data payload
+        data = {
+            "username": user.username,
+            "traffic_limit": user.traffic_limit,
+            "expiration_days": user.expiration_days
+        }
         
-        url = f"{self.base_url}{endpoint}"
-        
-        logger.info(f"Sending request to: {url}")
-        logger.debug(f"Request payload: {user.to_dict()}")
+        logger.info(f"Sending request to: {self.users_endpoint}")
+        logger.debug(f"Request payload: {data}")
         
         try:
-            response = requests.post(url, json=user.to_dict(), headers=self.headers)
-            logger.debug(f"Response status code: {response.status_code}")
-            logger.debug(f"Response content: {response.text[:200]}...")  # Log first 200 chars of response
+            # Send the POST request
+            response = requests.post(
+                self.users_endpoint,
+                headers=self.headers,
+                json=data
+            )
+            
+            logger.debug(f"API Response Status: {response.status_code}")
+            logger.debug(f"API Response Body: {response.text[:200]}...")
             
             # Raise for HTTP errors
             response.raise_for_status()
@@ -54,10 +77,10 @@ class VpnApiClient:
             if response.text.strip():
                 try:
                     return response.json()
-                except ValueError as json_err:
+                except json.JSONDecodeError as json_err:
                     logger.error(f"Failed to parse JSON response: {str(json_err)}")
                     logger.error(f"Response content: {response.text}")
-                    return {"detail": f"Request succeeded but returned non-JSON response: {response.text[:100]}..."}
+                    return {"detail": f"Request succeeded but returned non-JSON response", "raw_response": response.text[:100]}
             else:
                 # Empty response but status code was ok
                 return {"detail": f"User {user.username} was added successfully"}
