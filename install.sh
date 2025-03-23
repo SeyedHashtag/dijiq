@@ -98,10 +98,10 @@ setup_dijiq() {
                 echo -e "${GREEN}Updated from version $PREV_VERSION to $CURR_VERSION${NC}"
                 
                 # Display changelog if available
-                if [ -f "changelog" ]; then
+                if [ -f "CHANGELOG.md" ]; then
                     echo -e "${YELLOW}Changelog:${NC}"
-                    cat changelog | head -n 20  # Show first 20 lines of changelog
-                    echo -e "${YELLOW}...(see full changelog in changelog)${NC}"
+                    cat CHANGELOG.md | head -n 20  # Show first 20 lines of changelog
+                    echo -e "${YELLOW}...(see full changelog in CHANGELOG.md)${NC}"
                 fi
             fi
         fi

@@ -3,7 +3,6 @@ import os
 from telegram.ext import Updater
 from src.utils.config import load_config
 from src.bot.handlers import setup_handlers
-from src.api.webhook_handler import WebhookServer
 
 # Configure logging
 logging.basicConfig(
@@ -17,7 +16,7 @@ if os.environ.get('DEBUG', '').lower() in ('true', '1', 'yes'):
     logging.getLogger('src.api.vpn_client').setLevel(logging.DEBUG)
 
 def main():
-    """Start the bot and webhook server."""
+    """Start the bot."""
     # Load configuration
     try:
         config = load_config()
@@ -30,15 +29,6 @@ def main():
         
         # Set up all handlers
         setup_handlers(dispatcher)
-        
-        # Start webhook server for payment notifications if webhook config is present
-        webhook_host = os.environ.get('WEBHOOK_HOST')
-        webhook_port = int(os.environ.get('WEBHOOK_PORT', 8080))
-        
-        if webhook_host:
-            logger.info("Starting webhook server for payment notifications")
-            webhook_server = WebhookServer(host=webhook_host, port=webhook_port)
-            webhook_server.start()
         
         # Start the Bot
         updater.start_polling()
