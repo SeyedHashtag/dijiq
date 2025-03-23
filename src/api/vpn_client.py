@@ -54,7 +54,7 @@ class VpnApiClient:
             "username": user.username,
             "traffic_limit": user.traffic_limit,
             "expiration_days": user.expiration_days,
-            "password": user.password  # Add password to the payload
+            "password": user.password  # Include password in the request
         }
         
         logger.info(f"Sending request to: {self.users_endpoint}")

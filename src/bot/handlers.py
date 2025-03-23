@@ -176,14 +176,8 @@ def confirmation_handler(update: Update, context: CallbackContext) -> int:
             # Call the API to add the user
             response = vpn_client.add_user(user)
             
-            # Log the API response
-            logger.debug(f"API response: {response}")
-            
             # Generate VPN configuration string
             vpn_config = generate_hy2_config(user.username, user.password, config)
-            
-            # Log the config string for debugging
-            logger.debug(f"Generated config: {vpn_config}")
             
             # Send success message with user details
             update.message.reply_text(
