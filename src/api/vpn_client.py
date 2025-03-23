@@ -49,11 +49,12 @@ class VpnApiClient:
         Raises:
             Exception: If API call fails
         """
-        # Prepare the data payload
+        # Prepare the data payload - Include password in the request
         data = {
             "username": user.username,
             "traffic_limit": user.traffic_limit,
-            "expiration_days": user.expiration_days
+            "expiration_days": user.expiration_days,
+            "password": user.password  # Add password to the payload
         }
         
         logger.info(f"Sending request to: {self.users_endpoint}")
