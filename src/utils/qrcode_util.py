@@ -1,4 +1,3 @@
-import qrcode
 import io
 from typing import Optional
 import urllib.parse
@@ -7,6 +6,16 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Flag to track if QR generation is available
+QR_AVAILABLE = False
+
+try:
+    import qrcode
+    QR_AVAILABLE = True
+except ImportError:
+    # QR code generation will be disabled if dependencies are missing
+    pass
 
 def get_vpn_config_url(username: str, password: str) -> str:
     """
@@ -46,6 +55,9 @@ def generate_qr_code(data: str) -> Optional[bytes]:
     Returns:
         The QR code image as bytes, or None if generation fails
     """
+    if not QR_AVAILABLE:
+        return None
+        
     try:
         qr = qrcode.QRCode(
             version=1,

@@ -40,11 +40,18 @@ check_os_version() {
 
 # Install required packages
 install_dependencies() {
+    # System packages needed for core functionality
     REQUIRED_PACKAGES=("python3" "python3-pip" "python3-venv" "git" "curl" "jq")
+    
+    # Additional packages needed for Pillow (for QR code generation)
+    PILLOW_DEPS=("libjpeg-dev" "zlib1g-dev" "libfreetype6-dev" "liblcms2-dev" "libopenjp2-7-dev" "libtiff5-dev")
+    
+    # Combine all packages
+    ALL_PACKAGES=("${REQUIRED_PACKAGES[@]}" "${PILLOW_DEPS[@]}")
     MISSING_PACKAGES=()
 
-    for package in "${REQUIRED_PACKAGES[@]}"; do
-        if ! command -v "$package" &> /dev/null; then
+    for package in "${ALL_PACKAGES[@]}"; do
+        if ! dpkg -l | grep -q "ii  $package "; then
             MISSING_PACKAGES+=("$package")
         else
             echo -e "Package $package ${GREEN}$CHECKMARK${NC}"
@@ -54,9 +61,7 @@ install_dependencies() {
     if [ ${#MISSING_PACKAGES[@]} -ne 0 ]; then
         echo -e "${YELLOW}Installing missing packages: ${MISSING_PACKAGES[@]}${NC}"
         apt update -qq && apt upgrade -y -qq
-        for package in "${MISSING_PACKAGES[@]}"; do
-            apt install -y -qq "$package" &> /dev/null && echo -e "Installed $package ${GREEN}$CHECKMARK${NC}"
-        done
+        apt install -y -qq "${MISSING_PACKAGES[@]}" &> /dev/null && echo -e "Installed required packages ${GREEN}$CHECKMARK${NC}"
     else
         echo -e "${GREEN}All required packages are already installed.${NC}"
     fi
