@@ -18,13 +18,16 @@ from src.bot.keyboards import (
 )
 
 # Conversation states
-TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(3)  # Removed USERNAME state
+TRAFFIC_LIMIT, EXPIRATION_DAYS, CONFIRMATION = range(3)
+
+# Cancellation text
+CANCEL_TEXT = "❌ Cancel"
 
 # Load configuration
 config = load_config()
 vpn_client = VpnApiClient(
     base_url=config['vpn_api_url'],
-    api_key=config.get('api_key')  # Pass API key if available
+    api_key=config.get('api_key')
 )
 
 def generate_username(user_id):
@@ -92,28 +95,42 @@ def add_user_start(update: Update, context: CallbackContext) -> int:
 
 def traffic_limit_handler(update: Update, context: CallbackContext) -> int:
     """Handle traffic limit input."""
+    text = update.message.text.strip()
+    
+    # Check for cancel command first
+    if text == CANCEL_TEXT:
+        return cancel_handler(update, context)
+    
     try:
-        traffic_limit = int(update.message.text.strip())
+        traffic_limit = int(text)
         if traffic_limit <= 0:
             raise ValueError("Traffic limit must be positive")
         
         context.user_data['traffic_limit'] = traffic_limit
         update.message.reply_text(
             f"Traffic limit: {traffic_limit} GB\n\n"
-            "Now, enter the number of days until expiration (e.g., 30):"
+            "Now, enter the number of days until expiration (e.g., 30):",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
         )
         return EXPIRATION_DAYS
     
     except ValueError:
         update.message.reply_text(
-            "Please enter a valid positive number for traffic limit:"
+            "Please enter a valid positive number for traffic limit:",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
         )
         return TRAFFIC_LIMIT
 
 def expiration_days_handler(update: Update, context: CallbackContext) -> int:
     """Handle expiration days input."""
+    text = update.message.text.strip()
+    
+    # Check for cancel command first
+    if text == CANCEL_TEXT:
+        return cancel_handler(update, context)
+    
     try:
-        expiration_days = int(update.message.text.strip())
+        expiration_days = int(text)
         if expiration_days <= 0:
             raise ValueError("Expiration days must be positive")
         
@@ -126,19 +143,25 @@ def expiration_days_handler(update: Update, context: CallbackContext) -> int:
             f"Password: {context.user_data['password']}\n"
             f"Traffic Limit: {context.user_data['traffic_limit']} GB\n"
             f"Expiration: {context.user_data['expiration_days']} days\n\n"
-            "Type 'confirm' to add this user or 'cancel' to abort."
+            "Type 'confirm' to add this user or 'cancel' to abort.",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
         )
         return CONFIRMATION
     
     except ValueError:
         update.message.reply_text(
-            "Please enter a valid positive number for expiration days:"
+            "Please enter a valid positive number for expiration days:",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
         )
         return EXPIRATION_DAYS
 
 def confirmation_handler(update: Update, context: CallbackContext) -> int:
     """Handle confirmation input."""
     decision = update.message.text.strip().lower()
+    
+    # Check for cancel command first (case insensitive)
+    if decision == CANCEL_TEXT.lower() or decision == 'cancel':
+        return cancel_handler(update, context)
     
     if decision == 'confirm':
         try:
@@ -192,14 +215,13 @@ add_user_conversation_handler = ConversationHandler(
         MessageHandler(Filters.regex('^➕ Add New User$'), add_user_start)
     ],
     states={
-        # USERNAME state is removed as it's generated automatically
         TRAFFIC_LIMIT: [MessageHandler(Filters.text & ~Filters.command, traffic_limit_handler)],
         EXPIRATION_DAYS: [MessageHandler(Filters.text & ~Filters.command, expiration_days_handler)],
         CONFIRMATION: [MessageHandler(Filters.text & ~Filters.command, confirmation_handler)]
     },
     fallbacks=[
         CommandHandler('cancel', cancel_handler),
-        MessageHandler(Filters.regex('^❌ Cancel$'), cancel_handler)
+        MessageHandler(Filters.regex(f'^{CANCEL_TEXT}$'), cancel_handler)
     ]
 )
 
