@@ -65,11 +65,46 @@ install_dependencies() {
 # Set up the Dijiq VPN Bot
 setup_dijiq() {
     INSTALL_DIR="/opt/dijiq"
+    IS_UPDATE=false
     
     if [ -d "$INSTALL_DIR" ]; then
         echo -e "${YELLOW}Dijiq installation found. Updating...${NC}"
         cd "$INSTALL_DIR"
+        
+        # Check if the service is running before updating
+        SERVICE_WAS_RUNNING=false
+        if systemctl is-active --quiet dijiq.service; then
+            SERVICE_WAS_RUNNING=true
+            echo -e "${YELLOW}Stopping service for update...${NC}"
+            systemctl stop dijiq.service
+        fi
+        
+        # Store current version before update
+        PREV_VERSION=""
+        if [ -f "VERSION" ]; then
+            PREV_VERSION=$(cat VERSION)
+        fi
+        
+        # Perform the update
         git pull
+        
+        # Set flag to indicate this is an update
+        IS_UPDATE=true
+        
+        # If there's a version file, check if version changed
+        if [ -f "VERSION" ]; then
+            CURR_VERSION=$(cat VERSION)
+            if [ "$PREV_VERSION" != "$CURR_VERSION" ] && [ ! -z "$PREV_VERSION" ]; then
+                echo -e "${GREEN}Updated from version $PREV_VERSION to $CURR_VERSION${NC}"
+                
+                # Display changelog if available
+                if [ -f "CHANGELOG.md" ]; then
+                    echo -e "${YELLOW}Changelog:${NC}"
+                    cat CHANGELOG.md | head -n 20  # Show first 20 lines of changelog
+                    echo -e "${YELLOW}...(see full changelog in CHANGELOG.md)${NC}"
+                fi
+            fi
+        fi
     else
         echo -e "${GREEN}Cloning Dijiq VPN Bot...${NC}"
         git clone https://github.com/SeyedHashtag/dijiq.git "$INSTALL_DIR"
@@ -119,6 +154,9 @@ EOF
     else
         echo -e "Environment configuration file already exists ${GREEN}$CHECKMARK${NC}"
     fi
+    
+    # Export variables for later use
+    export IS_UPDATE SERVICE_WAS_RUNNING
 }
 
 # Create a systemd service for auto-start with environment variables
@@ -149,9 +187,22 @@ EOF
 # Create a bash alias for controlling the bot
 create_alias() {
     if ! grep -q "alias dijiq=" ~/.bashrc; then
-        echo "alias dijiq='cd /opt/dijiq && source venv/bin/activate && python main.py'" >> ~/.bashrc
+        echo "alias dijiq='cd /opt/dijiq && source venv/bin/activate && python cli.py'" >> ~/.bashrc
         echo -e "Created 'dijiq' command alias ${GREEN}$CHECKMARK${NC}"
     fi
+}
+
+# Create a symlink for global access to CLI
+create_symlink() {
+    SYMLINK_PATH="/usr/local/bin/dijiq"
+    
+    cat > "$SYMLINK_PATH" << EOF
+#!/bin/bash
+cd /opt/dijiq && source venv/bin/activate && python cli.py "\$@"
+EOF
+    
+    chmod +x "$SYMLINK_PATH"
+    echo -e "Created 'dijiq' command in /usr/local/bin ${GREEN}$CHECKMARK${NC}"
 }
 
 # Main installation process
@@ -163,22 +214,41 @@ main() {
     setup_dijiq
     create_service
     create_alias
+    create_symlink
     
     echo -e "${GREEN}Installation complete!${NC}"
     echo -e "${YELLOW}The bot has been installed as a system service.${NC}"
     echo -e "- ${GREEN}Start${NC}: systemctl start dijiq"
     echo -e "- ${YELLOW}Status${NC}: systemctl status dijiq"
     echo -e "- ${RED}Stop${NC}:  systemctl stop dijiq"
-    echo -e "${YELLOW}You can also run the bot manually using the 'dijiq' command after restarting your shell.${NC}"
+    echo -e "${YELLOW}You can also run the bot using the 'dijiq' command.${NC}"
     
     echo -e "${YELLOW}SECURITY NOTE: For production use, consider setting environment variables directly${NC}"
     echo -e "${YELLOW}in the system rather than using a .env file for better security.${NC}"
     
-    read -p "Do you want to start the bot now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        systemctl start dijiq
-        echo -e "${GREEN}Bot started! Check status with: systemctl status dijiq${NC}"
+    # If this is an update and the service was running, restart it automatically
+    if [ "$IS_UPDATE" = true ]; then
+        if [ "$SERVICE_WAS_RUNNING" = true ]; then
+            echo -e "${YELLOW}Restarting service to apply updates...${NC}"
+            systemctl restart dijiq
+            echo -e "${GREEN}Service restarted successfully!${NC}"
+        else
+            # For updates where the service wasn't running, ask if they want to start it
+            read -p "Do you want to start the bot now? (y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                systemctl start dijiq
+                echo -e "${GREEN}Bot started! Check status with: systemctl status dijiq${NC}"
+            fi
+        fi
+    else
+        # For fresh installations, ask if they want to start it
+        read -p "Do you want to start the bot now? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            systemctl start dijiq
+            echo -e "${GREEN}Bot started! Check status with: systemctl status dijiq${NC}"
+        fi
     fi
 }
 
