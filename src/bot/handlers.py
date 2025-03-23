@@ -11,6 +11,7 @@ from src.models.user import VpnUser
 from src.api.vpn_client import VpnApiClient
 from src.utils.config import load_config, is_admin
 from src.utils.password import generate_random_password
+from src.utils.qrcode_util import get_vpn_config_url, generate_qr_code
 from src.bot.keyboards import (
     get_main_menu_keyboard, 
     get_cancel_keyboard,
@@ -175,6 +176,7 @@ def confirmation_handler(update: Update, context: CallbackContext) -> int:
             # Call the API to add the user
             response = vpn_client.add_user(user)
             
+            # First, send success message
             update.message.reply_text(
                 f"✅ User successfully added!\n\n"
                 f"Username: {user.username}\n"
@@ -183,6 +185,26 @@ def confirmation_handler(update: Update, context: CallbackContext) -> int:
                 f"Expiration: {user.expiration_days} days",
                 reply_markup=get_main_menu_keyboard()
             )
+            
+            # Generate VPN configuration URL
+            config_url = get_vpn_config_url(user.username, user.password)
+            
+            # Generate QR code
+            qr_code_bytes = generate_qr_code(config_url)
+            
+            if qr_code_bytes:
+                # Send QR code with config URL as caption
+                update.message.reply_photo(
+                    photo=qr_code_bytes,
+                    caption=f"🔐 *VPN Configuration*\n\n`{config_url}`\n\nScan this QR code with your VPN client or copy the configuration URL.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                # Fallback to just sending the config URL if QR generation fails
+                update.message.reply_text(
+                    f"🔐 *VPN Configuration*\n\n`{config_url}`\n\nCopy this configuration URL to your VPN client.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
             
         except Exception as e:
             update.message.reply_text(
