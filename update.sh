@@ -23,9 +23,21 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Function to compare version strings
+# Function to compare version strings - only updates on major version change
 version_gt() {
-    test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"
+    local current=$1
+    local remote=$2
+    
+    # Extract major version number
+    local current_major=$(echo "$current" | cut -d. -f1)
+    local remote_major=$(echo "$remote" | cut -d. -f1)
+    
+    # Compare major versions
+    if [[ "$remote_major" -gt "$current_major" ]]; then
+        return 0  # Major update available
+    else
+        return 1  # No major update available
+    fi
 }
 
 # Function to check for updates
@@ -43,10 +55,12 @@ check_for_updates() {
     
     log_message "Local version: $LOCAL_VERSION, Remote version: $REMOTE_VERSION"
     
-    # Compare versions
-    if version_gt "$REMOTE_VERSION" "$LOCAL_VERSION"; then
+    # Compare versions - only update on major version change
+    if version_gt "$LOCAL_VERSION" "$REMOTE_VERSION"; then
+        log_message "Major version update available: $LOCAL_VERSION → $REMOTE_VERSION"
         return 0  # Update available
     else
+        log_message "No major version update available. Current: $LOCAL_VERSION, Latest: $REMOTE_VERSION"
         return 1  # No update available
     fi
 }

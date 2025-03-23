@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.5.2
+- Limited automatic updates to major version changes only
+- Improved version comparison logic
+
 ## Version 0.5.1
 - Fixed Cancel button not working in conversation flows
 - Added automatic VPN configuration generation after user creation
