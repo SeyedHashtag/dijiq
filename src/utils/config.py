@@ -28,6 +28,12 @@ def load_config() -> Dict[str, Any]:
     insecure = os.environ.get('INSECURE', '1')  # Default to 1 (true) if not set
     sni = os.environ.get('SNI')
     
+    # Payment gateway configuration
+    cryptomus_merchant_id = os.environ.get('CRYPTOMUS_MERCHANT_ID')
+    cryptomus_api_key = os.environ.get('CRYPTOMUS_API_KEY')
+    cryptomus_test_mode = os.environ.get('CRYPTOMUS_TEST_MODE', 'false').lower() in ('true', '1', 'yes')
+    payment_callback_url = os.environ.get('PAYMENT_CALLBACK_URL')
+    
     # Check if all required environment variables are set
     if not telegram_token:
         raise EnvironmentError("TELEGRAM_TOKEN environment variable is not set")
@@ -54,7 +60,11 @@ def load_config() -> Dict[str, Any]:
         "obfs_password": obfs_password,
         "pin_sha256": pin_sha256,
         "insecure": insecure,
-        "sni": sni
+        "sni": sni,
+        "cryptomus_merchant_id": cryptomus_merchant_id,
+        "cryptomus_api_key": cryptomus_api_key,
+        "cryptomus_test_mode": cryptomus_test_mode,
+        "payment_callback_url": payment_callback_url
     }
 
 
