@@ -15,5 +15,5 @@ def setup_handlers(dispatcher: Dispatcher):
     # Customer conversation handlers
     dispatcher.add_handler(purchase_conversation_handler)
     
-    # Add a fallback handler
+    # Add a fallback handler that responds to all text messages
     dispatcher.add_handler(MessageHandler(Filters.text, start))

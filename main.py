@@ -2,7 +2,7 @@ import logging
 import os
 from telegram.ext import Updater
 from src.utils.config import load_config
-from src.bot.handlers import setup_handlers
+from src.bot.handlers.setup import setup_handlers  # Updated import path
 
 # Configure logging
 logging.basicConfig(
