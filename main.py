@@ -3,11 +3,20 @@ import os
 import sys
 from telegram.ext import Updater
 from src.utils.config import load_config
+from src.bot.handlers.setup import setup_handlers
+
+# Create data directory if it doesn't exist
+if not os.path.exists('data'):
+    os.makedirs('data')
 
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler("data/bot.log"),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -29,24 +38,8 @@ def main():
         # Get the dispatcher to register handlers
         dispatcher = updater.dispatcher
         
-        # IMPORTANT: Import handlers here to avoid circular imports
-        from src.bot.handlers.base import start, help_command
-        from src.bot.handlers.admin_handlers import add_user_conversation_handler
-        from src.bot.handlers.customer_handlers import purchase_conversation_handler
-        
-        # Register commands
-        from telegram.ext import CommandHandler, MessageHandler, Filters
-        
-        # Basic command handlers
-        dispatcher.add_handler(CommandHandler("start", start))
-        dispatcher.add_handler(CommandHandler("help", help_command))
-        
-        # Add conversation handlers
-        dispatcher.add_handler(add_user_conversation_handler)
-        dispatcher.add_handler(purchase_conversation_handler)
-        
-        # Fallback for text messages
-        dispatcher.add_handler(MessageHandler(Filters.text, start))
+        # Set up all handlers
+        setup_handlers(dispatcher)
         
         logger.info("Handlers registered successfully")
         

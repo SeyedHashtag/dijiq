@@ -22,6 +22,12 @@ from src.bot.keyboards import (
     get_confirm_keyboard,
     get_payment_button
 )
+from src.utils.languages import LanguageManager
+from src.utils.test_config import has_used_test_config, mark_test_config_used
+from src.utils.admin_plans import load_plans
+
+# Initialize language manager
+lang_manager = LanguageManager()
 
 # Conversation states
 CONFIRMATION, PAYMENT_PENDING = range(2)
@@ -274,6 +280,110 @@ def cancel_payment(update: Update, context: CallbackContext) -> int:
     )
     return ConversationHandler.END
 
+def handle_test_config(update: Update, context: CallbackContext) -> None:
+    """Handle test config request"""
+    if has_used_test_config(update.effective_user.id):
+        update.message.reply_text(
+            "❌ You have already used your test config. Please purchase a plan to get a new config.",
+            reply_markup=get_main_menu_keyboard(is_admin=False)
+        )
+        return
+
+    # Create test config
+    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    username = f"{update.effective_user.id}d{timestamp}"
+    
+    # 1GB traffic limit and 30 days expiration
+    user = VpnUser(
+        username=username,
+        password=generate_random_password(32),
+        traffic_limit=1,
+        expiration_days=30
+    )
+    
+    try:
+        # Call API to create user
+        vpn_client.add_user(user)
+        
+        # Generate VPN configuration
+        vpn_config = generate_hy2_config(user.username, user.password, config)
+        
+        # Create caption with user details
+        caption = (
+            f"📱 Config: {username}\n"
+            f"📊 Traffic: 0.00/1.00 GB\n"
+            f"📅 Days: 0/30\n\n"
+            f"📝 Config Text:\n"
+            f"`{vpn_config}`"
+        )
+        
+        # Mark test config as used
+        mark_test_config_used(update.effective_user.id)
+        
+        # Send config to user
+        update.message.reply_text(
+            caption,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_menu_keyboard(is_admin=False)
+        )
+    except Exception as e:
+        update.message.reply_text(
+            f"❌ Failed to create test config: {str(e)}",
+            reply_markup=get_main_menu_keyboard(is_admin=False)
+        )
+
+def show_my_configs(update: Update, context: CallbackContext) -> None:
+    """Show user's active configs"""
+    # Get language preference
+    lang_code = lang_manager.get_user_language(update.effective_user.id)
+    
+    # Here we would normally query the API to get configs for this user_id
+    # For now, show a placeholder message
+    update.message.reply_text(
+        "Loading your configurations...",
+        reply_markup=get_main_menu_keyboard(is_admin=False)
+    )
+    
+    # API call would go here to get user's configs
+    # For now, we'll simulate not finding any configs
+    update.message.reply_text(
+        "You don't have any active configs. Use the Purchase Plan option to get started!",
+        reply_markup=get_main_menu_keyboard(is_admin=False)
+    )
+
+def show_downloads(update: Update, context: CallbackContext) -> None:
+    """Show download options"""
+    # Get language preference
+    lang_code = lang_manager.get_user_language(update.effective_user.id)
+    
+    # This function would typically show a message with download links
+    # We'll use a simple text message for now
+    update.message.reply_text(
+        "📱 *VPN Client Downloads*\n\n"
+        "📱 Android: [Play Store](https://play.google.com/store/apps/details?id=app.hiddify.com)\n"
+        "📱 Android (APK): [GitHub](https://github.com/hiddify/hiddify-app/releases/latest)\n"
+        "🍎 iOS: [App Store](https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532)\n"
+        "🪟 Windows: [Download](https://github.com/hiddify/hiddify-app/releases/latest)\n"
+        "🐧 Linux: [Download](https://github.com/hiddify/hiddify-app/releases/latest)\n"
+        "🍎 macOS: [Download](https://github.com/hiddify/hiddify-app/releases/latest)",
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True,
+        reply_markup=get_main_menu_keyboard(is_admin=False)
+    )
+
+def show_support(update: Update, context: CallbackContext) -> None:
+    """Show support information"""
+    # This would typically display support contact information
+    update.message.reply_text(
+        "📞 *Support Information*\n\n"
+        "Need help? Contact our support:\n\n"
+        "📱 Telegram: @support_username\n"
+        "📧 Email: support@example.com\n"
+        "⏰ Working hours: 24/7",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=get_main_menu_keyboard(is_admin=False)
+    )
+
 # Create the purchase conversation handler
 purchase_conversation_handler = ConversationHandler(
     entry_points=[
@@ -289,3 +399,14 @@ purchase_conversation_handler = ConversationHandler(
         MessageHandler(Filters.regex(f'^{CANCEL_TEXT}$'), cancel_payment)
     ]
 )
+
+def setup_customer_handlers(dispatcher):
+    """Register customer handlers"""
+    # Regular commands
+    dispatcher.add_handler(MessageHandler(Filters.regex('^📱 My Configs$'), show_my_configs))
+    dispatcher.add_handler(MessageHandler(Filters.regex('^⬇️ Downloads$'), show_downloads))
+    dispatcher.add_handler(MessageHandler(Filters.regex('^📞 Support$'), show_support))
+    dispatcher.add_handler(MessageHandler(Filters.regex('^🎁 Test Config$'), handle_test_config))
+    
+    # Purchase conversation handler
+    dispatcher.add_handler(purchase_conversation_handler)
