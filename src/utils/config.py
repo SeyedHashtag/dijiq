@@ -28,6 +28,11 @@ def load_config() -> Dict[str, Any]:
     insecure = os.environ.get('INSECURE', '1')  # Default to 1 (true) if not set
     sni = os.environ.get('SNI')
     
+    # Add Cryptomus configurations
+    cryptomus_merchant_id = os.environ.get('CRYPTOMUS_MERCHANT_ID')
+    cryptomus_api_key = os.environ.get('CRYPTOMUS_API_KEY')
+    webhook_secret = os.environ.get('WEBHOOK_SECRET')
+    
     # Check if all required environment variables are set
     if not telegram_token:
         raise EnvironmentError("TELEGRAM_TOKEN environment variable is not set")
@@ -54,7 +59,21 @@ def load_config() -> Dict[str, Any]:
         "obfs_password": obfs_password,
         "pin_sha256": pin_sha256,
         "insecure": insecure,
-        "sni": sni
+        "sni": sni,
+        
+        # Payment configuration
+        "cryptomus_merchant_id": cryptomus_merchant_id,
+        "cryptomus_api_key": cryptomus_api_key,
+        "webhook_secret": webhook_secret,
+        
+        # VPN package information
+        "vpn_package": {
+            "name": "Standard VPN Package",
+            "traffic_limit": 100,  # GB
+            "expiration_days": 90,
+            "price": 2.5,
+            "currency": "USD"
+        }
     }
 
 

@@ -1,54 +1,19 @@
-"""
-Module for setting up all bot handlers.
-"""
+from telegram.ext import CommandHandler, MessageHandler, Filters, Dispatcher
+from src.bot.handlers.base import start, help_command
+from src.bot.handlers.admin_handlers import add_user_conversation_handler
+from src.bot.handlers.customer_handlers import purchase_conversation_handler
 
-from telegram import Update
-from telegram.ext import Dispatcher, CommandHandler, CallbackContext
-from src.utils.config import is_admin
-
-def start_router(update: Update, context: CallbackContext) -> None:
-    """
-    Router function to direct users to either admin or client interface.
+def setup_handlers(dispatcher: Dispatcher):
+    """Set up all command and conversation handlers."""
+    # Common handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", help_command))
     
-    Args:
-        update: The update to process
-        context: The context object for the update
-    """
-    user = update.effective_user
+    # Admin conversation handlers
+    dispatcher.add_handler(add_user_conversation_handler)
     
-    # Import locally to avoid circular imports
-    if is_admin(user.id):
-        # Admin user, use admin interface
-        from .handlers import start
-        return start(update, context)
-    else:
-        # Regular user, use client interface
-        from .customer import start_customer
-        return start_customer(update, context)
-
-def setup_handlers(dispatcher: Dispatcher) -> None:
-    """
-    Set up all command and conversation handlers.
+    # Customer conversation handlers
+    dispatcher.add_handler(purchase_conversation_handler)
     
-    Args:
-        dispatcher: The Telegram dispatcher to register handlers with
-    """
-    # Import handler functions locally to avoid circular imports
-    from .base import get_base_handlers
-    from .handlers import get_user_management_handlers
-    from .customer import get_customer_handlers
-    
-    # Add the start router as the main entry point
-    dispatcher.add_handler(CommandHandler("start", start_router))
-    
-    # Add base handlers
-    for handler in get_base_handlers():
-        dispatcher.add_handler(handler)
-    
-    # Add customer-side handlers
-    for handler in get_customer_handlers():
-        dispatcher.add_handler(handler)
-    
-    # Add admin-side handlers
-    for handler in get_user_management_handlers():
-        dispatcher.add_handler(handler)
+    # Add a fallback handler
+    dispatcher.add_handler(MessageHandler(Filters.text, start))

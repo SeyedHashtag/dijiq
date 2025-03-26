@@ -1,117 +1,64 @@
 from dataclasses import dataclass
+from enum import Enum
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-import json
-import os
-from pathlib import Path
+from typing import Optional
+
+
+class PaymentStatus(Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
 
 @dataclass
 class Purchase:
-    """Represents a VPN plan purchase."""
-    purchase_id: str
-    telegram_id: int
-    plan_id: str
+    user_id: int
     amount: float
-    currency: str
-    payment_id: Optional[str]
-    status: str  # "pending", "completed", "cancelled", "failed"
-    created_at: str
+    payment_id: str
+    status: PaymentStatus = PaymentStatus.PENDING
+    invoice_url: Optional[str] = None
+    created_at: str = None
     completed_at: Optional[str] = None
-    vpn_username: Optional[str] = None
-    vpn_password: Optional[str] = None
     
-    def to_dict(self) -> Dict[str, Any]:
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now().isoformat()
+    
+    def to_dict(self):
         """Convert purchase to dictionary."""
         return {
-            "purchase_id": self.purchase_id,
-            "telegram_id": self.telegram_id,
-            "plan_id": self.plan_id,
+            "user_id": self.user_id,
             "amount": self.amount,
-            "currency": self.currency,
             "payment_id": self.payment_id,
-            "status": self.status,
+            "status": self.status.value,
+            "invoice_url": self.invoice_url,
             "created_at": self.created_at,
-            "completed_at": self.completed_at,
-            "vpn_username": self.vpn_username,
-            "vpn_password": self.vpn_password
+            "completed_at": self.completed_at
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Purchase':
-        """Create a Purchase from dictionary."""
+    def from_dict(cls, data):
+        """Create a Purchase object from dictionary."""
         return cls(
-            purchase_id=data["purchase_id"],
-            telegram_id=data["telegram_id"],
-            plan_id=data["plan_id"],
+            user_id=data["user_id"],
             amount=data["amount"],
-            currency=data["currency"],
-            payment_id=data.get("payment_id"),
-            status=data["status"],
+            payment_id=data["payment_id"],
+            status=PaymentStatus(data["status"]),
+            invoice_url=data.get("invoice_url"),
             created_at=data["created_at"],
-            completed_at=data.get("completed_at"),
-            vpn_username=data.get("vpn_username"),
-            vpn_password=data.get("vpn_password")
+            completed_at=data.get("completed_at")
         )
-
-
-class PurchaseManager:
-    """Manages VPN service purchases."""
     
-    def __init__(self, file_path: Optional[str] = None):
-        """Initialize the purchase manager."""
-        if file_path is None:
-            # Default path is data/purchases.json in project root
-            root_dir = Path(__file__).parent.parent.parent
-            self.file_path = os.path.join(root_dir, "data", "purchases.json")
-        else:
-            self.file_path = file_path
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-        
-        # Create empty purchases file if it doesn't exist
-        if not os.path.exists(self.file_path):
-            with open(self.file_path, 'w') as f:
-                json.dump([], f)
-        
-        self.purchases = self._load_purchases()
+    def mark_as_paid(self):
+        """Mark the purchase as completed."""
+        self.status = PaymentStatus.CONFIRMED
+        self.completed_at = datetime.now().isoformat()
     
-    def _load_purchases(self) -> List[Purchase]:
-        """Load purchases from file."""
-        try:
-            with open(self.file_path, 'r') as f:
-                purchases_data = json.load(f)
-                return [Purchase.from_dict(purchase_data) for purchase_data in purchases_data]
-        except (json.JSONDecodeError, FileNotFoundError):
-            # If file is corrupt or missing, create empty list
-            return []
+    def mark_as_failed(self):
+        """Mark the purchase as failed."""
+        self.status = PaymentStatus.FAILED
     
-    def save_purchases(self) -> None:
-        """Save purchases to file."""
-        with open(self.file_path, 'w') as f:
-            json.dump([purchase.to_dict() for purchase in self.purchases], f, indent=2)
-    
-    def add_purchase(self, purchase: Purchase) -> None:
-        """Add a new purchase."""
-        self.purchases.append(purchase)
-        self.save_purchases()
-    
-    def get_purchase_by_id(self, purchase_id: str) -> Optional[Purchase]:
-        """Get a purchase by its ID."""
-        for purchase in self.purchases:
-            if purchase.purchase_id == purchase_id:
-                return purchase
-        return None
-    
-    def update_purchase(self, purchase: Purchase) -> bool:
-        """Update an existing purchase. Returns True if successful."""
-        for i, existing_purchase in enumerate(self.purchases):
-            if existing_purchase.purchase_id == purchase.purchase_id:
-                self.purchases[i] = purchase
-                self.save_purchases()
-                return True
-        return False
-    
-    def get_user_purchases(self, telegram_id: int) -> List[Purchase]:
-        """Get all purchases for a user."""
-        return [p for p in self.purchases if p.telegram_id == telegram_id]
+    def mark_as_expired(self):
+        """Mark the purchase as expired."""
+        self.status = PaymentStatus.EXPIRED
