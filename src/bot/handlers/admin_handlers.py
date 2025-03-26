@@ -63,13 +63,122 @@ def add_user_start(update: Update, context: CallbackContext) -> int:
     return TRAFFIC_LIMIT
 
 def traffic_limit_handler(update: Update, context: CallbackContext) -> int:
-    # ...existing code...
+    """Handle traffic limit input."""
+    text = update.message.text.strip()
+    
+    # Check for cancel command first
+    if text == CANCEL_TEXT:
+        return cancel_handler(update, context)
+    
+    try:
+        traffic_limit = int(text)
+        if traffic_limit <= 0:
+            raise ValueError("Traffic limit must be positive")
+        
+        context.user_data['traffic_limit'] = traffic_limit
+        update.message.reply_text(
+            f"Traffic limit: {traffic_limit} GB\n\n"
+            "Now, enter the number of days until expiration (e.g., 30):",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
+        )
+        return EXPIRATION_DAYS
+    
+    except ValueError:
+        update.message.reply_text(
+            "Please enter a valid positive number for traffic limit:",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
+        )
+        return TRAFFIC_LIMIT
 
 def expiration_days_handler(update: Update, context: CallbackContext) -> int:
-    # ...existing code...
+    """Handle expiration days input."""
+    text = update.message.text.strip()
+    
+    # Check for cancel command first
+    if text == CANCEL_TEXT:
+        return cancel_handler(update, context)
+    
+    try:
+        expiration_days = int(text)
+        if expiration_days <= 0:
+            raise ValueError("Expiration days must be positive")
+        
+        context.user_data['expiration_days'] = expiration_days
+        
+        # Show summary for confirmation (including the generated password)
+        update.message.reply_text(
+            "Please confirm the following information:\n\n"
+            f"Username: {context.user_data['username']}\n"
+            f"Password: {context.user_data['password']}\n"
+            f"Traffic Limit: {context.user_data['traffic_limit']} GB\n"
+            f"Expiration: {context.user_data['expiration_days']} days\n\n"
+            "Type 'confirm' to add this user or 'cancel' to abort.",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
+        )
+        return CONFIRMATION
+    
+    except ValueError:
+        update.message.reply_text(
+            "Please enter a valid positive number for expiration days:",
+            reply_markup=get_cancel_keyboard()  # Keep cancel button available
+        )
+        return EXPIRATION_DAYS
 
 def confirmation_handler(update: Update, context: CallbackContext) -> int:
-    # ...existing code...
+    """Handle confirmation input."""
+    decision = update.message.text.strip().lower()
+    
+    # Check for cancel command first (case insensitive)
+    if decision == CANCEL_TEXT.lower() or decision == 'cancel':
+        return cancel_handler(update, context)
+    
+    if decision == 'confirm':
+        try:
+            user = VpnUser(
+                username=context.user_data['username'],
+                password=context.user_data['password'],
+                traffic_limit=context.user_data['traffic_limit'],
+                expiration_days=context.user_data['expiration_days']
+            )
+            
+            # Call the API to add the user
+            response = vpn_client.add_user(user)
+            
+            # Generate VPN configuration string
+            vpn_config = generate_hy2_config(user.username, user.password, config)
+            
+            # Send success message with user details
+            update.message.reply_text(
+                f"✅ User successfully added!\n\n"
+                f"Username: {user.username}\n"
+                f"Password: {user.password}\n"
+                f"Traffic Limit: {user.traffic_limit} GB\n"
+                f"Expiration: {user.expiration_days} days",
+                reply_markup=get_main_menu_keyboard(is_admin(update.effective_user.id))
+            )
+            
+            # Send the configuration string in a separate message
+            update.message.reply_text(
+                f"📱 *VPN Configuration*\n\n"
+                f"`{vpn_config}`\n\n"
+                f"Copy this configuration to connect to the VPN.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            update.message.reply_text(
+                f"❌ Failed to add user: {str(e)}",
+                reply_markup=get_main_menu_keyboard(is_admin(update.effective_user.id))
+            )
+    else:
+        update.message.reply_text(
+            "User creation cancelled.",
+            reply_markup=get_main_menu_keyboard(is_admin(update.effective_user.id))
+        )
+    
+    # Clear user data
+    context.user_data.clear()
+    return ConversationHandler.END
 
 def cancel_handler(update: Update, context: CallbackContext) -> int:
     """Handle conversation cancellation."""
