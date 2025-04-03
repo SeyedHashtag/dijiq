@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh
 
 remove_obfs() {
     if jq 'has("obfs")' "$CONFIG_FILE" | grep -q true; then
@@ -10,7 +10,7 @@ remove_obfs() {
         echo "'obfs' section not found in config.json."
     fi
     
-    python3 "$CLI_PATH" restart-hysteria2 > /dev/null 2>&1
+    python3 "$CLI_PATH" restart-dijiq > /dev/null 2>&1
 }
 
 generate_obfs() {
@@ -29,12 +29,14 @@ generate_obfs() {
         echo "Error: Failed to add 'obfs' to config.json."
     fi
     
-    python3 "$CLI_PATH" restart-hysteria2 > /dev/null 2>&1
+    python3 "$CLI_PATH" restart-dijiq > /dev/null 2>&1
 }
 
 if [[ $1 == "--remove" || $1 == "-r" ]]; then
+    echo "Removing 'obfs' from config.json..."
     remove_obfs
 elif [[ $1 == "--generate" || $1 == "-g" ]]; then
+    echo "Generating 'obfs' in config.json..."
     generate_obfs
 else
     echo "Usage: $0 --remove|-r | --generate|-g"

@@ -4,24 +4,12 @@ cd /root/
 TEMP_DIR=$(mktemp -d)
 
 FILES=(
-    "/etc/hysteria/ca.key"
-    "/etc/hysteria/ca.crt"
-    "/etc/hysteria/users.json"
-    "/etc/hysteria/config.json"
-    "/etc/hysteria/.configs.env"
-    "/etc/hysteria/core/scripts/telegrambot/.env"
-    "/etc/hysteria/core/scripts/singbox/.env"
-    "/etc/hysteria/core/scripts/normalsub/.env"
-    "/etc/hysteria/core/scripts/telegrambot/payments.json"
-    "/etc/hysteria/core/scripts/telegrambot/plans.json"
-    "/etc/hysteria/test_mode.json"
-    "/etc/hysteria/core/scripts/telegrambot/support_info.json"
-    "/etc/hysteria/core/scripts/telegrambot/user_languages.json"
-    "/etc/hysteria/core/scripts/telegrambot/spam_protection.json"
-    "/etc/hysteria/core/scripts/telegrambot/test_configs.json"
+    "/etc/dijiq/users.json"
+    "/etc/dijiq/.configs.env"
+    "/etc/dijiq/core/scripts/telegrambot/.env"
 )
 
-echo "Backing up and Stopping all cron jobs"
+echo "Backing up and stopping all cron jobs"
 crontab -l > /tmp/crontab_backup
 crontab -r
 
@@ -31,27 +19,42 @@ for FILE in "${FILES[@]}"; do
     cp "$FILE" "$TEMP_DIR/$FILE"
 done
 
-echo "Removing /etc/hysteria directory"
-rm -rf /etc/hysteria/
+echo "Checking and renaming old systemd service files"
+declare -A SERVICE_MAP=(
+    ["/etc/systemd/system/dijiq-bot.service"]="dijiq-telegram-bot.service"
+)
 
-echo "Cloning Hysteria2 repository"
-git clone https://github.com/SeyedHashtag/Hysteria2 /etc/hysteria
+for OLD_SERVICE in "${!SERVICE_MAP[@]}"; do
+    NEW_SERVICE="/etc/systemd/system/${SERVICE_MAP[$OLD_SERVICE]}"
 
-echo "Downloading geosite.dat and geoip.dat"
-wget -O /etc/hysteria/geosite.dat https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat >/dev/null 2>&1
-wget -O /etc/hysteria/geoip.dat https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat >/dev/null 2>&1
+    if [[ -f "$OLD_SERVICE" ]]; then
+        echo "Stopping old service: $(basename "$OLD_SERVICE")"
+        systemctl stop "$(basename "$OLD_SERVICE")" 2>/dev/null
+
+        echo "Renaming $OLD_SERVICE to $NEW_SERVICE"
+        mv "$OLD_SERVICE" "$NEW_SERVICE"
+
+        echo "Reloading systemd daemon"
+        systemctl daemon-reload
+    fi
+done
+
+echo "Removing /etc/dijiq directory"
+rm -rf /etc/dijiq/
+
+echo "Cloning dijiq repository"
+git clone https://github.com/SeyedHashtag/dijiq /etc/dijiq
 
 echo "Restoring backup files"
 for FILE in "${FILES[@]}"; do
     cp "$TEMP_DIR/$FILE" "$FILE"
 done
 
-CONFIG_ENV="/etc/hysteria/.configs.env"
+
+CONFIG_ENV="/etc/dijiq/.configs.env"
 if [ ! -f "$CONFIG_ENV" ]; then
-    echo ".configs.env not found, creating it with default SNI=bts.com and IPs."
+    echo ".configs.env not found, creating it with default values."
     echo "SNI=bts.com" > "$CONFIG_ENV"
-else
-    echo ".configs.env already exists."
 fi
 
 export $(grep -v '^#' "$CONFIG_ENV" | xargs 2>/dev/null)
@@ -69,34 +72,32 @@ if [[ -z "$IP6" ]]; then
 fi
 
 echo "Setting ownership and permissions"
-chown hysteria:hysteria /etc/hysteria/ca.key /etc/hysteria/ca.crt
-chmod 640 /etc/hysteria/ca.key /etc/hysteria/ca.crt
-chown -R hysteria:hysteria /etc/hysteria/core/scripts/singbox
-chown -R hysteria:hysteria /etc/hysteria/core/scripts/telegrambot
+chown -R dijiq:dijiq /etc/dijiq/core/scripts/telegrambot
 
 echo "Setting execute permissions for user.sh and kick.sh"
-chmod +x /etc/hysteria/core/scripts/hysteria2/user.sh
-chmod +x /etc/hysteria/core/scripts/hysteria2/kick.sh
+chmod +x /etc/dijiq/core/scripts/dijiq/user.sh
+chmod +x /etc/dijiq/core/scripts/dijiq/kick.sh
 
-cd /etc/hysteria
-python3 -m venv hysteria2_venv
-source /etc/hysteria/hysteria2_venv/bin/activate
+cd /etc/dijiq
+python3 -m venv dijiq_venv
+source /etc/dijiq/dijiq_venv/bin/activate
 pip install -r requirements.txt
 
-echo "Restarting hysteria services"
-systemctl restart hysteria-server.service
-systemctl restart hysteria-bot.service
-systemctl restart singbox.service
+echo "Restarting other dijiq services"
+systemctl restart dijiq-server.service
+systemctl restart dijiq-telegram-bot.service
 
-echo "Checking hysteria-server.service status"
-if systemctl is-active --quiet hysteria-server.service; then
+
+echo "Checking dijiq-server.service status"
+if systemctl is-active --quiet dijiq-server.service; then
     echo "Upgrade completed successfully"
 else
-    echo "Upgrade failed: hysteria-server.service is not active"
+    echo "Upgrade failed: dijiq-server.service is not active"
 fi
 
 echo "Restoring cron jobs"
 crontab /tmp/crontab_backup
+rm /tmp/crontab_backup
 
 chmod +x menu.sh
 ./menu.sh

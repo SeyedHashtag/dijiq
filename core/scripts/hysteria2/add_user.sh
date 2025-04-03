@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh
 
 add_user() {
     if [ $# -ne 3 ] && [ $# -ne 5 ]; then

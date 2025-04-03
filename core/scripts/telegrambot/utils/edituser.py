@@ -13,7 +13,7 @@ def handle_cancel_show_user(call):
     bot.edit_message_text("Operation canceled.", chat_id=call.message.chat.id, message_id=call.message.message_id)
     create_main_markup(call.message)
 
-@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '👤 Show User')
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == 'Show User')
 def show_user(message):
     markup = types.InlineKeyboardMarkup()
     cancel_button = types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_show_user")
@@ -57,7 +57,7 @@ def process_show_user(message):
             upload_gb = upload_bytes / (1024 ** 3)  # Convert bytes to GB
             download_gb = download_bytes / (1024 ** 3)  # Convert bytes to GB
             totalusage = upload_gb + download_gb
-
+            
             traffic_message = (
                 f"🔼 Upload: {upload_gb:.2f} GB\n"
                 f"🔽 Download: {download_gb:.2f} GB\n"

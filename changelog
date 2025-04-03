@@ -1,4 +1,1 @@
-1. Add SSL certificate deletion
-2. Shows the URI with the -s and -n
-3. Refactored check_version function to use variables from path.sh
-4. Fixed some bugs
+🛠️ Fix: Restart service to clear API traffic(Remove Users)

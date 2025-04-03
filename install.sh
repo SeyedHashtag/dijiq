@@ -31,7 +31,7 @@ fi
 
 check_os_version
 
-REQUIRED_PACKAGES=("jq" "qrencode" "curl" "pwgen" "uuid-runtime" "python3" "python3-pip" "python3-venv" "git" "bc" "zip" "cron" "lsof")
+REQUIRED_PACKAGES=("jq" "qrencode" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "git" "bc" "zip" "cron" "lsof")
 MISSING_PACKAGES=()
 heavy_checkmark=$(printf "\xE2\x9C\x85")
 
@@ -53,18 +53,18 @@ else
     echo "All required packages are already installed."
 fi
 
-git clone https://github.com/SeyedHashtag/Hysteria2 /etc/hysteria
+git clone https://github.com/SeyedHashtag/dijiq /etc/dijiq
 
-cd /etc/hysteria
-python3 -m venv hysteria2_venv
-source /etc/hysteria/hysteria2_venv/bin/activate
+cd /etc/dijiq
+python3 -m venv dijiq_venv
+source /etc/dijiq/dijiq_venv/bin/activate
 pip install -r requirements.txt &> /dev/null && echo "Install Python requirements ✅"
 
-if ! grep -q "alias hys2='source /etc/hysteria/hysteria2_venv/bin/activate && /etc/hysteria/menu.sh'" ~/.bashrc; then
-    echo "alias hys2='source /etc/hysteria/hysteria2_venv/bin/activate && /etc/hysteria/menu.sh'" >> ~/.bashrc
+if ! grep -q "alias dijiq='source /etc/dijiq/dijiq_venv/bin/activate && /etc/dijiq/menu.sh'" ~/.bashrc; then
+    echo "alias dijiq='source /etc/dijiq/dijiq_venv/bin/activate && /etc/dijiq/menu.sh'" >> ~/.bashrc
     source ~/.bashrc
 fi
 sleep 5
-cd /etc/hysteria
+cd /etc/dijiq
 chmod +x menu.sh
 ./menu.sh

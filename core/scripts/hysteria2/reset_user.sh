@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Source required scripts
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh
 
 reset_user() {
     local username=$1

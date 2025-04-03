@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh
 
 while getopts ":u:" opt; do
   case ${opt} in

@@ -1,44 +1,44 @@
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh || true 
 
-echo "Uninstalling Hysteria2..."
+echo "Uninstalling dijiq..."
+
+SERVICES=(
+    "dijiq-server.service"
+    "dijiq-telegram-bot.service"
+)
 
 echo "Running uninstallation script..."
 bash <(curl -fsSL https://get.hy2.sh/) --remove >/dev/null 2>&1
 
-echo "Removing WARP"
-python3 $CLI_PATH uninstall-warp
+echo "Removing dijiq folder..."
+rm -rf /etc/dijiq >/dev/null 2>&1
 
-echo "Removing Hysteria folder..."
-rm -rf /etc/hysteria >/dev/null 2>&1
+echo "Deleting dijiq user..."
+userdel -r dijiq >/dev/null 2>&1 || true 
 
-echo "Deleting hysteria user..."
-userdel -r hysteria >/dev/null 2>&1
+echo "Stop/Disabling dijiq Services..."
+for service in "${SERVICES[@]}" "dijiq-server@*.service"; do
+    echo "Stopping and disabling $service..."
+    systemctl stop "$service" > /dev/null 2>&1 || true  
+    systemctl disable "$service" > /dev/null 2>&1 || true 
+done
 
 echo "Removing systemd service files..."
-rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server.service >/dev/null 2>&1
-rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server@*.service >/dev/null 2>&1
+for service in "${SERVICES[@]}" "dijiq-server@*.service"; do
+    echo "Removing service file: $service"
+    rm -f "/etc/systemd/system/$service" "/etc/systemd/system/multi-user.target.wants/$service" >/dev/null 2>&1
+done
 
 echo "Reloading systemd daemon..."
 systemctl daemon-reload >/dev/null 2>&1
 
 echo "Removing cron jobs..."
-(crontab -l | grep -v "python3 /etc/hysteria/core/cli.py traffic-status" | crontab -) >/dev/null 2>&1
-(crontab -l | grep -v "/etc/hysteria/core/scripts/hysteria2/kick.sh" | crontab -) >/dev/null 2>&1
-(crontab -l | grep -v "python3 /etc/hysteria/core/cli.py restart-hysteria2" | crontab -) >/dev/null 2>&1
-(crontab -l | grep -v "python3 /etc/hysteria/core/cli.py backup-hysteria" | crontab -) >/dev/null 2>&1
+if crontab -l 2>/dev/null | grep -q "dijiq"; then 
+    (crontab -l | grep -v "dijiq" | crontab -) >/dev/null 2>&1
+fi
 
+echo "Removing alias 'dijiq' from .bashrc..."
+sed -i '/alias dijiq=.*\/etc\/dijiq\/menu.sh/d' ~/.bashrc 2>/dev/null || true 
 
-echo "Removing alias 'hys2' from .bashrc..."
-sed -i '/alias hys2=.*\/etc\/hysteria\/menu.sh/d' ~/.bashrc
-
-echo "Stop/Disabling Hysteria TelegramBOT Service..."
-systemctl stop hysteria-bot.service > /dev/null 2>&1
-systemctl disable hysteria-bot.service > /dev/null 2>&1
-
-echo "Stop/Disabling Singbox SubLink Service..."
-systemctl stop singbox.service > /dev/null 2>&1
-systemctl disable singbox.service > /dev/null 2>&1
-
-
-echo "Hysteria2 uninstalled!"
+echo "dijiq uninstalled!"
 echo ""

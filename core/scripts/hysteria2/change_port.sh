@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /etc/hysteria/core/scripts/path.sh
+source /etc/dijiq/core/scripts/path.sh
 
 update_port() {
     local port=$1
@@ -12,7 +12,7 @@ update_port() {
 
     if [ -f "$CONFIG_FILE" ]; then
         jq --arg port "$port" '.listen = ":" + $port' "$CONFIG_FILE" > "${CONFIG_FILE}.temp" && mv "${CONFIG_FILE}.temp" "$CONFIG_FILE"
-        python3 "$CLI_PATH" restart-hysteria2 > /dev/null 2>&1
+        python3 "$CLI_PATH" restart-dijiq > /dev/null 2>&1
         echo "Port changed successfully to $port."
     else
         echo "Error: Config file $CONFIG_FILE not found."

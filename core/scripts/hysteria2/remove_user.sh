@@ -1,7 +1,7 @@
 #!/bin/bash
 
-source /etc/hysteria/core/scripts/path.sh
-source /etc/hysteria/core/scripts/utils.sh
+source /etc/dijiq/core/scripts/path.sh
+source /etc/dijiq/core/scripts/utils.sh
 define_colors
 
 remove_user() {
@@ -15,7 +15,7 @@ remove_user() {
     if [ -f "$USERS_FILE" ]; then
         if jq -e "has(\"$username\")" "$USERS_FILE" > /dev/null; then
             jq --arg username "$username" 'del(.[$username])' "$USERS_FILE" > "${USERS_FILE}.temp" && mv "${USERS_FILE}.temp" "$USERS_FILE"
-            
+            python3 $CLI_PATH restart-dijiq
             echo "User $username removed successfully."
         else
             echo -e "${red}Error:${NC} User $username not found."

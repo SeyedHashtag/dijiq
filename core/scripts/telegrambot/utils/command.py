@@ -10,7 +10,7 @@ load_dotenv()
 
 API_TOKEN = os.getenv('API_TOKEN')
 ADMIN_USER_IDS = json.loads(os.getenv('ADMIN_USER_IDS'))
-CLI_PATH = '/etc/hysteria/core/cli.py'
+CLI_PATH = '/etc/dijiq/core/cli.py'
 BACKUP_DIRECTORY = '/opt/hysbackup'
 bot = telebot.TeleBot(API_TOKEN)
 
