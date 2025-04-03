@@ -42,12 +42,6 @@ bash <(curl https://raw.githubusercontent.com/SeyedHashtag/dijiq/main/upgrade.sh
 
 ---
 
-
-<br />
-<p align="center">
- <img src="https://github.com/user-attachments/assets/2a1d46d4-b776-4a5a-bba1-f6f4e047591a" width="700" height="400">
-</p>
-
 ## 🤝 Contributing
 
 We welcome contributions! Whether you're fixing bugs, adding new features, improving documentation, or just have suggestions, your help is greatly appreciated! We believe that a diverse community of contributors is essential to building the best possible tools.  Every contribution, big or small, makes a difference.
