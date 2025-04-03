@@ -1,6 +1,5 @@
 CLI_PATH="/etc/dijiq/core/cli.py"
 USERS_FILE="/etc/dijiq/users.json"
-TRAFFIC_FILE="/etc/dijiq/traffic_data.json"
 CONFIG_FILE="/etc/dijiq/config.json"
 CONFIG_ENV="/etc/dijiq/.configs.env"
 TELEGRAM_ENV="/etc/dijiq/core/scripts/telegrambot/.env"

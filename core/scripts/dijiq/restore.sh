@@ -41,10 +41,7 @@ if [ $? -ne 0 ]; then
 fi
 
 expected_files=(
-    "ca.key"
-    "ca.crt"
     "users.json"
-    "config.json"
     ".configs.env"
 )
 
