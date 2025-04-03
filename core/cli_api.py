@@ -6,8 +6,6 @@ import json
 from typing import Any
 from dotenv import dotenv_values
 
-import traffic
-
 DEBUG = False
 SCRIPT_DIR = '/etc/dijiq/core/scripts'
 CONFIG_FILE = '/etc/dijiq/config.json'
