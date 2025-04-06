@@ -3,34 +3,21 @@ import subprocess
 from enum import Enum
 from datetime import datetime
 import json
-import sys
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, List, Tuple
 from dotenv import dotenv_values
 
-# Import our new Python module with API client
-from scripts.dijiq.add_user import APIClient
+# Import the API client
+from api_client import APIClient
 
 DEBUG = False
 SCRIPT_DIR = '/etc/dijiq/core/scripts'
 CONFIG_FILE = '/etc/dijiq/config.json'
 CONFIG_ENV_FILE = '/etc/dijiq/.configs.env'
 
-# Global API client instance
+# Initialize the API client (will be created when needed)
 _api_client = None
 
-def get_api_client() -> APIClient:
-    """
-    Get or create an API client instance.
-    
-    Returns:
-        APIClient: The API client instance
-    """
-    global _api_client
-    if _api_client is None:
-        _api_client = APIClient()
-    return _api_client
-
-
+# Keep the Command enum for backward compatibility during migration
 class Command(Enum):
     '''Contains path to command's script'''
     GET_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'get_user.sh')
@@ -109,6 +96,15 @@ def generate_password() -> str:
     except subprocess.CalledProcessError as e:
         raise PasswordGenerationError(f'Failed to generate password: {e}')
 
+def get_or_create_api_client() -> APIClient:
+    """
+    Gets the existing API client or creates a new one if needed
+    """
+    global _api_client
+    if _api_client is None:
+        _api_client = APIClient()
+    return _api_client
+
 # endregion
 
 # region APIs
@@ -153,58 +149,41 @@ def set_dijiq_config_file(data: dict[str, Any]):
 
 def list_users() -> dict[str, dict[str, Any]] | None:
     '''
-    Lists all users using the API client.
+    Lists all users.
     '''
-    try:
-        client = get_api_client()
-        return client.get_users()
-    except Exception as e:
-        if DEBUG:
-            print(f"Error listing users: {e}")
-        return None
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    return client.get_users()
 
 
 def get_user(username: str) -> dict[str, Any] | None:
     '''
-    Retrieves information about a specific user using the API client.
+    Retrieves information about a specific user.
     '''
-    try:
-        client = get_api_client()
-        return client.get_user(username)
-    except Exception as e:
-        if DEBUG:
-            print(f"Error getting user: {e}")
-        return None
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    return client.get_user(username)
 
 
 def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
     '''
-    Adds a new user with the given parameters using the API client.
-    
-    Returns:
-        str: Success message if the user was added successfully
-        
-    Raises:
-        InvalidInputError: If the user could not be added
+    Adds a new user with the given parameters.
     '''
-    try:
-        client = get_api_client()
-        success, message = client.add_user(
-            username, 
-            traffic_limit,
-            expiration_days, 
-            password, 
-            creation_date
-        )
-        
-        if not success:
-            raise InvalidInputError(message)
-        
-        return message
-    except Exception as e:
-        if not isinstance(e, InvalidInputError):
-            raise InvalidInputError(f"Failed to add user: {str(e)}")
-        raise
+    if not password:
+        password = generate_password()
+    if not creation_date:
+        creation_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    success, message = client.add_user(
+        username, traffic_limit, expiration_days, password, creation_date
+    )
+    
+    if not success:
+        raise InvalidInputError(message)
+    
+    return message
 
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
@@ -219,40 +198,51 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         raise InvalidInputError('Error: traffic limit must be greater than 0')
     if new_expiration_days is not None and new_expiration_days <= 0:
         raise InvalidInputError('Error: expiration days must be greater than 0')
-    if renew_password:
-        password = generate_password()
-    else:
-        password = ''
-    if renew_creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    else:
-        creation_date = ''
-    command_args = [
-        'bash',
-        Command.EDIT_USER.value,
+    
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    success, message = client.edit_user(
         username,
-        new_username or '',
-        str(new_traffic_limit) if new_traffic_limit is not None else '',
-        str(new_expiration_days) if new_expiration_days is not None else '',
-        password,
-        creation_date,
-        'true' if blocked else 'false'
-    ]
-    run_cmd(command_args)
+        new_username,
+        new_traffic_limit,
+        new_expiration_days,
+        renew_password,
+        renew_creation_date,
+        blocked if blocked is not None else None
+    )
+    
+    if not success:
+        raise InvalidInputError(message)
+    
+    return message
 
 
 def reset_user(username: str):
     '''
     Resets a user's configuration.
     '''
-    run_cmd(['bash', Command.RESET_USER.value, username])
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    success, message = client.reset_user(username)
+    
+    if not success:
+        raise InvalidInputError(message)
+    
+    return message
 
 
 def remove_user(username: str):
     '''
     Removes a user by username.
     '''
-    run_cmd(['bash', Command.REMOVE_USER.value, username])
+    # Use API client instead of shell script
+    client = get_or_create_api_client()
+    success, message = client.remove_user(username)
+    
+    if not success:
+        raise InvalidInputError(message)
+    
+    return message
 
 
 # TODO: it's better to return json
@@ -327,23 +317,11 @@ def edit_ip_address(ipv4: str, ipv6: str):
 # region Advanced Menu
 
 
-def start_telegram_bot(token: str, adminid: str, api_url: str, api_token: str):
-    '''
-    Starts the Telegram bot with the given parameters.
-    
-    Args:
-        token: Telegram bot token
-        adminid: Telegram admin user ID
-        api_url: API base URL
-        api_token: API authentication token
-    
-    Raises:
-        InvalidInputError: If any required parameter is missing
-    '''
-    if not token or not adminid or not api_url or not api_token:
-        raise InvalidInputError('Error: All parameters (token, adminid, api_url, api_token) are required')
-    
-    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_token])
+def start_telegram_bot(token: str, adminid: str):
+    '''Starts the Telegram bot.'''
+    if not token or not adminid:
+        raise InvalidInputError('Error: Both --token and --adminid are required for the start action.')
+    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid])
 
 
 def stop_telegram_bot():
