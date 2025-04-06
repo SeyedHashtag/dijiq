@@ -183,12 +183,16 @@ def ip_address(edit: bool, ipv4: str, ipv6: str):
 @click.option('--action', '-a', required=True, help='Action to perform: start or stop', type=click.Choice(['start', 'stop'], case_sensitive=False))
 @click.option('--token', '-t', required=False, help='Token for running the telegram bot', type=str)
 @click.option('--adminid', '-aid', required=False, help='Telegram admins ID for running the telegram bot', type=str)
-def telegram(action: str, token: str, adminid: str):
+@click.option('--api-url', '-url', required=False, help='URL for the API', type=str)
+@click.option('--api-key', '-key', required=False, help='Authentication key for the API', type=str)
+def telegram(action: str, token: str, adminid: str, api_url: str, api_key: str):
     try:
         if action == 'start':
             if not token or not adminid:
                 raise click.UsageError('Error: Both --token and --adminid are required for the start action.')
-            cli_api.start_telegram_bot(token, adminid)
+            if not api_url or not api_key:
+                raise click.UsageError('Error: Both --api-url and --api-key are required for the start action.')
+            cli_api.start_telegram_bot(token, adminid, api_url, api_key)
             click.echo(f'Telegram bot started successfully.')
         elif action == 'stop':
             cli_api.stop_telegram_bot()
