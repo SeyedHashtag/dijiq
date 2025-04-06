@@ -6,13 +6,13 @@ update_env_file() {
     local api_token=$1
     local admin_user_ids=$2
     local api_url=$3
-    local api_key=$4
+    local api_token_auth=$4
 
     cat <<EOL > /etc/dijiq/core/scripts/telegrambot/.env
 API_TOKEN=$api_token
 ADMIN_USER_IDS=[$admin_user_ids]
 URL=$api_url
-TOKEN=$api_key
+TOKEN=$api_token_auth
 EOL
 }
 
@@ -36,14 +36,14 @@ start_service() {
     local api_token=$1
     local admin_user_ids=$2
     local api_url=$3
-    local api_key=$4
+    local api_token_auth=$4
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         echo "The dijiq-telegram-bot.service is already running."
         return
     fi
 
-    update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_key"
+    update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_token_auth"
     create_service_file
 
     systemctl daemon-reload
@@ -71,7 +71,8 @@ stop_service() {
 case "$1" in
     start)
         if [ "$#" -lt 5 ]; then
-            echo "Usage: $0 start <API_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_KEY>"
+            echo "Usage: $0 start <TELEGRAM_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_TOKEN>"
+            echo "Example: $0 start 123456:ABC-DEF_GHI '123456789' 'http://api.example.com' 'Bearer your-api-token'"
             exit 1
         fi
         start_service "$2" "$3" "$4" "$5"
@@ -80,7 +81,9 @@ case "$1" in
         stop_service
         ;;
     *)
-        echo "Usage: $0 {start|stop} <API_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_KEY>"
+        echo "Usage: $0 {start|stop} <TELEGRAM_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_TOKEN>"
         exit 1
         ;;
 esac
+
+define_colors

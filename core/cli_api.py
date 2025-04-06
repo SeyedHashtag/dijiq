@@ -3,8 +3,8 @@ import subprocess
 from enum import Enum
 from datetime import datetime
 import json
-import requests
-from typing import Any, Tuple, Dict, Optional, Union
+import sys
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dotenv import dotenv_values
 
 # Import our new Python module with API client
@@ -153,10 +153,7 @@ def set_dijiq_config_file(data: dict[str, Any]):
 
 def list_users() -> dict[str, dict[str, Any]] | None:
     '''
-    Lists all users using the API.
-    
-    Returns:
-        List of users or None if the operation fails
+    Lists all users using the API client.
     '''
     try:
         client = get_api_client()
@@ -169,13 +166,7 @@ def list_users() -> dict[str, dict[str, Any]] | None:
 
 def get_user(username: str) -> dict[str, Any] | None:
     '''
-    Retrieves information about a specific user using the API.
-    
-    Args:
-        username: Username to retrieve
-        
-    Returns:
-        User data dictionary or None if the operation fails
+    Retrieves information about a specific user using the API client.
     '''
     try:
         client = get_api_client()
@@ -188,28 +179,21 @@ def get_user(username: str) -> dict[str, Any] | None:
 
 def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
     '''
-    Adds a new user with the given parameters using the API.
+    Adds a new user with the given parameters using the API client.
     
-    Args:
-        username: Username for the new user
-        traffic_limit: Traffic limit in GB
-        expiration_days: Number of days until expiration
-        password: Optional password (generated if not provided)
-        creation_date: Optional creation date (uses current date if not provided)
-        
     Returns:
-        Success message
+        str: Success message if the user was added successfully
         
     Raises:
-        InvalidInputError: If the user creation fails
+        InvalidInputError: If the user could not be added
     '''
     try:
         client = get_api_client()
         success, message = client.add_user(
-            username,
+            username, 
             traffic_limit,
-            expiration_days,
-            password,
+            expiration_days, 
+            password, 
             creation_date
         )
         
@@ -218,7 +202,9 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
         
         return message
     except Exception as e:
-        raise InvalidInputError(f"Failed to add user: {str(e)}")
+        if not isinstance(e, InvalidInputError):
+            raise InvalidInputError(f"Failed to add user: {str(e)}")
+        raise
 
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
@@ -341,24 +327,23 @@ def edit_ip_address(ipv4: str, ipv6: str):
 # region Advanced Menu
 
 
-def start_telegram_bot(token: str, adminid: str, api_url: str, api_key: str):
+def start_telegram_bot(token: str, adminid: str, api_url: str, api_token: str):
     '''
-    Starts the Telegram bot with the provided credentials and API settings.
+    Starts the Telegram bot with the given parameters.
     
     Args:
         token: Telegram bot token
-        adminid: Admin user ID for Telegram
-        api_url: URL for the backend API
-        api_key: Authentication key for the API
-        
+        adminid: Telegram admin user ID
+        api_url: API base URL
+        api_token: API authentication token
+    
     Raises:
         InvalidInputError: If any required parameter is missing
     '''
-    if not token or not adminid:
-        raise InvalidInputError('Error: Both --token and --adminid are required for the start action.')
-    if not api_url or not api_key:
-        raise InvalidInputError('Error: Both --api-url and --api-key are required for the start action.')
-    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_key])
+    if not token or not adminid or not api_url or not api_token:
+        raise InvalidInputError('Error: All parameters (token, adminid, api_url, api_token) are required')
+    
+    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_token])
 
 
 def stop_telegram_bot():
