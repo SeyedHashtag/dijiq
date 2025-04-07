@@ -3,21 +3,15 @@ import subprocess
 from enum import Enum
 from datetime import datetime
 import json
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any
 from dotenv import dotenv_values
-
-# Import the API client
-from api_client import APIClient
 
 DEBUG = False
 SCRIPT_DIR = '/etc/dijiq/core/scripts'
 CONFIG_FILE = '/etc/dijiq/config.json'
 CONFIG_ENV_FILE = '/etc/dijiq/.configs.env'
 
-# Initialize the API client (will be created when needed)
-_api_client = None
 
-# Keep the Command enum for backward compatibility during migration
 class Command(Enum):
     '''Contains path to command's script'''
     GET_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'get_user.sh')
@@ -96,15 +90,6 @@ def generate_password() -> str:
     except subprocess.CalledProcessError as e:
         raise PasswordGenerationError(f'Failed to generate password: {e}')
 
-def get_or_create_api_client() -> APIClient:
-    """
-    Gets the existing API client or creates a new one if needed
-    """
-    global _api_client
-    if _api_client is None:
-        _api_client = APIClient()
-    return _api_client
-
 # endregion
 
 # region APIs
@@ -151,18 +136,16 @@ def list_users() -> dict[str, dict[str, Any]] | None:
     '''
     Lists all users.
     '''
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    return client.get_users()
+    if res := run_cmd(['bash', Command.LIST_USERS.value]):
+        return json.loads(res)
 
 
 def get_user(username: str) -> dict[str, Any] | None:
     '''
     Retrieves information about a specific user.
     '''
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    return client.get_user(username)
+    if res := run_cmd(['bash', Command.GET_USER.value, '-u', str(username)]):
+        return json.loads(res)
 
 
 def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
@@ -173,17 +156,7 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
         password = generate_password()
     if not creation_date:
         creation_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    success, message = client.add_user(
-        username, traffic_limit, expiration_days, password, creation_date
-    )
-    
-    if not success:
-        raise InvalidInputError(message)
-    
-    return message
+    run_cmd(['bash', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days), password, creation_date])
 
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
@@ -198,51 +171,40 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         raise InvalidInputError('Error: traffic limit must be greater than 0')
     if new_expiration_days is not None and new_expiration_days <= 0:
         raise InvalidInputError('Error: expiration days must be greater than 0')
-    
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    success, message = client.edit_user(
+    if renew_password:
+        password = generate_password()
+    else:
+        password = ''
+    if renew_creation_date:
+        creation_date = datetime.now().strftime('%Y-%m-%d')
+    else:
+        creation_date = ''
+    command_args = [
+        'bash',
+        Command.EDIT_USER.value,
         username,
-        new_username,
-        new_traffic_limit,
-        new_expiration_days,
-        renew_password,
-        renew_creation_date,
-        blocked if blocked is not None else None
-    )
-    
-    if not success:
-        raise InvalidInputError(message)
-    
-    return message
+        new_username or '',
+        str(new_traffic_limit) if new_traffic_limit is not None else '',
+        str(new_expiration_days) if new_expiration_days is not None else '',
+        password,
+        creation_date,
+        'true' if blocked else 'false'
+    ]
+    run_cmd(command_args)
 
 
 def reset_user(username: str):
     '''
     Resets a user's configuration.
     '''
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    success, message = client.reset_user(username)
-    
-    if not success:
-        raise InvalidInputError(message)
-    
-    return message
+    run_cmd(['bash', Command.RESET_USER.value, username])
 
 
 def remove_user(username: str):
     '''
     Removes a user by username.
     '''
-    # Use API client instead of shell script
-    client = get_or_create_api_client()
-    success, message = client.remove_user(username)
-    
-    if not success:
-        raise InvalidInputError(message)
-    
-    return message
+    run_cmd(['bash', Command.REMOVE_USER.value, username])
 
 
 # TODO: it's better to return json
