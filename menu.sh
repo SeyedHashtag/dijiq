@@ -324,7 +324,6 @@ telegram_bot_handler() {
     while true; do
         echo -e "${cyan}1.${NC} Start Telegram bot service"
         echo -e "${red}2.${NC} Stop Telegram bot service"
-        echo -e "${cyan}3.${NC} Configure API settings"
         echo "0. Back"
         read -p "Choose an option: " option
 
@@ -353,20 +352,11 @@ telegram_bot_handler() {
                         fi
                     done
 
-                    # Check if API settings are configured
-                    if [ ! -f "$CONFIG_ENV" ] || ! grep -q "API_BASE_URL" "$CONFIG_ENV" || ! grep -q "API_TOKEN" "$CONFIG_ENV"; then
-                        echo -e "${yellow}API settings not found. Let's configure them now.${NC}"
-                        configure_api_settings
-                    fi
-
                     python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids"
                 fi
                 ;;
             2)
                 python3 $CLI_PATH telegram -a stop
-                ;;
-            3)
-                configure_api_settings
                 ;;
             0)
                 break
@@ -376,52 +366,6 @@ telegram_bot_handler() {
                 ;;
         esac
     done
-}
-
-# Function to configure API settings
-configure_api_settings() {
-    echo -e "${cyan}Configure API Settings${NC}"
-    
-    # Get API base URL
-    while true; do
-        read -e -p "Enter the API base URL (e.g., http://example.com:8000): " api_base_url
-        if [ -z "$api_base_url" ]; then
-            echo "API base URL cannot be empty. Please try again."
-        else
-            break
-        fi
-    done
-    
-    # Get API token
-    while true; do
-        read -e -p "Enter the API token: " api_token
-        if [ -z "$api_token" ]; then
-            echo "API token cannot be empty. Please try again."
-        else
-            break
-        fi
-    done
-    
-    # Create or update config file
-    if [ ! -f "$CONFIG_ENV" ]; then
-        touch "$CONFIG_ENV"
-    fi
-    
-    # Update or add API_BASE_URL
-    if grep -q "API_BASE_URL" "$CONFIG_ENV"; then
-        sed -i "s|API_BASE_URL=.*|API_BASE_URL=\"$api_base_url\"|g" "$CONFIG_ENV"
-    else
-        echo "API_BASE_URL=\"$api_base_url\"" >> "$CONFIG_ENV"
-    fi
-    
-    # Update or add API_TOKEN
-    if grep -q "API_TOKEN" "$CONFIG_ENV"; then
-        sed -i "s|API_TOKEN=.*|API_TOKEN=\"$api_token\"|g" "$CONFIG_ENV"
-    else
-        echo "API_TOKEN=\"$api_token\"" >> "$CONFIG_ENV"
-    fi
-    
-    echo -e "${green}API settings configured successfully.${NC}"
 }
 
 # Function to display the main menu
