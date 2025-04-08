@@ -56,7 +56,7 @@ dijiq_edit_user_handler() {
             if [[ -z "$input" ]]; then
                 input="$default_value"
             fi
-            if ([[ "$input" =~ $validation_regex ]]; then
+            if [[ "$input" =~ $validation_regex ]]; then
                 eval "$input_variable_name='$input'"
                 break
             else
