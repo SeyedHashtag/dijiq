@@ -21,17 +21,33 @@ class APIClient:
             
         self.users_endpoint = f"{self.base_url}api/v1/users/"
         
+        # Add Bearer prefix if not already present in the token
+        auth_token = self.token
+        if not auth_token.startswith('Bearer '):
+            auth_token = f"Bearer {auth_token}"
+        
         self.headers = {
             'accept': 'application/json',
-            'Authorization': self.token
+            'Authorization': auth_token
         }
+        
+        # Print debug information
+        print(f"API Base URL: {self.base_url}")
+        print(f"Authorization header: {auth_token[:10]}...")
     
     def get_users(self):
         try:
+            print(f"Making GET request to: {self.users_endpoint}")
             response = requests.get(self.users_endpoint, headers=self.headers)
+            print(f"Response status code: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"Response body: {response.text[:200]}")
+                
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
+            print(f"Request exception: {str(e)}")
             raise Exception(f"Error fetching users: {e}")
     
     def add_user(self, username, traffic_limit, expiration_days, password=None, creation_date=None):
@@ -52,15 +68,23 @@ class APIClient:
         post_headers['Content-Type'] = 'application/json'
         
         try:
+            print(f"Making POST request to: {self.users_endpoint}")
+            print(f"Request data: {data}")
+            
             response = requests.post(
                 self.users_endpoint, 
                 headers=post_headers, 
                 json=data
             )
             
+            print(f"Response status code: {response.status_code}")
+            if response.status_code >= 400:
+                print(f"Response body: {response.text[:200]}")
+                
             response.raise_for_status()
             
             return response.json()
                 
         except requests.exceptions.RequestException as e:
+            print(f"Request exception: {str(e)}")
             raise Exception(f"Error adding user: {e}")

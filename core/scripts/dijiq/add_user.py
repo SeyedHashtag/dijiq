@@ -34,9 +34,14 @@ class APIClient:
             
         self.users_endpoint = f"{self.base_url}api/v1/users/"
         
+        # Add Bearer prefix if not already present in the token
+        auth_token = self.token
+        if not auth_token.startswith('Bearer '):
+            auth_token = f"Bearer {auth_token}"
+        
         self.headers = {
             'accept': 'application/json',
-            'Authorization': self.token
+            'Authorization': auth_token
         }
     
     def get_users(self):
