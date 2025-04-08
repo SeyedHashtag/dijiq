@@ -15,6 +15,7 @@ class APIClient:
         
         self.base_url = os.getenv('URL')
         self.token = os.getenv('TOKEN')
+        self.sub_url = os.getenv('SUB_URL')
         
         if not self.base_url or not self.token:
             print("Warning: API URL or TOKEN not found in environment variables.")
@@ -75,6 +76,14 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             print(f"Error getting user URI: {e}")
             return None
+    
+    def get_subscription_url(self, username):
+        if not self.sub_url:
+            return None
+        
+        # Remove trailing slash if present
+        sub_url = self.sub_url.rstrip('/')
+        return f"{sub_url}/{username}#Hysteria2"
 
 
 def create_cancel_markup(back_step=None):
@@ -157,31 +166,26 @@ def process_add_user_step3(message, username, traffic_limit):
             bot.reply_to(message, "Failed to add user. Please check API connection and try again.", reply_markup=create_main_markup())
             return
 
-        # Get the URI for QR code generation
-        uri_data = api_client.get_user_uri(username)
+        # Generate subscription URL
+        sub_url = api_client.get_subscription_url(username)
         
-        if not uri_data or 'ipv4' not in uri_data:
-            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate QR code.", reply_markup=create_main_markup())
+        if not sub_url:
+            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate subscription URL. Check SUB_URL configuration.", reply_markup=create_main_markup())
             return
 
-        qr_result = uri_data['ipv4']
-        
-        if not qr_result:
-            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate QR code.", reply_markup=create_main_markup())
-            return
-
-        qr_v4 = qrcode.make(qr_result)
-        bio_v4 = io.BytesIO()
-        qr_v4.save(bio_v4, 'PNG')
-        bio_v4.seek(0)
+        # Generate QR code for subscription URL
+        qr_code = qrcode.make(sub_url)
+        bio = io.BytesIO()
+        qr_code.save(bio, 'PNG')
+        bio.seek(0)
         
         # Create success message
         success_message = f"User '{username}' added successfully!\n"
         success_message += f"Traffic limit: {traffic_limit} GB\n"
-        success_message += f"Expiration days: {expiration_days}"
+        success_message += f"Expiration days: {expiration_days}\n\n"
+        success_message += f"Subscription URL: `{sub_url}`"
         
-        caption = f"{success_message}\n\n`{qr_result}`"
-        bot.send_photo(message.chat.id, photo=bio_v4, caption=caption, parse_mode="Markdown", reply_markup=create_main_markup())
+        bot.send_photo(message.chat.id, photo=bio, caption=success_message, parse_mode="Markdown", reply_markup=create_main_markup())
 
     except ValueError:
         bot.reply_to(message, "Invalid expiration days. Please enter a number:", reply_markup=create_cancel_markup(back_step=process_add_user_step2))

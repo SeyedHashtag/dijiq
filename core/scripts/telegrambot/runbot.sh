@@ -7,12 +7,14 @@ update_env_file() {
     local admin_user_ids=$2
     local api_url=$3
     local api_key=$4
+    local sub_url=$5
 
     cat <<EOL > /etc/dijiq/core/scripts/telegrambot/.env
 API_TOKEN=$api_token
 ADMIN_USER_IDS=[$admin_user_ids]
 URL=$api_url
 TOKEN=$api_key
+SUB_URL=$sub_url
 EOL
 }
 
@@ -37,13 +39,14 @@ start_service() {
     local admin_user_ids=$2
     local api_url=$3
     local api_key=$4
+    local sub_url=$5
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         echo "The dijiq-telegram-bot.service is already running."
         return
     fi
 
-    update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_key"
+    update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_key" "$sub_url"
     create_service_file
 
     systemctl daemon-reload
@@ -70,13 +73,13 @@ stop_service() {
 
 case "$1" in
     start)
-        start_service "$2" "$3" "$4" "$5"
+        start_service "$2" "$3" "$4" "$5" "$6"
         ;;
     stop)
         stop_service
         ;;
     *)
-        echo "Usage: $0 {start|stop} <API_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_KEY>"
+        echo "Usage: $0 {start|stop} <API_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_KEY> <SUB_URL>"
         exit 1
         ;;
 esac
