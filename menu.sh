@@ -351,8 +351,26 @@ telegram_bot_handler() {
                             break
                         fi
                     done
+                    
+                    while true; do
+                        read -e -p "Enter the API URL (e.g., http://example.com): " api_url
+                        if [ -z "$api_url" ]; then
+                            echo "API URL cannot be empty. Please try again."
+                        else
+                            break
+                        fi
+                    done
+                    
+                    while true; do
+                        read -e -p "Enter the API key: " api_key
+                        if [ -z "$api_key" ]; then
+                            echo "API key cannot be empty. Please try again."
+                        else
+                            break
+                        fi
+                    done
 
-                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids"
+                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key"
                 fi
                 ;;
             2)

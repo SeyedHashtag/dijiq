@@ -1,9 +1,80 @@
 import qrcode
 import io
 import json
+import os
+import requests
 from telebot import types
 from utils.command import *
-from utils.common import create_main_markup  
+from utils.common import create_main_markup
+from dotenv import load_dotenv
+
+
+class APIClient:
+    def __init__(self):
+        load_dotenv()
+        
+        self.base_url = os.getenv('URL')
+        self.token = os.getenv('TOKEN')
+        
+        if not self.base_url or not self.token:
+            print("Warning: API URL or TOKEN not found in environment variables.")
+            return
+            
+        if self.base_url and not self.base_url.endswith('/'):
+            self.base_url += '/'
+            
+        self.users_endpoint = f"{self.base_url}api/v1/users/"
+        
+        self.headers = {
+            'accept': 'application/json',
+            'Authorization': self.token
+        }
+    
+    def get_users(self):
+        try:
+            response = requests.get(self.users_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching users: {e}")
+            return None
+    
+    def add_user(self, username, traffic_limit, expiration_days):
+        data = {
+            "username": username,
+            "traffic_limit": traffic_limit,
+            "expiration_days": expiration_days
+        }
+        
+        post_headers = self.headers.copy()
+        post_headers['Content-Type'] = 'application/json'
+        
+        try:
+            response = requests.post(
+                self.users_endpoint, 
+                headers=post_headers, 
+                json=data
+            )
+            response.raise_for_status()
+            
+            try:
+                return response.json()
+            except json.JSONDecodeError:
+                return response.text
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error adding user: {e}")
+            return None
+    
+    def get_user_uri(self, username):
+        try:
+            user_uri_endpoint = f"{self.base_url}api/v1/users/{username}/uri"
+            response = requests.get(user_uri_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error getting user URI: {e}")
+            return None
 
 
 def create_cancel_markup(back_step=None):
@@ -29,24 +100,22 @@ def process_add_user_step1(message):
         bot.register_next_step_handler(message, process_add_user_step1)
         return
 
-    command = f"python3 {CLI_PATH} list-users"
-    result = run_cli_command(command)
+    api_client = APIClient()
+    users = api_client.get_users()
+
+    if users is None:
+        bot.reply_to(message, "Error connecting to API. Please check API configuration and try again.", reply_markup=create_main_markup())
+        return
 
     try:
-        users = json.loads(result)
-        existing_users = {user.lower() for user in users.keys()}
+        existing_usernames = [user['username'].lower() for user in users] if users else []
 
-        if username.lower() in existing_users:
+        if username.lower() in existing_usernames:
             bot.reply_to(message, f"Username '{username}' already exists. Please choose a different username:", reply_markup=create_cancel_markup())
             bot.register_next_step_handler(message, process_add_user_step1)
             return
-    except json.JSONDecodeError:
-        if "No such file or directory" in result or result.strip() == "":
-            bot.reply_to(message, "User list file does not exist. Adding the first user.", reply_markup=create_cancel_markup())
-        else:
-            bot.reply_to(message, "Error retrieving user list. Please try again later.")
-            bot.send_message(message.chat.id, "Returning to main menu...", reply_markup=create_main_markup())
-            return
+    except (KeyError, TypeError):
+        bot.reply_to(message, "Error processing user data. Adding new user.", reply_markup=create_cancel_markup())
 
     msg = bot.reply_to(message, "Enter traffic limit (GB):", reply_markup=create_cancel_markup(back_step=process_add_user_step1))
     bot.register_next_step_handler(msg, process_add_user_step2, username)
@@ -79,23 +148,39 @@ def process_add_user_step3(message, username, traffic_limit):
 
     try:
         expiration_days = int(message.text.strip())
-        lower_username = username.lower()
-        command = f"python3 {CLI_PATH} add-user -u {username} -t {traffic_limit} -e {expiration_days}"
-        result = run_cli_command(command)
-
+        api_client = APIClient()
+        
         bot.send_chat_action(message.chat.id, 'typing')
-        qr_command = f"python3 {CLI_PATH} show-user-uri -u {lower_username} -ip 4"
-        qr_result = run_cli_command(qr_command).replace("IPv4:\n", "").strip()
+        result = api_client.add_user(username, traffic_limit, expiration_days)
 
+        if not result:
+            bot.reply_to(message, "Failed to add user. Please check API connection and try again.", reply_markup=create_main_markup())
+            return
+
+        # Get the URI for QR code generation
+        uri_data = api_client.get_user_uri(username)
+        
+        if not uri_data or 'ipv4' not in uri_data:
+            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate QR code.", reply_markup=create_main_markup())
+            return
+
+        qr_result = uri_data['ipv4']
+        
         if not qr_result:
-            bot.reply_to(message, "Failed to generate QR code.", reply_markup=create_main_markup())
+            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate QR code.", reply_markup=create_main_markup())
             return
 
         qr_v4 = qrcode.make(qr_result)
         bio_v4 = io.BytesIO()
         qr_v4.save(bio_v4, 'PNG')
         bio_v4.seek(0)
-        caption = f"{result}\n\n`{qr_result}`"
+        
+        # Create success message
+        success_message = f"User '{username}' added successfully!\n"
+        success_message += f"Traffic limit: {traffic_limit} GB\n"
+        success_message += f"Expiration days: {expiration_days}"
+        
+        caption = f"{success_message}\n\n`{qr_result}`"
         bot.send_photo(message.chat.id, photo=bio_v4, caption=caption, parse_mode="Markdown", reply_markup=create_main_markup())
 
     except ValueError:

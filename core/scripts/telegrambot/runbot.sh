@@ -5,10 +5,14 @@ define_colors
 update_env_file() {
     local api_token=$1
     local admin_user_ids=$2
+    local api_url=$3
+    local api_key=$4
 
     cat <<EOL > /etc/dijiq/core/scripts/telegrambot/.env
 API_TOKEN=$api_token
 ADMIN_USER_IDS=[$admin_user_ids]
+URL=$api_url
+TOKEN=$api_key
 EOL
 }
 
@@ -31,13 +35,15 @@ EOL
 start_service() {
     local api_token=$1
     local admin_user_ids=$2
+    local api_url=$3
+    local api_key=$4
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         echo "The dijiq-telegram-bot.service is already running."
         return
     fi
 
-    update_env_file "$api_token" "$admin_user_ids"
+    update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_key"
     create_service_file
 
     systemctl daemon-reload
@@ -64,13 +70,13 @@ stop_service() {
 
 case "$1" in
     start)
-        start_service "$2" "$3"
+        start_service "$2" "$3" "$4" "$5"
         ;;
     stop)
         stop_service
         ;;
     *)
-        echo "Usage: $0 {start|stop} <API_TOKEN> <ADMIN_USER_IDS>"
+        echo "Usage: $0 {start|stop} <API_TOKEN> <ADMIN_USER_IDS> <API_URL> <API_KEY>"
         exit 1
         ;;
 esac
