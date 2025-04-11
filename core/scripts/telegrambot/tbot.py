@@ -6,10 +6,11 @@ import time
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     if is_admin(message.from_user.id):
-        markup = create_main_markup()
-        bot.reply_to(message, "Welcome to the User Management Bot!", reply_markup=markup)
+        markup = create_main_markup(is_admin=True)
+        bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
-        bot.reply_to(message, "Unauthorized access. You do not have permission to use this bot.")
+        markup = create_main_markup(is_admin=False)
+        bot.reply_to(message, "Welcome to Dijiq VPN services!", reply_markup=markup)
 
 def monitoring_thread():
     while True:
