@@ -10,3 +10,6 @@ from .cpu import *
 from .check_version import *
 from .payment_setup import *
 from .edit_plans import *
+from .payments import *
+from .payment_records import *
+from .purchase_plan import *
