@@ -7,7 +7,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from telebot import types
-from utils.command import bot, is_admin, CLI_PATH, run_cli_command
+from utils.command import bot, is_admin
 from utils.common import create_main_markup
 
 
@@ -155,46 +155,21 @@ def process_show_user(message):
         f"{traffic_message}"
     )
     
-    # Still need to use CLI for getting URI because API endpoint for URI might not exist
-    combined_command = f"python3 {CLI_PATH} show-user-uri -u {actual_username} -ip 4 -s -n"
-    combined_result = run_cli_command(combined_command)
-
-    if "Error" in combined_result or "Invalid" in combined_result:
-        bot.reply_to(message, combined_result)
-        return
-
-    result_lines = combined_result.strip().split('\n')
-    
-    uri_v4 = ""
-    singbox_sublink = ""
-    normal_sub_sublink = ""
-
-    for line in result_lines:
-        line = line.strip()
-        if line.startswith("hy2://"):
-            uri_v4 = line
-        elif line.startswith("Singbox Sublink:"):
-            singbox_sublink = result_lines[result_lines.index(line) + 1].strip()
-        elif line.startswith("Normal-SUB Sublink:"):
-            normal_sub_sublink = result_lines[result_lines.index(line) + 1].strip()
-
-    if not uri_v4:
-        bot.reply_to(message, "No valid URI found.")
-        return
-    
     # Get subscription URL from the API client
     sub_url = api_client.get_subscription_url(actual_username)
-    if sub_url:
-        singbox_sublink = sub_url
-
-    qr_v4 = qrcode.make(uri_v4)
-    bio_v4 = io.BytesIO()
-    qr_v4.save(bio_v4, 'PNG')
-    bio_v4.seek(0)
+    
+    if not sub_url:
+        bot.reply_to(message, f"Error: Could not generate subscription URL for user '{actual_username}'. Check SUB_URL configuration.")
+        return
+    
+    # Create QR code for subscription URL
+    qr_code = qrcode.make(sub_url)
+    bio = io.BytesIO()
+    qr_code.save(bio, 'PNG')
+    bio.seek(0)
 
     markup = types.InlineKeyboardMarkup(row_width=3)
-    markup.add(types.InlineKeyboardButton("Reset User", callback_data=f"reset_user:{actual_username}"),
-               types.InlineKeyboardButton("IPv6-URI", callback_data=f"ipv6_uri:{actual_username}"))
+    markup.add(types.InlineKeyboardButton("Reset User", callback_data=f"reset_user:{actual_username}"))
     markup.add(types.InlineKeyboardButton("Edit Username", callback_data=f"edit_username:{actual_username}"),
                types.InlineKeyboardButton("Edit Traffic Limit", callback_data=f"edit_traffic:{actual_username}"))
     markup.add(types.InlineKeyboardButton("Edit Expiration Days", callback_data=f"edit_expiration:{actual_username}"),
@@ -202,21 +177,17 @@ def process_show_user(message):
     markup.add(types.InlineKeyboardButton("Renew Creation Date", callback_data=f"renew_creation:{actual_username}"),
                types.InlineKeyboardButton("Block User", callback_data=f"block_user:{actual_username}"))
 
-    caption = f"{formatted_details}\n\n**IPv4 URI:**\n\n`{uri_v4}`"
-    if singbox_sublink:
-        caption += f"\n\n**SingBox SUB:**\n{singbox_sublink}"
-    if normal_sub_sublink:
-        caption += f"\n\n**Normal SUB:**\n{normal_sub_sublink}"
-
+    caption = f"{formatted_details}\n\nSubscription URL: `{sub_url}`"
+    
     bot.send_photo(
         message.chat.id,
-        bio_v4,
+        bio,
         caption=caption,
         reply_markup=markup,
         parse_mode="Markdown"
     )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_') or call.data.startswith('renew_') or call.data.startswith('block_') or call.data.startswith('reset_') or call.data.startswith('ipv6_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_') or call.data.startswith('renew_') or call.data.startswith('block_') or call.data.startswith('reset_'))
 def handle_edit_callback(call):
     action, username = call.data.split(':')
     api_client = APIClient()
@@ -256,26 +227,6 @@ def handle_edit_callback(call):
             bot.send_message(call.message.chat.id, result["error"])
         else:
             bot.send_message(call.message.chat.id, f"User '{username}' reset successfully.")
-    elif action == 'ipv6_uri':
-        # Still need to use CLI for getting URI because API endpoint might not exist
-        command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 6"
-        result = run_cli_command(command)
-        if "Error" in result or "Invalid" in result:
-            bot.send_message(call.message.chat.id, result)
-            return
-        
-        uri_v6 = result.split('\n')[-1].strip()
-        qr_v6 = qrcode.make(uri_v6)
-        bio_v6 = io.BytesIO()
-        qr_v6.save(bio_v6, 'PNG')
-        bio_v6.seek(0)
-        
-        bot.send_photo(
-            call.message.chat.id,
-            bio_v6,
-            caption=f"**IPv6 URI for {username}:**\n\n`{uri_v6}`",
-            parse_mode="Markdown"
-        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_block:'))
 def handle_block_confirmation(call):
