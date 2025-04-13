@@ -111,36 +111,18 @@ def process_show_user(message):
     username = message.text.strip().lower()
     bot.send_chat_action(message.chat.id, 'typing')
     
-    # Use API client to get user details
+    # Use API client to get user details directly
     api_client = APIClient()
     
-    # First get the list of users to validate the username
-    users = api_client.get_users()
-    if users is None:
-        bot.reply_to(message, "Error connecting to API. Please check API configuration and try again.")
-        return
-    
-    # Get case-sensitive username if exists
-    actual_username = None
-    try:
-        for user in users:
-            if user['username'].lower() == username:
-                actual_username = user['username']
-                break
-                
-        if not actual_username:
-            bot.reply_to(message, f"Username '{message.text.strip()}' does not exist. Please enter a valid username.")
-            return
-    except (KeyError, TypeError) as e:
-        bot.reply_to(message, f"Error processing user data: {str(e)}")
-        return
-    
-    # Get detailed user info
-    user_details = api_client.get_user(actual_username)
+    # Just attempt to get the user directly
+    user_details = api_client.get_user(username)
     
     if "error" in user_details:
         bot.reply_to(message, user_details["error"])
         return
+    
+    # Use the provided username directly
+    actual_username = username
     
     try:
         upload_bytes = user_details.get('upload_bytes')
