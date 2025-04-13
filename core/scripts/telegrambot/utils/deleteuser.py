@@ -78,23 +78,12 @@ def process_delete_user(message):
     # Use API client to delete the user
     api_client = APIClient()
     
-    # First validate that the user exists
-    users = api_client.get_users()
-    if users is None:
-        bot.reply_to(message, "Error connecting to API. Please check API configuration and try again.", reply_markup=create_main_markup(is_admin=True))
-        return
+    # Just attempt to delete the user directly
+    bot.send_chat_action(message.chat.id, 'typing')
+    result = api_client.delete_user(username)
     
-    try:
-        existing_usernames = [user['username'].lower() for user in users] if users else []
-        
-        if username not in existing_usernames:
-            bot.reply_to(message, f"User '{username}' not found.", reply_markup=create_main_markup(is_admin=True))
-            return
-            
-        # Send delete request to API
-        bot.send_chat_action(message.chat.id, 'typing')
-        result = api_client.delete_user(username)
-        
+    # Check if there was an error message returned
+    if isinstance(result, str) and result.startswith("Error:"):
+        bot.reply_to(message, result, reply_markup=create_main_markup(is_admin=True))
+    else:
         bot.reply_to(message, f"User '{username}' removed successfully.", reply_markup=create_main_markup(is_admin=True))
-    except Exception as e:
-        bot.reply_to(message, f"Error: {str(e)}", reply_markup=create_main_markup(is_admin=True))
