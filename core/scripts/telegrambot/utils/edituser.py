@@ -3,9 +3,94 @@
 import qrcode
 import io
 import json
+import os
+import requests
+from dotenv import load_dotenv
 from telebot import types
-from utils.command import *
-from utils.common import *
+from utils.command import bot, is_admin, CLI_PATH, run_cli_command
+from utils.common import create_main_markup
+
+
+class APIClient:
+    def __init__(self):
+        load_dotenv()
+        
+        self.base_url = os.getenv('URL')
+        self.token = os.getenv('TOKEN')
+        self.sub_url = os.getenv('SUB_URL')
+        
+        if not self.base_url or not self.token:
+            print("Warning: API URL or TOKEN not found in environment variables.")
+            return
+            
+        if self.base_url and not self.base_url.endswith('/'):
+            self.base_url += '/'
+            
+        self.users_endpoint = f"{self.base_url}api/v1/users/"
+        
+        self.headers = {
+            'accept': 'application/json',
+            'Authorization': self.token
+        }
+    
+    def get_users(self):
+        try:
+            response = requests.get(self.users_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching users: {e}")
+            return None
+    
+    def get_user(self, username):
+        """Get user details using API endpoint"""
+        try:
+            user_endpoint = f"{self.users_endpoint}{username}"
+            response = requests.get(user_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error getting user details: {e}")
+            if e.response and e.response.status_code == 404:
+                return {"error": f"User '{username}' not found."}
+            return {"error": f"Failed to get user details: {str(e)}"}
+    
+    def update_user(self, username, data):
+        """Update user using API endpoint with PATCH"""
+        try:
+            user_endpoint = f"{self.users_endpoint}{username}"
+            
+            headers = self.headers.copy()
+            headers['Content-Type'] = 'application/json'
+            
+            response = requests.patch(user_endpoint, headers=headers, json=data)
+            response.raise_for_status()
+            
+            try:
+                return response.json()
+            except json.JSONDecodeError:
+                return {"message": "User updated successfully."}
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error updating user: {e}")
+            if e.response and e.response.status_code == 404:
+                return {"error": f"User '{username}' not found."}
+            return {"error": f"Failed to update user: {str(e)}"}
+    
+    def reset_user(self, username):
+        """Reset user traffic data"""
+        return self.update_user(username, {
+            "renew_creation_date": True,
+            "blocked": False
+        })
+    
+    def get_subscription_url(self, username):
+        if not self.sub_url:
+            return None
+        
+        # Remove trailing slash if present
+        sub_url = self.sub_url.rstrip('/')
+        return f"{sub_url}/{username}#Hysteria2"
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
@@ -13,7 +98,7 @@ def handle_cancel_show_user(call):
     bot.edit_message_text("Operation canceled.", chat_id=call.message.chat.id, message_id=call.message.message_id)
     create_main_markup(call.message)
 
-@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == 'Show User')
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '👤 Show User')
 def show_user(message):
     markup = types.InlineKeyboardMarkup()
     cancel_button = types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_show_user")
@@ -25,28 +110,39 @@ def show_user(message):
 def process_show_user(message):
     username = message.text.strip().lower()
     bot.send_chat_action(message.chat.id, 'typing')
-    command = f"python3 {CLI_PATH} list-users"
-    result = run_cli_command(command)
-
+    
+    # Use API client to get user details
+    api_client = APIClient()
+    
+    # First get the list of users to validate the username
+    users = api_client.get_users()
+    if users is None:
+        bot.reply_to(message, "Error connecting to API. Please check API configuration and try again.")
+        return
+    
+    # Get case-sensitive username if exists
+    actual_username = None
     try:
-        users = json.loads(result)
-        existing_users = {user.lower(): user for user in users.keys()}
-
-        if username not in existing_users:
+        for user in users:
+            if user['username'].lower() == username:
+                actual_username = user['username']
+                break
+                
+        if not actual_username:
             bot.reply_to(message, f"Username '{message.text.strip()}' does not exist. Please enter a valid username.")
             return
-
-        actual_username = existing_users[username]
-    except json.JSONDecodeError:
-        bot.reply_to(message, "Error retrieving user list. Please try again later.")
+    except (KeyError, TypeError) as e:
+        bot.reply_to(message, f"Error processing user data: {str(e)}")
         return
-
-    command = f"python3 {CLI_PATH} get-user -u {actual_username}"
-    user_result = run_cli_command(command)
-
+    
+    # Get detailed user info
+    user_details = api_client.get_user(actual_username)
+    
+    if "error" in user_details:
+        bot.reply_to(message, user_details["error"])
+        return
+    
     try:
-        user_details = json.loads(user_result)
-        
         upload_bytes = user_details.get('upload_bytes')
         download_bytes = user_details.get('download_bytes')
         status = user_details.get('status', 'Unknown')
@@ -64,8 +160,8 @@ def process_show_user(message):
                 f"📊 Total Usage: {totalusage:.2f} GB\n"
                 f"🌐 Status: {status}"
             )
-    except json.JSONDecodeError:
-        bot.reply_to(message, "Failed to parse JSON data. The command output may be malformed.")
+    except Exception as e:
+        bot.reply_to(message, f"Failed to process user data: {str(e)}")
         return
 
     formatted_details = (
@@ -76,7 +172,8 @@ def process_show_user(message):
         f"💡 Blocked: {user_details['blocked']}\n\n"
         f"{traffic_message}"
     )
-
+    
+    # Still need to use CLI for getting URI because API endpoint for URI might not exist
     combined_command = f"python3 {CLI_PATH} show-user-uri -u {actual_username} -ip 4 -s -n"
     combined_result = run_cli_command(combined_command)
 
@@ -102,6 +199,11 @@ def process_show_user(message):
     if not uri_v4:
         bot.reply_to(message, "No valid URI found.")
         return
+    
+    # Get subscription URL from the API client
+    sub_url = api_client.get_subscription_url(actual_username)
+    if sub_url:
+        singbox_sublink = sub_url
 
     qr_v4 = qrcode.make(uri_v4)
     bio_v4 = io.BytesIO()
@@ -135,6 +237,8 @@ def process_show_user(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('edit_') or call.data.startswith('renew_') or call.data.startswith('block_') or call.data.startswith('reset_') or call.data.startswith('ipv6_'))
 def handle_edit_callback(call):
     action, username = call.data.split(':')
+    api_client = APIClient()
+    
     if action == 'edit_username':
         msg = bot.send_message(call.message.chat.id, f"Enter new username for {username}:")
         bot.register_next_step_handler(msg, process_edit_username, username)
@@ -145,23 +249,33 @@ def handle_edit_callback(call):
         msg = bot.send_message(call.message.chat.id, f"Enter new expiration days for {username}:")
         bot.register_next_step_handler(msg, process_edit_expiration, username)
     elif action == 'renew_password':
-        command = f"python3 {CLI_PATH} edit-user -u {username} -rp"
-        result = run_cli_command(command)
-        bot.send_message(call.message.chat.id, result)
+        # Use API to renew password
+        result = api_client.update_user(username, {"renew_password": True})
+        if "error" in result:
+            bot.send_message(call.message.chat.id, result["error"])
+        else:
+            bot.send_message(call.message.chat.id, f"Password for user '{username}' renewed successfully.")
     elif action == 'renew_creation':
-        command = f"python3 {CLI_PATH} edit-user -u {username} -rc"
-        result = run_cli_command(command)
-        bot.send_message(call.message.chat.id, result)
+        # Use API to renew creation date
+        result = api_client.update_user(username, {"renew_creation_date": True})
+        if "error" in result:
+            bot.send_message(call.message.chat.id, result["error"])
+        else:
+            bot.send_message(call.message.chat.id, f"Creation date for user '{username}' renewed successfully.")
     elif action == 'block_user':
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("True", callback_data=f"confirm_block:{username}:true"),
                    types.InlineKeyboardButton("False", callback_data=f"confirm_block:{username}:false"))
         bot.send_message(call.message.chat.id, f"Set block status for {username}:", reply_markup=markup)
     elif action == 'reset_user':
-        command = f"python3 {CLI_PATH} reset-user -u {username}"
-        result = run_cli_command(command)
-        bot.send_message(call.message.chat.id, result)
+        # Use API to reset user
+        result = api_client.reset_user(username)
+        if "error" in result:
+            bot.send_message(call.message.chat.id, result["error"])
+        else:
+            bot.send_message(call.message.chat.id, f"User '{username}' reset successfully.")
     elif action == 'ipv6_uri':
+        # Still need to use CLI for getting URI because API endpoint might not exist
         command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 6"
         result = run_cli_command(command)
         if "Error" in result or "Invalid" in result:
@@ -184,30 +298,56 @@ def handle_edit_callback(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_block:'))
 def handle_block_confirmation(call):
     _, username, block_status = call.data.split(':')
-    command = f"python3 {CLI_PATH} edit-user -u {username} {'-b' if block_status == 'true' else ''}"
-    result = run_cli_command(command)
-    bot.send_message(call.message.chat.id, result)
+    api_client = APIClient()
+    
+    # Use API to set block status
+    is_blocked = block_status == 'true'
+    result = api_client.update_user(username, {"blocked": is_blocked})
+    
+    if "error" in result:
+        bot.send_message(call.message.chat.id, result["error"])
+    else:
+        status = "blocked" if is_blocked else "unblocked"
+        bot.send_message(call.message.chat.id, f"User '{username}' {status} successfully.")
 
 def process_edit_username(message, username):
     new_username = message.text.strip()
-    command = f"python3 {CLI_PATH} edit-user -u {username} -nu {new_username}"
-    result = run_cli_command(command)
-    bot.reply_to(message, result)
+    
+    # Validate the new username is not empty
+    if not new_username:
+        bot.reply_to(message, "Username cannot be empty.")
+        return
+    
+    api_client = APIClient()
+    result = api_client.update_user(username, {"new_username": new_username})
+    
+    if "error" in result:
+        bot.reply_to(message, result["error"])
+    else:
+        bot.reply_to(message, f"Username updated from '{username}' to '{new_username}' successfully.")
 
 def process_edit_traffic(message, username):
     try:
         new_traffic_limit = int(message.text.strip())
-        command = f"python3 {CLI_PATH} edit-user -u {username} -nt {new_traffic_limit}"
-        result = run_cli_command(command)
-        bot.reply_to(message, result)
+        api_client = APIClient()
+        result = api_client.update_user(username, {"new_traffic_limit": new_traffic_limit})
+        
+        if "error" in result:
+            bot.reply_to(message, result["error"])
+        else:
+            bot.reply_to(message, f"Traffic limit for user '{username}' updated to {new_traffic_limit} GB successfully.")
     except ValueError:
         bot.reply_to(message, "Invalid traffic limit. Please enter a number.")
 
 def process_edit_expiration(message, username):
     try:
         new_expiration_days = int(message.text.strip())
-        command = f"python3 {CLI_PATH} edit-user -u {username} -ne {new_expiration_days}"
-        result = run_cli_command(command)
-        bot.reply_to(message, result)
+        api_client = APIClient()
+        result = api_client.update_user(username, {"new_expiration_days": new_expiration_days})
+        
+        if "error" in result:
+            bot.reply_to(message, result["error"])
+        else:
+            bot.reply_to(message, f"Expiration days for user '{username}' updated to {new_expiration_days} days successfully.")
     except ValueError:
         bot.reply_to(message, "Invalid expiration days. Please enter a number.")
