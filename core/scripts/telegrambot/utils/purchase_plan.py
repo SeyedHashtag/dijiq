@@ -262,68 +262,60 @@ def process_payment_webhook(request_data):
         payment_id = request_data.get('order_id')
         status = request_data.get('status')
         
-        if payment_id and status == 'paid':
-            payment_record = get_payment_record(payment_id)
-            if payment_record and payment_record.get('status') != 'completed':
-                # Process the payment as complete
-                user_id = payment_record.get('user_id')
-                plan_gb = payment_record.get('plan_gb')
-                days = payment_record.get('days')
-                
+        if not payment_id or not status:
+            return False
+        payment_record = get_payment_record(payment_id)
+        if not payment_record:
+            return False
+        user_id = payment_record.get('user_id')
+        plan_gb = payment_record.get('plan_gb')
+        days = payment_record.get('days')
+        
+        # Notify user based on payment status
+        if status == 'paid':
+            if payment_record.get('status') != 'completed':
                 # Create a username based on user ID and current timestamp
                 username = create_username_from_user_id(user_id)
-                
                 # Use APIClient to create a user
                 api_client = APIClient()
                 result = api_client.add_user(username, int(plan_gb), int(days))
-                
                 if result:
                     # Get subscription URL
                     sub_url = api_client.get_subscription_url(username)
-                    
                     # Update payment status
                     update_payment_status(payment_id, 'completed')
-                    
                     # Format the message with available links
                     success_message = (
                         f"✅ Payment completed!\n\n"
                         f"📊 Your {plan_gb}GB plan is ready.\n"
                         f"📱 Username: `{username}`\n\n"
                     )
-                    
                     if sub_url:
                         success_message += f"Subscription URL: `{sub_url}`\n\n"
                         success_message += "Please save this information for your records."
-                    
-                    # Send the success message to user
-                    bot.send_message(
-                        user_id,
-                        success_message,
-                        parse_mode="Markdown"
-                    )
-                    
-                    # If subscription URL is available, send it as a QR code
+                    bot.send_message(user_id, success_message, parse_mode="Markdown")
                     if sub_url:
                         qr = qrcode.make(sub_url)
                         bio = io.BytesIO()
                         qr.save(bio, 'PNG')
                         bio.seek(0)
-                        
-                        bot.send_photo(
-                            user_id,
-                            photo=bio,
-                            caption="Scan this QR code to configure your VPN client."
-                        )
-                    
+                        bot.send_photo(user_id, photo=bio, caption="Scan this QR code to configure your VPN client.")
                     return True
                 else:
-                    # Send error message to user
-                    bot.send_message(
-                        user_id,
-                        f"✅ Payment completed but error creating account. Please contact support.",
-                        parse_mode="Markdown"
-                    )
+                    bot.send_message(user_id, f"✅ Payment completed but error creating account. Please contact support.", parse_mode="Markdown")
                     return False
+        elif status in ['failed', 'canceled', 'expired']:
+            update_payment_status(payment_id, status)
+            status_map = {
+                'failed': '❌ Payment failed. Your transaction could not be completed. Please try again or contact support.',
+                'canceled': '⚠️ Payment was canceled. If this was a mistake, please try again.',
+                'expired': '⌛ Payment expired. Please initiate a new payment if you wish to continue.'
+            }
+            bot.send_message(user_id, status_map[status], parse_mode="Markdown")
+            return False
+        else:
+            # For any other status, just log or ignore
+            return False
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
         return False
