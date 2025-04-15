@@ -80,25 +80,36 @@ def my_configs(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('show_config:'))
 def handle_show_config(call):
     """Handle the selection of a specific config"""
-    bot.answer_callback_query(call.id)
-    username = call.data.split(':')[1]
-    
-    # Create API client
-    api_client = APIClient()
-    
-    # Get specific user details
-    user_data = api_client.get_user(username)
-    
-    if "error" in user_data:
+    try:
+        bot.answer_callback_query(call.id)
+        username = call.data.split(':')[1]
+        
+        # Create API client
+        api_client = APIClient()
+        
+        # Get specific user details
+        user_data = api_client.get_user(username)
+        
+        # Add debug logging
+        print(f"API response for {username}: {user_data}")
+        
+        if isinstance(user_data, dict) and "error" in user_data:
+            bot.edit_message_text(
+                f"⚠️ Error: {user_data['error']}",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            return
+        
+        # Show the config
+        display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
+    except Exception as e:
+        print(f"Error in handle_show_config: {str(e)}")
         bot.edit_message_text(
-            f"⚠️ Error: {user_data['error']}",
+            f"⚠️ Error processing your request: {str(e)}",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )
-        return
-    
-    # Show the config
-    display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
 
 def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None):
     """Display user configuration details and QR code"""
