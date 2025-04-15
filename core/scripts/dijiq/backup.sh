@@ -10,6 +10,11 @@ fi
 FILES_TO_BACKUP=(
     "/etc/dijiq/users.json"
     "/etc/dijiq/.configs.env"
+    "/etc/dijiq/core/scripts/telegrambot/.env"
+    "/etc/dijiq/core/scripts/telegrambot/plans.json"
+    "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
+    "/etc/dijiq/core/scripts/telegrambot/payments.json"
+    "/etc/dijiq/core/scripts/telegrambot/support_info.json"
 )
 
 zip -j "$BACKUP_FILE" "${FILES_TO_BACKUP[@]}" >/dev/null
