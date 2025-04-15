@@ -87,22 +87,27 @@ def handle_show_config(call):
         # Create API client
         api_client = APIClient()
         
-        # Get specific user details
-        user_data = api_client.get_user(username)
-        
-        # Add debug logging
-        print(f"API response for {username}: {user_data}")
-        
-        if isinstance(user_data, dict) and "error" in user_data:
+        # Get all users
+        users = api_client.get_users()
+        if users is None:
             bot.edit_message_text(
-                f"⚠️ Error: {user_data['error']}",
+                "⚠️ Error connecting to API. Please try again later.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id
             )
             return
         
-        # Show the config
-        display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
+        # Find the specific user data
+        if username in users:
+            user_data = users[username]
+            # Show the config
+            display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
+        else:
+            bot.edit_message_text(
+                f"⚠️ Error: User '{username}' not found.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
     except Exception as e:
         print(f"Error in handle_show_config: {str(e)}")
         bot.edit_message_text(
