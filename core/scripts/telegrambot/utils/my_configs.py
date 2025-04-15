@@ -123,22 +123,22 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
     is_blocked = user_data.get('blocked', False)
     
     try:
-        # Extract user statistics
-        upload_bytes = user_data.get('upload_bytes', 0)
-        download_bytes = user_data.get('download_bytes', 0)
+        # Extract user statistics with default values to prevent NoneType errors
+        upload_bytes = user_data.get('upload_bytes', 0) or 0  # Convert None to 0
+        download_bytes = user_data.get('download_bytes', 0) or 0  # Convert None to 0
         status = user_data.get('status', 'Unknown')
-        max_download_bytes = user_data.get('max_download_bytes', 0)
+        max_download_bytes = user_data.get('max_download_bytes', 0) or 0  # Convert None to 0
         expiration_days = user_data.get('expiration_days', 0)
         account_creation_date = user_data.get('account_creation_date', 'Unknown')
 
-        # Calculate traffic percentages
+        # Calculate traffic with safety checks
         upload_gb = upload_bytes / (1024 ** 3)  # Convert bytes to GB
         download_gb = download_bytes / (1024 ** 3)  # Convert bytes to GB
         total_usage_gb = upload_gb + download_gb
         max_traffic_gb = max_download_bytes / (1024 ** 3)
         
         # Format user details
-        if upload_bytes is None or download_bytes is None:
+        if upload_bytes == 0 and download_bytes == 0:
             traffic_message = "**Traffic Data:**\nNo traffic data available."
         else:
             traffic_message = (
@@ -214,6 +214,7 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
             )
     except Exception as e:
         error_message = f"⚠️ Error displaying configuration: {str(e)}"
+        print(f"Error in display_config: {str(e)}")
         if is_callback:
             bot.edit_message_text(error_message, chat_id=chat_id, message_id=message_id)
         else:
