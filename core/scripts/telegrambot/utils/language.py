@@ -1,119 +1,114 @@
-import os
+"""
+Language management for the Telegram bot.
+This module handles language selection, storage, and retrieval.
+"""
+
 import json
+import os
+import threading
 from telebot import types
+from utils.translations import LANGUAGES, TRANSLATIONS
 from utils.command import bot
 
-# Define available languages
-LANGUAGES = {
-    'en': 'English 🇺🇸',
-    'fa': 'فارسی 🇮🇷'
-}
+# File to store user language preferences
+LANGUAGE_FILE = 'user_languages.json'
+DEFAULT_LANGUAGE = 'en'
 
-# Path to language preferences file
-LANGUAGE_FILE = "/etc/dijiq/core/scripts/telegrambot/user_languages.json"
+# Thread lock for file operations
+file_lock = threading.Lock()
 
-def create_language_selection_markup():
-    """Create a keyboard markup for language selection"""
-    markup = types.InlineKeyboardMarkup(row_width=2)
+def load_language_preferences():
+    """Load user language preferences from file."""
+    try:
+        if not os.path.exists(LANGUAGE_FILE):
+            return {}
+        
+        with file_lock:
+            with open(LANGUAGE_FILE, 'r') as file:
+                return json.load(file)
+    except Exception as e:
+        print(f"Error loading language preferences: {str(e)}")
+        return {}
+
+def save_language_preference(user_id, language_code):
+    """Save user language preference to file."""
+    try:
+        user_id_str = str(user_id)
+        preferences = load_language_preferences()
+        
+        with file_lock:
+            preferences[user_id_str] = language_code
+            with open(LANGUAGE_FILE, 'w') as file:
+                json.dump(preferences, file)
+    except Exception as e:
+        print(f"Error saving language preference: {str(e)}")
+
+def get_user_language(user_id):
+    """Get user's preferred language code."""
+    preferences = load_language_preferences()
+    user_id_str = str(user_id)
+    return preferences.get(user_id_str, DEFAULT_LANGUAGE)
+
+def get_text(key, user_id, **kwargs):
+    """Get translated text for a given key and user."""
+    language = get_user_language(user_id)
     
-    for lang_code, lang_name in LANGUAGES.items():
-        markup.add(types.InlineKeyboardButton(
-            lang_name, 
-            callback_data=f"set_lang:{lang_code}"
-        ))
+    # If the language doesn't exist, fall back to default
+    if language not in LANGUAGES:
+        language = DEFAULT_LANGUAGE
+    
+    # If the key doesn't exist, return the key itself
+    if key not in TRANSLATIONS:
+        return key
+    
+    # If the language is not available for this key, fall back to default
+    if language not in TRANSLATIONS[key]:
+        text = TRANSLATIONS[key].get(DEFAULT_LANGUAGE, key)
+    else:
+        text = TRANSLATIONS[key][language]
+    
+    # Format with any provided parameters
+    if kwargs:
+        try:
+            return text.format(*kwargs.values())
+        except:
+            return text
+    
+    return text
+
+def create_language_keyboard():
+    """Create a keyboard for language selection."""
+    markup = types.InlineKeyboardMarkup()
+    
+    for code, name in LANGUAGES.items():
+        markup.add(types.InlineKeyboardButton(name, callback_data=f"lang:{code}"))
     
     return markup
 
-def get_user_language(user_id):
-    """Get the language preference for a user
-    
-    Args:
-        user_id (int): Telegram user ID
-        
-    Returns:
-        str: Language code (default: 'en')
-    """
-    try:
-        if os.path.exists(LANGUAGE_FILE):
-            with open(LANGUAGE_FILE, 'r') as f:
-                languages = json.load(f)
-                return languages.get(str(user_id), 'en')
-        return 'en'  # Default language
-    except Exception as e:
-        print(f"Error reading language file: {str(e)}")
-        return 'en'  # Default to English on error
+def update_client_menu(user_language):
+    """Get the translated client menu items."""
+    return {
+        'my_configs': get_text('my_configs', user_language),
+        'purchase_plan': get_text('purchase_plan', user_language),
+        'downloads': get_text('downloads', user_language),
+        'test_config': get_text('test_config', user_language),
+        'support': get_text('support', user_language),
+        'language': get_text('language', user_language),
+    }
 
-def save_user_language(user_id, lang_code):
-    """Save a user's language preference
-    
-    Args:
-        user_id (int): Telegram user ID
-        lang_code (str): Language code to save
-    """
-    try:
-        languages = {}
-        if os.path.exists(LANGUAGE_FILE):
-            with open(LANGUAGE_FILE, 'r') as f:
-                try:
-                    languages = json.load(f)
-                except:
-                    languages = {}
-        
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(LANGUAGE_FILE), exist_ok=True)
-        
-        # Update and save
-        languages[str(user_id)] = lang_code
-        with open(LANGUAGE_FILE, 'w') as f:
-            json.dump(languages, f)
-            
-        return True
-    except Exception as e:
-        print(f"Error saving language preference: {str(e)}")
-        return False
-
-def show_language_selection(chat_id, message_text="Please select your language / لطفا زبان خود را انتخاب کنید"):
-    """Show language selection keyboard to the user
-    
-    Args:
-        chat_id (int): Telegram chat ID
-        message_text (str): Optional custom message text
-    """
-    markup = create_language_selection_markup()
-    bot.send_message(
-        chat_id,
-        message_text,
-        reply_markup=markup
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('set_lang:'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('lang:'))
 def handle_language_selection(call):
-    """Handle language selection callback"""
-    lang_code = call.data.split(':')[1]
+    """Handle language selection callback."""
+    language_code = call.data.split(':')[1]
     user_id = call.from_user.id
     
-    if lang_code in LANGUAGES:
-        # Save user's language preference
-        save_user_language(user_id, lang_code)
-        
-        # Answer the callback query
-        bot.answer_callback_query(call.id, f"Language set to {LANGUAGES[lang_code]}")
-        
-        # Update the message
-        if lang_code == 'en':
-            success_message = "✅ Language set to English!"
-        elif lang_code == 'fa':
-            success_message = "✅ زبان به فارسی تغییر یافت!"
-        
-        try:
-            bot.edit_message_text(
-                success_message,
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-        except:
-            pass
-        
-        # Show main menu with newly selected language
-        from utils.common import create_main_markup, send_welcome
-        send_welcome(call.message, restart=True)
+    # Save user's language preference
+    save_language_preference(user_id, language_code)
+    
+    # Send confirmation message
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=get_text('language_set', user_id)
+    )
