@@ -5,33 +5,12 @@ import time
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    user_id = message.from_user.id
-    
-    if is_admin(user_id):
-        # Admin interface - no language selection needed
+    if is_admin(message.from_user.id):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
-        # Check if user already has a language preference
-        user_language = get_user_language(user_id)
-        
-        # If this is a new user (no saved language preference yet)
-        if not user_language or user_language == DEFAULT_LANGUAGE:
-            # Show language selection first
-            keyboard = create_language_keyboard()
-            bot.reply_to(
-                message,
-                get_text('select_language', user_id),
-                reply_markup=keyboard
-            )
-        else:
-            # User already has a language preference, show main menu
-            markup = create_main_markup(is_admin=False, user_id=user_id)
-            bot.reply_to(
-                message, 
-                get_text('welcome', user_id), 
-                reply_markup=markup
-            )
+        markup = create_main_markup(is_admin=False)
+        bot.reply_to(message, "Welcome to Dijiq VPN services!", reply_markup=markup)
 
 def monitoring_thread():
     while True:

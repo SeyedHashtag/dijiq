@@ -18,6 +18,3 @@ from .edit_support import *
 from .downloads import *
 from .my_configs import *
 from .broadcast import *
-from .language import *
-from .translations import *
-from .language_selection import *
