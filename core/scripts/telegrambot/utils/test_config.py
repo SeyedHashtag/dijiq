@@ -5,6 +5,7 @@ from telebot import types
 from utils.command import bot
 from utils.common import create_main_markup
 from utils.adduser import APIClient
+from utils.translations import BUTTON_TRANSLATIONS
 import qrcode
 import io
 
@@ -45,7 +46,10 @@ def create_username_from_user_id(user_id):
     time_str = format_datetime_string()
     return f"test{user_id}t{time_str}"
 
-@bot.message_handler(func=lambda message: message.text == '🎁 Test Config')
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["test_config"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def test_config(message):
     user_id = message.from_user.id
     
@@ -54,7 +58,7 @@ def test_config(message):
         bot.reply_to(
             message,
             "⚠️ You have already used your free test config. Please purchase a plan for continued service.",
-            reply_markup=create_main_markup(is_admin=False)
+            reply_markup=create_main_markup(is_admin=False, user_id=user_id)
         )
         return
     

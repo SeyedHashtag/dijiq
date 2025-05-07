@@ -3,6 +3,7 @@ import os
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
+from utils.translations import BUTTON_TRANSLATIONS
 
 SUPPORT_FILE = '/etc/dijiq/core/scripts/telegrambot/support_info.json'
 
@@ -55,7 +56,10 @@ def process_support_text(message):
     )
 
 # Handler for regular users clicking on the Support button
-@bot.message_handler(func=lambda message: message.text == '📞 Support')
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["support"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def show_support(message):
     support_text = get_support_text()
     bot.reply_to(

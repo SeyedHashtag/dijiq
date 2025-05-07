@@ -1,5 +1,7 @@
+import os
 from telebot import types
 from utils.command import bot
+from utils.translations import BUTTON_TRANSLATIONS
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
@@ -8,7 +10,10 @@ DOWNLOAD_LINKS = {
     "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
 }
 
-@bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["downloads"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def downloads(message):
     """Handle the Downloads button click"""
     markup = types.InlineKeyboardMarkup(row_width=1)

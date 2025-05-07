@@ -7,6 +7,7 @@ from utils.edit_plans import load_plans
 from utils.payments import CryptomusPayment
 from utils.payment_records import add_payment_record, update_payment_status, get_payment_record
 from utils.adduser import APIClient
+from utils.translations import BUTTON_TRANSLATIONS
 import qrcode
 import io
 
@@ -20,7 +21,10 @@ def create_username_from_user_id(user_id):
     time_str = format_datetime_string()
     return f"{user_id}t{time_str}"
 
-@bot.message_handler(func=lambda message: message.text == '💰 Purchase Plan')
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["purchase_plan"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def purchase_plan(message):
     # Non-admin user purchase flow
     plans = load_plans()

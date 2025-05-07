@@ -8,8 +8,12 @@ from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
 from utils.adduser import APIClient
+from utils.translations import BUTTON_TRANSLATIONS
 
-@bot.message_handler(func=lambda message: message.text == '📱 My Configs')
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["my_configs"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def my_configs(message):
     """Handle the My Configs button click"""
     user_id = message.from_user.id
