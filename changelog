@@ -1,12 +1,1 @@
-### Added
-- New "Downloads" button with links for different platforms
-- "My Configs" functionality allowing users to:
-  - View their active and test configurations
-  - See traffic usage statistics
-  - Access subscription URLs and QR codes
-- Enhanced broadcast messaging with targeted user groups
-
-### Changed
-- Complete migration from CLI commands to API endpoints
-- Updated user management interface in admin panel
-- Improved error handling and validation in user-facing components
+🌐 language selection implementation(en-fa)
