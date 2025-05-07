@@ -1,6 +1,5 @@
 from telebot import types
 from utils.command import bot
-from utils.languages import get_text, get_user_language
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
@@ -9,24 +8,21 @@ DOWNLOAD_LINKS = {
     "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
 }
 
-@bot.message_handler(func=lambda message: message.text == '⬇️ Downloads' or message.text == '⬇️ دانلودها')
+@bot.message_handler(func=lambda message: message.text == '⬇️ Downloads')
 def downloads(message):
     """Handle the Downloads button click"""
-    user_id = message.from_user.id
-    lang_code = get_user_language(user_id)
-    
     markup = types.InlineKeyboardMarkup(row_width=1)
     
-    # Add buttons for each platform with localized text
+    # Add buttons for each platform
     markup.add(
-        types.InlineKeyboardButton(get_text("download_ios", lang_code), callback_data="download:ios"),
-        types.InlineKeyboardButton(get_text("download_android", lang_code), callback_data="download:android"),
-        types.InlineKeyboardButton(get_text("download_windows", lang_code), callback_data="download:windows")
+        types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"),
+        types.InlineKeyboardButton("📱 Android", callback_data="download:android"),
+        types.InlineKeyboardButton("💻 Windows", callback_data="download:windows")
     )
     
     bot.reply_to(
         message,
-        get_text("download_select_platform", lang_code),
+        "📥 Select your platform to download the VPN client:",
         reply_markup=markup
     )
 
@@ -34,34 +30,41 @@ def downloads(message):
 def handle_download_selection(call):
     """Handle the platform selection for downloads"""
     try:
-        user_id = call.from_user.id
-        lang_code = get_user_language(user_id)
-        
         bot.answer_callback_query(call.id)
         platform = call.data.split(':')[1]
         
         if platform in DOWNLOAD_LINKS:
             download_url = DOWNLOAD_LINKS[platform]
             
-            # Create platform-specific messages using templates from language pack
+            # Create platform-specific messages
             if platform == "ios":
-                message = get_text("download_ios_message", lang_code).format(url=download_url)
+                message = (
+                    "📱 **iOS Download**\n\n"
+                    "Download Karing from the App Store:\n\n"
+                    f"[Download for iOS]({download_url})\n\n"
+                    "After installation, use your subscription link or QR code to configure the app."
+                )
             elif platform == "android":
-                message = get_text("download_android_message", lang_code).format(url=download_url)
+                message = (
+                    "📱 **Android Download**\n\n"
+                    "Download Karing APK directly:\n\n"
+                    f"[Download for Android]({download_url})\n\n"
+                    "After installation, allow installation from unknown sources if prompted, "
+                    "then use your subscription link or QR code to configure the app."
+                )
             elif platform == "windows":
-                message = get_text("download_windows_message", lang_code).format(url=download_url)
+                message = (
+                    "💻 **Windows Download**\n\n"
+                    "Download Karing for Windows:\n\n"
+                    f"[Download for Windows]({download_url})\n\n"
+                    "After installation, use your subscription link or QR code to configure the app."
+                )
             
             # Create markup with direct download link
             markup = types.InlineKeyboardMarkup()
             markup.add(
-                types.InlineKeyboardButton(
-                    get_text("download_direct_link", lang_code), 
-                    url=download_url
-                ),
-                types.InlineKeyboardButton(
-                    get_text("download_back_to_platforms", lang_code), 
-                    callback_data="download:back"
-                )
+                types.InlineKeyboardButton("🔗 Direct Download Link", url=download_url),
+                types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
             )
             
             bot.edit_message_text(
@@ -75,13 +78,13 @@ def handle_download_selection(call):
         elif platform == "back":
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
-                types.InlineKeyboardButton(get_text("download_ios", lang_code), callback_data="download:ios"),
-                types.InlineKeyboardButton(get_text("download_android", lang_code), callback_data="download:android"),
-                types.InlineKeyboardButton(get_text("download_windows", lang_code), callback_data="download:windows")
+                types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"),
+                types.InlineKeyboardButton("📱 Android", callback_data="download:android"),
+                types.InlineKeyboardButton("💻 Windows", callback_data="download:windows")
             )
             
             bot.edit_message_text(
-                get_text("download_select_platform", lang_code),
+                "📥 Select your platform to download the VPN client:",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=markup
