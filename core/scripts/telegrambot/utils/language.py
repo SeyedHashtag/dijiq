@@ -2,7 +2,6 @@ import os
 import json
 from telebot import types
 from utils.command import bot
-from utils.common import create_main_markup
 from utils.translations import LANGUAGES, BUTTON_TRANSLATIONS
 
 # Path to store user language preferences - using relative path for better compatibility
@@ -73,7 +72,7 @@ def handle_language_selection(call):
     # Debug print
     print(f"Setting language for user {user_id} to {language_code}")
     
-    # Save user's language preference using the correctly named function
+    # Save user's language preference
     set_user_language(user_id, language_code)
     
     # Debug print
@@ -89,6 +88,9 @@ def handle_language_selection(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
     )
+    
+    # Import common here to avoid circular import
+    from utils.common import create_main_markup
     
     # Update the main menu with the new language
     bot.send_message(
