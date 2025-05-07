@@ -1,5 +1,6 @@
 from telebot import types
-from utils.translations import get_button_text, get_user_language
+from utils.translations import get_button_text
+from utils.language import get_user_language
 
 def create_main_markup(is_admin=False, user_id=None):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
