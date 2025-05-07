@@ -1,66 +1,47 @@
 from telebot import types
 from utils import *
-from utils.language_pack import get_string, LANGUAGES # Import language pack
+from utils import language_pack # Import the new language_pack
 import threading
 import time
 
-# In-memory store for user language preferences
-user_languages = {}
-
-def get_user_lang(user_id):
-    return user_languages.get(user_id, 'en') # Default to English
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.from_user.id
-    lang = get_user_lang(user_id)
-    if is_admin(user_id):
-        markup = create_main_markup(is_admin=True) # Assuming admin menu doesn't need i18n for now
-        bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
-    else:
-        markup = create_main_markup(is_admin=False)
-        # Update main menu buttons to use translated strings
-        markup.keyboard[0][0] = get_string(lang, 'my_configs')
-        markup.keyboard[0][1] = get_string(lang, 'purchase_plan')
-        markup.keyboard[1][0] = get_string(lang, 'downloads')
-        markup.keyboard[1][1] = get_string(lang, 'test_config')
-        markup.keyboard[2][0] = get_string(lang, 'support')
-        markup.keyboard[2][1] = get_string(lang, 'language')
-        bot.reply_to(message, get_string(lang, 'welcome'), reply_markup=markup)
-
-@bot.message_handler(func=lambda message: get_string(get_user_lang(message.from_user.id), 'language') in message.text)
+@bot.message_handler(func=lambda message: language_pack.get_string("language", user_id=message.from_user.id) in message.text)
 def handle_language_selection(message):
     user_id = message.from_user.id
-    lang = get_user_lang(user_id)
     markup = types.InlineKeyboardMarkup()
-    for lang_code, lang_data in LANGUAGES.items():
-        # Assuming each language pack has a 'language_name' key like "English" or "فارسی"
-        # For now, using the lang_code as a placeholder if 'language_name' isn't there
-        button_text = lang_data.get('language_name', lang_code.upper())
-        markup.add(types.InlineKeyboardButton(text=button_text, callback_data=f"set_lang_{lang_code}"))
-    bot.reply_to(message, get_string(lang, 'select_language'), reply_markup=markup)
+    available_langs = language_pack.get_available_languages()
+    for lang_code, lang_name in available_langs.items():
+        markup.add(types.InlineKeyboardButton(lang_name, callback_data=f"set_lang_{lang_code}"))
+    bot.reply_to(message, language_pack.get_string("select_language", user_id=user_id), reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('set_lang_'))
 def callback_set_language(call):
     user_id = call.from_user.id
-    lang_code = call.data.split('_')[2]
-    user_languages[user_id] = lang_code
-    lang = get_user_lang(user_id)
+    lang_code = call.data.split('_')[-1]
+    available_langs = language_pack.get_available_languages()
+    if language_pack.set_user_language(user_id, lang_code):
+        lang_name = available_langs.get(lang_code, lang_code)
+        bot.answer_callback_query(call.id, language_pack.get_string("language_changed", user_id=user_id).format(lang_name=lang_name))
+        # Update the main menu with the new language
+        if is_admin(user_id):
+            markup = create_main_markup(is_admin=True)
+            bot.send_message(user_id, language_pack.get_string("main_menu", user_id=user_id), reply_markup=markup)
+        else:
+            markup = create_main_markup(is_admin=False)
+            bot.send_message(user_id, language_pack.get_string("main_menu", user_id=user_id), reply_markup=markup)
+    else:
+        bot.answer_callback_query(call.id, "Error changing language.")
 
-    bot.answer_callback_query(call.id, get_string(lang, 'language_changed'))
-    # Send a new welcome message with the updated language and menu
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    user_id = message.from_user.id # Get user_id
     if is_admin(user_id):
         markup = create_main_markup(is_admin=True)
-        bot.send_message(call.message.chat.id, "Welcome to the Admin Dashboard!", reply_markup=markup) # Admin welcome
+        # Use get_string for localization
+        bot.reply_to(message, language_pack.get_string("welcome", user_id=user_id) + " Admin!", reply_markup=markup)
     else:
         markup = create_main_markup(is_admin=False)
-        markup.keyboard[0][0] = get_string(lang, 'my_configs')
-        markup.keyboard[0][1] = get_string(lang, 'purchase_plan')
-        markup.keyboard[1][0] = get_string(lang, 'downloads')
-        markup.keyboard[1][1] = get_string(lang, 'test_config')
-        markup.keyboard[2][0] = get_string(lang, 'support')
-        markup.keyboard[2][1] = get_string(lang, 'language')
-        bot.send_message(call.message.chat.id, get_string(lang, 'welcome'), reply_markup=markup)
+        # Use get_string for localization
+        bot.reply_to(message, language_pack.get_string("welcome", user_id=user_id), reply_markup=markup)
 
 def monitoring_thread():
     while True:
