@@ -3,7 +3,7 @@ import json
 from telebot import types
 from utils.command import bot
 from utils.common import create_main_markup
-from utils.translations import LANGUAGES, set_user_language
+from utils.translations import LANGUAGES, BUTTON_TRANSLATIONS
 
 # Path to store user language preferences
 LANGUAGE_PREFS_FILE = '/etc/dijiq/core/scripts/telegrambot/user_languages.json'
@@ -28,22 +28,23 @@ def save_user_languages(languages_data):
     except Exception as e:
         print(f"Error saving language preferences: {e}")
 
-# Override the get_user_language function in translations.py
 def get_user_language(user_id):
     """Get the language preference for a user"""
     user_id_str = str(user_id)
     languages = load_user_languages()
     return languages.get(user_id_str, "en")
 
-# Override the set_user_language function in translations.py
-def set_user_preference(user_id, language_code):
+def set_user_language(user_id, language_code):
     """Set the language preference for a user"""
     user_id_str = str(user_id)
     languages = load_user_languages()
     languages[user_id_str] = language_code
     save_user_languages(languages)
 
-@bot.message_handler(func=lambda message: message.text in ["🌐 Language", "🌐 زبان"])
+@bot.message_handler(func=lambda message: any(
+    message.text == translations["language"] 
+    for translations in BUTTON_TRANSLATIONS.values()
+))
 def language_selection(message):
     """Display language selection menu"""
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -68,7 +69,7 @@ def handle_language_selection(call):
     user_id = call.from_user.id
     
     # Save user's language preference
-    set_user_preference(user_id, language_code)
+    set_user_language(user_id, language_code)
     
     # Get language name for the selected code
     language_name = LANGUAGES.get(language_code, "Unknown")

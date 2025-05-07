@@ -1,4 +1,7 @@
 from typing import Dict
+import importlib.util
+import sys
+import os
 
 # Available languages
 LANGUAGES = {
@@ -45,27 +48,15 @@ def get_button_text(language_code: str, button_key: str) -> str:
     translations = BUTTON_TRANSLATIONS[language_code]
     return translations.get(button_key, BUTTON_TRANSLATIONS[DEFAULT_LANGUAGE].get(button_key, ""))
 
-def get_user_language(user_id: int) -> str:
-    """Get the language preference for a user.
-    
-    Args:
-        user_id: The Telegram user ID
-        
-    Returns:
-        The language code for the user, or the default language if not set
-    """
-    # TODO: Implement language preference storage
-    # This would typically involve fetching from a database or file
-    # For now, just return the default language
-    return DEFAULT_LANGUAGE
+# Import the functions from language.py
+try:
+    from utils.language import get_user_language, set_user_language
+except ImportError:
+    # Fallback implementations if language.py can't be imported
+    def get_user_language(user_id: int) -> str:
+        """Fallback implementation to get the language preference for a user."""
+        return DEFAULT_LANGUAGE
 
-def set_user_language(user_id: int, language_code: str) -> None:
-    """Set the language preference for a user.
-    
-    Args:
-        user_id: The Telegram user ID
-        language_code: The language code to set
-    """
-    # TODO: Implement language preference storage
-    # This would typically involve storing in a database or file
-    pass
+    def set_user_language(user_id: int, language_code: str) -> None:
+        """Fallback implementation to set the language preference for a user."""
+        pass
