@@ -17,15 +17,25 @@ BUTTON_TRANSLATIONS = {
         "downloads": "⬇️ Downloads",
         "test_config": "🎁 Test Config",
         "support": "📞 Support",
-        "language": "🌐 Language"
+        "language": "🌐 Language/زبان"
     },
     "fa": {
         "my_configs": "📱 پیکربندی‌های من",
-        "purchase_plan": "💰 خرید طرح",
+        "purchase_plan": "💰 خرید با رمزارز",
         "downloads": "⬇️ دانلودها",
         "test_config": "🎁 پیکربندی آزمایشی",
         "support": "📞 پشتیبانی",
         "language": "🌐 زبان"
+    }
+}
+
+# Messages translations
+MESSAGE_TRANSLATIONS = {
+    "en": {
+        "select_platform": "📥 Select your platform to download the VPN client:"
+    },
+    "fa": {
+        "select_platform": "📥 برای دانلود برنامه VPN، سیستم عامل خود را انتخاب کنید:"
     }
 }
 
@@ -44,6 +54,22 @@ def get_button_text(language_code: str, button_key: str) -> str:
         
     translations = BUTTON_TRANSLATIONS[language_code]
     return translations.get(button_key, BUTTON_TRANSLATIONS[DEFAULT_LANGUAGE].get(button_key, ""))
+
+def get_message_text(language_code: str, message_key: str) -> str:
+    """Get the translated text for a message key in the specified language.
+    
+    Args:
+        language_code: The language code (e.g., 'en', 'fa')
+        message_key: The key for the message text to translate
+        
+    Returns:
+        The translated message text, or the English version if translation not found
+    """
+    if language_code not in MESSAGE_TRANSLATIONS:
+        language_code = DEFAULT_LANGUAGE
+        
+    translations = MESSAGE_TRANSLATIONS[language_code]
+    return translations.get(message_key, MESSAGE_TRANSLATIONS[DEFAULT_LANGUAGE].get(message_key, ""))
 
 # These functions will be overridden by the implementations in language.py
 # They're provided as fallbacks

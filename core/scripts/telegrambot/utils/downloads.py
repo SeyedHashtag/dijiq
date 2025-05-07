@@ -1,7 +1,8 @@
 import os
 from telebot import types
 from utils.command import bot
-from utils.translations import BUTTON_TRANSLATIONS
+from utils.translations import BUTTON_TRANSLATIONS, get_message_text
+from utils.language import get_user_language
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
@@ -16,6 +17,9 @@ DOWNLOAD_LINKS = {
 ))
 def downloads(message):
     """Handle the Downloads button click"""
+    user_id = message.from_user.id
+    language = get_user_language(user_id)
+    
     markup = types.InlineKeyboardMarkup(row_width=1)
     
     # Add buttons for each platform
@@ -27,7 +31,7 @@ def downloads(message):
     
     bot.reply_to(
         message,
-        "📥 Select your platform to download the VPN client:",
+        get_message_text(language, "select_platform"),
         reply_markup=markup
     )
 
@@ -37,6 +41,8 @@ def handle_download_selection(call):
     try:
         bot.answer_callback_query(call.id)
         platform = call.data.split(':')[1]
+        user_id = call.from_user.id
+        language = get_user_language(user_id)
         
         if platform in DOWNLOAD_LINKS:
             download_url = DOWNLOAD_LINKS[platform]
@@ -89,7 +95,7 @@ def handle_download_selection(call):
             )
             
             bot.edit_message_text(
-                "📥 Select your platform to download the VPN client:",
+                get_message_text(language, "select_platform"),
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=markup
