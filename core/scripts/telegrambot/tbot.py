@@ -1,9 +1,5 @@
 from telebot import types
-from utils.command import bot, is_admin
-from utils.common import create_main_markup
-from utils.cpu import monitor_system_resources
-from utils.check_version import version_monitoring
-from utils import language  # Explicitly import the language module
+from utils import *
 import threading
 import time
 
