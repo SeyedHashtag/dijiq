@@ -28,12 +28,14 @@ def save_user_languages(languages_data):
     except Exception as e:
         print(f"Error saving language preferences: {e}")
 
+# Function to get user language - this overrides the one in translations.py
 def get_user_language(user_id):
     """Get the language preference for a user"""
     user_id_str = str(user_id)
     languages = load_user_languages()
     return languages.get(user_id_str, "en")
 
+# Function to set user language - this overrides the one in translations.py
 def set_user_language(user_id, language_code):
     """Set the language preference for a user"""
     user_id_str = str(user_id)
@@ -68,7 +70,7 @@ def handle_language_selection(call):
     language_code = call.data.split(':')[1]
     user_id = call.from_user.id
     
-    # Save user's language preference
+    # Save user's language preference using the correctly named function
     set_user_language(user_id, language_code)
     
     # Get language name for the selected code

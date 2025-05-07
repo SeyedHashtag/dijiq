@@ -1,15 +1,20 @@
 from telebot import types
-from utils import *
+from utils.command import bot, is_admin
+from utils.common import create_main_markup
+from utils.cpu import monitor_system_resources
+from utils.check_version import version_monitoring
+from utils import language  # Explicitly import the language module
 import threading
 import time
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    if is_admin(message.from_user.id):
+    user_id = message.from_user.id
+    if is_admin(user_id):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
-        markup = create_main_markup(is_admin=False)
+        markup = create_main_markup(is_admin=False, user_id=user_id)
         bot.reply_to(message, "Welcome to Dijiq VPN services!", reply_markup=markup)
 
 def monitoring_thread():

@@ -1,7 +1,4 @@
 from typing import Dict
-import importlib.util
-import sys
-import os
 
 # Available languages
 LANGUAGES = {
@@ -48,15 +45,12 @@ def get_button_text(language_code: str, button_key: str) -> str:
     translations = BUTTON_TRANSLATIONS[language_code]
     return translations.get(button_key, BUTTON_TRANSLATIONS[DEFAULT_LANGUAGE].get(button_key, ""))
 
-# Import the functions from language.py
-try:
-    from utils.language import get_user_language, set_user_language
-except ImportError:
-    # Fallback implementations if language.py can't be imported
-    def get_user_language(user_id: int) -> str:
-        """Fallback implementation to get the language preference for a user."""
-        return DEFAULT_LANGUAGE
+# These functions will be overridden by the implementations in language.py
+# They're provided as fallbacks
+def get_user_language(user_id: int) -> str:
+    """Get the language preference for a user."""
+    return DEFAULT_LANGUAGE
 
-    def set_user_language(user_id: int, language_code: str) -> None:
-        """Fallback implementation to set the language preference for a user."""
-        pass
+def set_user_language(user_id: int, language_code: str) -> None:
+    """Set the language preference for a user."""
+    pass
