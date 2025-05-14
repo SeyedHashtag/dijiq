@@ -6,9 +6,16 @@ from utils.language import get_user_language
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
-    "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
-    "android": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_android_arm64-v8a.apk",
-    "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
+    "karing": {
+        "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
+        "android": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_android_arm64-v8a.apk",
+        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
+    },
+    "hiddify": {
+        "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
+        "android": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Android-arm64.apk",
+        "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
+    }
 }
 
 @bot.message_handler(func=lambda message: any(
@@ -40,53 +47,89 @@ def handle_download_selection(call):
     """Handle the platform selection for downloads"""
     try:
         bot.answer_callback_query(call.id)
-        platform = call.data.split(':')[1]
+        data_parts = call.data.split(':')
+        action = data_parts[1]
         user_id = call.from_user.id
         language = get_user_language(user_id)
         
-        if platform in DOWNLOAD_LINKS:
-            download_url = DOWNLOAD_LINKS[platform]
-            
-            # Create platform-specific messages
-            if platform == "ios":
-                message = (
-                    "📱 **iOS Download**\n\n"
-                    "Download Karing from the App Store:\n\n"
-                    f"[Download for iOS]({download_url})\n\n"
-                    "After installation, use your subscription link or QR code to configure the app."
-                )
-            elif platform == "android":
-                message = (
-                    "📱 **Android Download**\n\n"
-                    "Download Karing APK directly:\n\n"
-                    f"[Download for Android]({download_url})\n\n"
-                    "After installation, allow installation from unknown sources if prompted, "
-                    "then use your subscription link or QR code to configure the app."
-                )
-            elif platform == "windows":
-                message = (
-                    "💻 **Windows Download**\n\n"
-                    "Download Karing for Windows:\n\n"
-                    f"[Download for Windows]({download_url})\n\n"
-                    "After installation, use your subscription link or QR code to configure the app."
-                )
-            
-            # Create markup with direct download link
-            markup = types.InlineKeyboardMarkup()
+        # Handle platform selection (iOS, Android, Windows)
+        if action in ["ios", "android", "windows"]:
+            platform = action
+            # Show app selection menu (Karing or Hiddify)
+            markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
-                types.InlineKeyboardButton("🔗 Direct Download Link", url=download_url),
+                types.InlineKeyboardButton("Karing", callback_data=f"download:app:karing:{platform}"),
+                types.InlineKeyboardButton("Hiddify", callback_data=f"download:app:hiddify:{platform}"),
                 types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
             )
             
+            # Create platform-specific title
+            if platform == "ios":
+                title = "📱 iOS - Select App"
+            elif platform == "android":
+                title = "📱 Android - Select App"
+            else:
+                title = "💻 Windows - Select App"
+                
             bot.edit_message_text(
-                message,
+                title,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                reply_markup=markup,
-                parse_mode="Markdown",
-                disable_web_page_preview=False
+                reply_markup=markup
             )
-        elif platform == "back":
+            
+        # Handle app selection (Karing or Hiddify)
+        elif action == "app" and len(data_parts) == 4:
+            app = data_parts[2]  # karing or hiddify
+            platform = data_parts[3]  # ios, android, windows
+            
+            if app in DOWNLOAD_LINKS and platform in DOWNLOAD_LINKS[app]:
+                download_url = DOWNLOAD_LINKS[app][platform]
+                app_name = app.capitalize()
+                
+                # Create app & platform-specific messages
+                if platform == "ios":
+                    message = (
+                        f"📱 **iOS {app_name} Download**\n\n"
+                        f"Download {app_name} from the App Store:\n\n"
+                        f"[Download for iOS]({download_url})\n\n"
+                        "After installation, use your subscription link or QR code to configure the app."
+                    )
+                elif platform == "android":
+                    message = (
+                        f"📱 **Android {app_name} Download**\n\n"
+                        f"Download {app_name} APK directly:\n\n"
+                        f"[Download for Android]({download_url})\n\n"
+                        "After installation, allow installation from unknown sources if prompted, "
+                        "then use your subscription link or QR code to configure the app."
+                    )
+                elif platform == "windows":
+                    message = (
+                        f"💻 **Windows {app_name} Download**\n\n"
+                        f"Download {app_name} for Windows:\n\n"
+                        f"[Download for Windows]({download_url})\n\n"
+                        "After installation, use your subscription link or QR code to configure the app."
+                    )
+                
+                # Create markup with direct download link
+                markup = types.InlineKeyboardMarkup()
+                markup.add(
+                    types.InlineKeyboardButton("🔗 Direct Download Link", url=download_url),
+                    types.InlineKeyboardButton("◀️ Back to App Selection", callback_data=f"download:{platform}"),
+                    types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
+                )
+                
+                bot.edit_message_text(
+                    message,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=False
+                )
+                
+        # Handle back button to return to platform selection
+        elif action == "back":
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
                 types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"),
