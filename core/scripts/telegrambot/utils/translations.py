@@ -3,7 +3,8 @@ from typing import Dict
 # Available languages
 LANGUAGES = {
     "en": "English 🇬🇧",
-    "fa": "Persian 🇮🇷"
+    "fa": "Persian 🇮🇷",
+    "tk": "Turkmen 🇹🇲"
 }
 
 # Default language
@@ -26,6 +27,14 @@ BUTTON_TRANSLATIONS = {
         "test_config": "🎁 پیکربندی آزمایشی",
         "support": "📞 پشتیبانی",
         "language": "🌐 زبان"
+    },
+    "tk": {
+        "my_configs": "📱 Meniň sazlamalarym",
+        "purchase_plan": "💰 Töleg meýilnamasy",
+        "downloads": "⬇️ Ýüklemeler",
+        "test_config": "🎁 Synag sazlamalary",
+        "support": "📞 Goldaw",
+        "language": "🌐 Dil"
     }
 }
 
@@ -36,6 +45,9 @@ MESSAGE_TRANSLATIONS = {
     },
     "fa": {
         "select_platform": "📥 برای دانلود برنامه VPN، سیستم عامل خود را انتخاب کنید:"
+    },
+    "tk": {
+        "select_platform": "📥 VPN müşderini ýüklemek üçin platformaňyzy saýlaň:"
     }
 }
 
