@@ -11,6 +11,7 @@ FILES=(
     "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
     "/etc/dijiq/core/scripts/telegrambot/payments.json"
     "/etc/dijiq/core/scripts/telegrambot/support_info.json"
+    "/etc/dijiq/core/scripts/telegrambot/user_languages.json"
 )
 
 echo "Backing up and stopping all cron jobs"

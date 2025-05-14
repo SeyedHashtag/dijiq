@@ -5,7 +5,7 @@ from utils.command import bot
 from utils.translations import LANGUAGES, BUTTON_TRANSLATIONS
 
 # Path to store user language preferences - using relative path for better compatibility
-LANGUAGE_PREFS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'user_languages.json')
+LANGUAGE_PREFS_FILE = '/etc/dijiq/core/scripts/telegrambot/user_languages.json'
 
 def load_user_languages():
     """Load user language preferences from file"""
