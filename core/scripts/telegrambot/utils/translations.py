@@ -41,13 +41,13 @@ BUTTON_TRANSLATIONS = {
 # Messages translations
 MESSAGE_TRANSLATIONS = {
     "en": {
-        "select_platform": "📥 Select your platform to download the VPN client:"
+        "select_platform": "🔴 **Important: Select your actual country in the software."
     },
     "fa": {
-        "select_platform": "📥 برای دانلود برنامه VPN، سیستم عامل خود را انتخاب کنید:"
+        "select_platform": "🔴 **مهم: در نرم افزار، کشور واقعی خودتان را انتخاب کنید."
     },
     "tk": {
-        "select_platform": "📥 VPN müşderini ýüklemek üçin platformaňyzy saýlaň:"
+        "select_platform": "🔴 ** Möhüm: Programma üpjünçiliginde hakyky ýurduňyzy saýlaň."
     }
 }
 
