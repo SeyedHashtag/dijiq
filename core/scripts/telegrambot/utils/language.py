@@ -81,20 +81,13 @@ def handle_language_selection(call):
     
     # Get language name for the selected code
     language_name = LANGUAGES.get(language_code, "Unknown")
+      # Import common here to avoid circular import
+    from utils.common import create_main_markup
     
-    # Update the message to indicate selected language
+    # Update the message to indicate selected language and provide main menu
     bot.edit_message_text(
         f"✅ Language set to {language_name}",
         chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
-    
-    # Import common here to avoid circular import
-    from utils.common import create_main_markup
-    
-    # Update the main menu with the new language
-    bot.send_message(
-        call.message.chat.id,
-        f"✅ Your language has been set to {language_name}",
+        message_id=call.message.message_id,
         reply_markup=create_main_markup(is_admin=False, user_id=user_id)
     )
