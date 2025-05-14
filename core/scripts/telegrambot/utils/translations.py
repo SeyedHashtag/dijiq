@@ -41,13 +41,22 @@ BUTTON_TRANSLATIONS = {
 # Messages translations
 MESSAGE_TRANSLATIONS = {
     "en": {
-        "select_platform": "🔴 **Important: Select your actual country in the software."
+        "select_platform": "🔴 **Important: Select your actual country in the software.",
+        "no_active_configs": "❌ You don't have any active configurations.\n\nPlease use the '🎁 Test Config' button to get a free test config or the '💰 Purchase Plan' button to buy a subscription.",
+        "test_config_used": "⚠️ You have already used your free test config. Please purchase a plan for continued service.",
+        "select_plan": "📱 Select a plan to purchase:"
     },
     "fa": {
-        "select_platform": "🔴 **مهم: در نرم افزار، کشور واقعی خودتان را انتخاب کنید."
+        "select_platform": "🔴 **مهم: در نرم افزار، کشور واقعی خودتان را انتخاب کنید.",
+        "no_active_configs": "❌ شما هیچ پیکربندی فعالی ندارید.\n\nلطفاً از دکمه '🎁 پیکربندی آزمایشی' برای دریافت پیکربندی آزمایشی رایگان یا دکمه '💰 پرداخت با رمزارز' برای خرید اشتراک استفاده کنید.",
+        "test_config_used": "⚠️ شما قبلاً از پیکربندی آزمایشی رایگان خود استفاده کرده‌اید. لطفاً برای ادامه خدمات، یک اشتراک خریداری کنید.",
+        "select_plan": "📱 یک طرح برای خرید انتخاب کنید:"
     },
     "tk": {
-        "select_platform": "🔴 ** Möhüm: Programma üpjünçiliginde hakyky ýurduňyzy saýlaň."
+        "select_platform": "🔴 ** Möhüm: Programma üpjünçiliginde hakyky ýurduňyzy saýlaň.",
+        "no_active_configs": "❌ Siziň işjeň sazlamalaňyz ýok.\n\nMugt synag sazlamasyny almak üçin '🎁 Synag sazlamalary' düwmesini ýa-da abunalyk satyn almak üçin '💰 Kripto bilen töle' düwmesini ulanyň.",
+        "test_config_used": "⚠️ Siz eýýäm mugt synag sazlamaňyzy ulanypsyňyz. Hyzmaty dowam etdirmek üçin meýilnama satyn alyň.",
+        "select_plan": "📱 Satyn almak üçin meýilnama saýlaň:"
     }
 }
 

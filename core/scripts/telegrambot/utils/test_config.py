@@ -5,7 +5,8 @@ from telebot import types
 from utils.command import bot
 from utils.common import create_main_markup
 from utils.adduser import APIClient
-from utils.translations import BUTTON_TRANSLATIONS
+from utils.translations import BUTTON_TRANSLATIONS, get_message_text
+from utils.language import get_user_language
 import qrcode
 import io
 
@@ -52,12 +53,12 @@ def create_username_from_user_id(user_id):
 ))
 def test_config(message):
     user_id = message.from_user.id
-    
-    # Check if user has already used a test config
+      # Check if user has already used a test config
     if has_used_test_config(user_id):
+        language = get_user_language(user_id)
         bot.reply_to(
             message,
-            "⚠️ You have already used your free test config. Please purchase a plan for continued service.",
+            get_message_text(language, "test_config_used"),
             reply_markup=create_main_markup(is_admin=False, user_id=user_id)
         )
         return
@@ -87,12 +88,12 @@ def handle_cancel_test_config(call):
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_test_config")
 def handle_confirm_test_config(call):
     user_id = call.from_user.id
-    
-    # Double check if user has already used a test config
+      # Double check if user has already used a test config
     if has_used_test_config(user_id):
         bot.answer_callback_query(call.id)
+        language = get_user_language(user_id)
         bot.edit_message_text(
-            "⚠️ You have already used your free test config. Please purchase a plan for continued service.",
+            get_message_text(language, "test_config_used"),
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )

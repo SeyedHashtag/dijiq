@@ -7,7 +7,8 @@ from utils.edit_plans import load_plans
 from utils.payments import CryptomusPayment
 from utils.payment_records import add_payment_record, update_payment_status, get_payment_record
 from utils.adduser import APIClient
-from utils.translations import BUTTON_TRANSLATIONS
+from utils.translations import BUTTON_TRANSLATIONS, get_message_text
+from utils.language import get_user_language
 import qrcode
 import io
 
@@ -27,6 +28,8 @@ def create_username_from_user_id(user_id):
 ))
 def purchase_plan(message):
     # Non-admin user purchase flow
+    user_id = message.from_user.id
+    language = get_user_language(user_id)
     plans = load_plans()
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
     
@@ -37,7 +40,7 @@ def purchase_plan(message):
     
     bot.reply_to(
         message,
-        "📱 Select a plan to purchase:",
+        get_message_text(language, "select_plan"),
         reply_markup=markup
     )
 

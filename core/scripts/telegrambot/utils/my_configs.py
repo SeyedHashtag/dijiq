@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
 from utils.adduser import APIClient
-from utils.translations import BUTTON_TRANSLATIONS
+from utils.translations import BUTTON_TRANSLATIONS, get_message_text
+from utils.language import get_user_language
 
 @bot.message_handler(func=lambda message: any(
     message.text == translations["my_configs"] 
@@ -46,14 +47,12 @@ def my_configs(message):
             
             for username, user_data in users.items():
                 if username and re.match(test_pattern, username):
-                    user_configs.append((username, user_data))
-            
+                    user_configs.append((username, user_data))            
             if not user_configs:
+                language = get_user_language(user_id)
                 bot.reply_to(
                     message, 
-                    "❌ You don't have any active configurations.\n\n"
-                    "Please use the '🎁 Test Config' button to get a free test config "
-                    "or the '💰 Purchase Plan' button to buy a subscription."
+                    get_message_text(language, "no_active_configs")
                 )
                 return
     except Exception as e:
