@@ -84,10 +84,16 @@ def handle_language_selection(call):
       # Import common here to avoid circular import
     from utils.common import create_main_markup
     
-    # Update the message to indicate selected language and provide main menu
+    # Update the message to indicate selected language and show main menu
     bot.edit_message_text(
         f"✅ Language set to {language_name}",
         chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
+        message_id=call.message.message_id
+    )
+    
+    # Update the main menu with the new language
+    bot.send_message(
+        call.message.chat.id,
+        "👇 Main Menu",
         reply_markup=create_main_markup(is_admin=False, user_id=user_id)
     )
