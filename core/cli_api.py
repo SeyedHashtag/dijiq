@@ -8,21 +8,12 @@ from dotenv import dotenv_values
 
 DEBUG = False
 SCRIPT_DIR = '/etc/dijiq/core/scripts'
-CONFIG_FILE = '/etc/dijiq/config.json'
 CONFIG_ENV_FILE = '/etc/dijiq/.configs.env'
 
 
 class Command(Enum):
     '''Contains path to command's script'''
-    GET_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'get_user.sh')
-    ADD_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'add_user.sh')
-    EDIT_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'edit_user.sh')
-    RESET_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'reset_user.sh')
-    REMOVE_USER = os.path.join(SCRIPT_DIR, 'dijiq', 'remove_user.sh')
-    SHOW_USER_URI = os.path.join(SCRIPT_DIR, 'dijiq', 'show_user_uri.sh')
     IP_ADD = os.path.join(SCRIPT_DIR, 'dijiq', 'ip.sh')
-    UPDATE_GEO = os.path.join(SCRIPT_DIR, 'dijiq', 'update_geo.py')
-    LIST_USERS = os.path.join(SCRIPT_DIR, 'dijiq', 'list_users.sh')
     SERVER_INFO = os.path.join(SCRIPT_DIR, 'dijiq', 'server_info.sh')
     BACKUP_DIJIQ = os.path.join(SCRIPT_DIR, 'dijiq', 'backup.sh')
     RESTORE_DIJIQ = os.path.join(SCRIPT_DIR, 'dijiq', 'restore.sh')
@@ -127,104 +118,6 @@ def set_dijiq_config_file(data: dict[str, Any]):
 
     with open(CONFIG_FILE, 'w') as f:
         f.write(content)
-# endregion
-
-# region User
-
-
-def list_users() -> dict[str, dict[str, Any]] | None:
-    '''
-    Lists all users.
-    '''
-    if res := run_cmd(['bash', Command.LIST_USERS.value]):
-        return json.loads(res)
-
-
-def get_user(username: str) -> dict[str, Any] | None:
-    '''
-    Retrieves information about a specific user.
-    '''
-    if res := run_cmd(['bash', Command.GET_USER.value, '-u', str(username)]):
-        return json.loads(res)
-
-
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
-    '''
-    Adds a new user with the given parameters.
-    '''
-    if not password:
-        password = generate_password()
-    if not creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    run_cmd(['bash', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days), password, creation_date])
-
-
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
-    '''
-    Edits an existing user's details.
-    '''
-    if not username:
-        raise InvalidInputError('Error: username is required')
-    if not any([new_username, new_traffic_limit, new_expiration_days, renew_password, renew_creation_date, blocked is not None]):  # type: ignore
-        raise InvalidInputError('Error: at least one option is required')
-    if new_traffic_limit is not None and new_traffic_limit <= 0:
-        raise InvalidInputError('Error: traffic limit must be greater than 0')
-    if new_expiration_days is not None and new_expiration_days <= 0:
-        raise InvalidInputError('Error: expiration days must be greater than 0')
-    if renew_password:
-        password = generate_password()
-    else:
-        password = ''
-    if renew_creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    else:
-        creation_date = ''
-    command_args = [
-        'bash',
-        Command.EDIT_USER.value,
-        username,
-        new_username or '',
-        str(new_traffic_limit) if new_traffic_limit is not None else '',
-        str(new_expiration_days) if new_expiration_days is not None else '',
-        password,
-        creation_date,
-        'true' if blocked else 'false'
-    ]
-    run_cmd(command_args)
-
-
-def reset_user(username: str):
-    '''
-    Resets a user's configuration.
-    '''
-    run_cmd(['bash', Command.RESET_USER.value, username])
-
-
-def remove_user(username: str):
-    '''
-    Removes a user by username.
-    '''
-    run_cmd(['bash', Command.REMOVE_USER.value, username])
-
-
-# TODO: it's better to return json
-def show_user_uri(username: str, qrcode: bool, ipv: int, all: bool, singbox: bool, normalsub: bool) -> str | None:
-    '''
-    Displays the URI for a user, with options for QR code and other formats.
-    '''
-    command_args = ['bash', Command.SHOW_USER_URI.value, '-u', username]
-    if qrcode:
-        command_args.append('-qr')
-    if all:
-        command_args.append('-a')
-    else:
-        command_args.extend(['-ip', str(ipv)])
-    if singbox:
-        command_args.append('-s')
-    if normalsub:
-        command_args.append('-n')
-    return run_cmd(command_args)
-
 # endregion
 
 # region Server
