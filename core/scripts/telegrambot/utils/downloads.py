@@ -19,7 +19,7 @@ DOWNLOAD_LINKS = {
     "v2ray": {
         "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
         "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.2/v2rayNG_1.10.2_arm64-v8a.apk",
-        "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
+        "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.3/v2rayN-windows-64.zip"
     }
 }
 
