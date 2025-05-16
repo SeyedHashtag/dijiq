@@ -41,7 +41,6 @@ if [ $? -ne 0 ]; then
 fi
 
 expected_files=(
-    "users.json"
     ".configs.env"
 )
 

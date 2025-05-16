@@ -2,22 +2,6 @@
 
 source /etc/dijiq/core/scripts/path.sh
 
-get_secret() {
-    if [ ! -f "$CONFIG_FILE" ]; then
-        echo "Error: config.json file not found!"
-        exit 1
-    fi
-
-    secret=$(jq -r '.trafficStats.secret' $CONFIG_FILE)
-    
-    if [ "$secret" == "null" ] || [ -z "$secret" ]; then
-        echo "Error: secret not found in config.json!"
-        exit 1
-    fi
-    
-    echo $secret
-}
-
 convert_bytes() {
     local bytes=$1
     if (( bytes < 1048576 )); then

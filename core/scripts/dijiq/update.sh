@@ -27,13 +27,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "Modifying systemd service to use config.json..."
-sed -i "s|/etc/dijiq/config.yaml|$CONFIG_FILE|" /etc/systemd/system/dijiq-server.service
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to modify systemd service."
-    exit 1
-fi
-
 rm /etc/dijiq/config.yaml
 systemctl daemon-reload >/dev/null 2>&1
 python3 "$CLI_PATH" restart-dijiq > /dev/null 2>&1

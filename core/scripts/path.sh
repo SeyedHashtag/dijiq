@@ -1,6 +1,4 @@
 CLI_PATH="/etc/dijiq/core/cli.py"
-USERS_FILE="/etc/dijiq/users.json"
-CONFIG_FILE="/etc/dijiq/config.json"
 CONFIG_ENV="/etc/dijiq/.configs.env"
 TELEGRAM_ENV="/etc/dijiq/core/scripts/telegrambot/.env"
 ONLINE_API_URL="http://127.0.0.1:25413/online"

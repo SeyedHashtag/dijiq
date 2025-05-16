@@ -4,7 +4,6 @@ cd /root/
 TEMP_DIR=$(mktemp -d)
 
 FILES=(
-    "/etc/dijiq/users.json"
     "/etc/dijiq/.configs.env"
     "/etc/dijiq/core/scripts/telegrambot/.env"
     "/etc/dijiq/core/scripts/telegrambot/plans.json"

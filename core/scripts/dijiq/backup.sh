@@ -8,7 +8,6 @@ if [ ! -d "$BACKUP_DIR" ]; then
 fi
 
 FILES_TO_BACKUP=(
-    "/etc/dijiq/users.json"
     "/etc/dijiq/.configs.env"
     "/etc/dijiq/core/scripts/telegrambot/.env"
     "/etc/dijiq/core/scripts/telegrambot/plans.json"
