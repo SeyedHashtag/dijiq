@@ -79,10 +79,6 @@ fi
 echo "Setting ownership and permissions"
 chown -R dijiq:dijiq /etc/dijiq/core/scripts/telegrambot
 
-echo "Setting execute permissions for user.sh and kick.sh"
-chmod +x /etc/dijiq/core/scripts/dijiq/user.sh
-chmod +x /etc/dijiq/core/scripts/dijiq/kick.sh
-
 cd /etc/dijiq
 python3 -m venv dijiq_venv
 source /etc/dijiq/dijiq_venv/bin/activate
