@@ -126,8 +126,7 @@ def handle_download_selection(call):
                 markup = types.InlineKeyboardMarkup()
                 markup.add(
                     types.InlineKeyboardButton("🔗 Direct Download Link", url=download_url),
-                    types.InlineKeyboardButton("◀️ Back to App Selection", callback_data=f"download:{platform}"),
-                    types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
+                    types.InlineKeyboardButton("◀️ back", callback_data="download:back")
                 )
                 
                 bot.edit_message_text(
@@ -155,6 +154,7 @@ def handle_download_selection(call):
             markup = types.InlineKeyboardMarkup(row_width=1)
             for btn in platform_buttons:
                 markup.add(btn)
+            markup.add(types.InlineKeyboardButton("◀️ back", callback_data="download:back"))
             bot.edit_message_text(
                 get_message_text(language, "select_platform"),
                 chat_id=call.message.chat.id,
