@@ -6,14 +6,19 @@ from utils.language import get_user_language
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
+    "hiddify": {
+        "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
+        "android": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Android-arm64.apk",
+        "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
+    },
     "karing": {
         "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
         "android": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_android_arm64-v8a.apk",
         "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
     },
-    "hiddify": {
+    "v2ray": {
         "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
-        "android": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Android-arm64.apk",
+        "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.2/v2rayNG_1.10.2_arm64-v8a.apk",
         "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
     }
 }
@@ -55,11 +60,12 @@ def handle_download_selection(call):
         # Handle platform selection (iOS, Android, Windows)
         if action in ["ios", "android", "windows"]:
             platform = action
-            # Show app selection menu (Karing or Hiddify)
+            # Show app selection menu (Karing or Hiddify or v2ray)
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
-                types.InlineKeyboardButton("Karing", callback_data=f"download:app:karing:{platform}"),
                 types.InlineKeyboardButton("Hiddify", callback_data=f"download:app:hiddify:{platform}"),
+                types.InlineKeyboardButton("Karing", callback_data=f"download:app:karing:{platform}"),
+                types.InlineKeyboardButton("V2ray", callback_data=f"download:app:v2ray:{platform}"),
                 types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
             )
             
@@ -78,9 +84,9 @@ def handle_download_selection(call):
                 reply_markup=markup
             )
             
-        # Handle app selection (Karing or Hiddify)
+        # Handle app selection (Karing or Hiddify or v2ray)
         elif action == "app" and len(data_parts) == 4:
-            app = data_parts[2]  # karing or hiddify
+            app = data_parts[2]  # karing or hiddify or v2ray
             platform = data_parts[3]  # ios, android, windows
             
             if app in DOWNLOAD_LINKS and platform in DOWNLOAD_LINKS[app]:
