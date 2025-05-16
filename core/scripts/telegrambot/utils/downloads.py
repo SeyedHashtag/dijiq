@@ -17,7 +17,6 @@ DOWNLOAD_LINKS = {
         "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
     },
     "v2ray": {
-        "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
         "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.2/v2rayNG_1.10.2_arm64-v8a.apk",
         "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.3/v2rayN-windows-64.zip"
     }
@@ -31,16 +30,23 @@ def downloads(message):
     """Handle the Downloads button click"""
     user_id = message.from_user.id
     language = get_user_language(user_id)
-    
+
+    # Dynamically determine available platforms
+    available_platforms = set()
+    for app_links in DOWNLOAD_LINKS.values():
+        available_platforms.update(app_links.keys())
+    platform_buttons = []
+    if "ios" in available_platforms:
+        platform_buttons.append(types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"))
+    if "android" in available_platforms:
+        platform_buttons.append(types.InlineKeyboardButton("📱 Android", callback_data="download:android"))
+    if "windows" in available_platforms:
+        platform_buttons.append(types.InlineKeyboardButton("💻 Windows", callback_data="download:windows"))
+
     markup = types.InlineKeyboardMarkup(row_width=1)
-    
-    # Add buttons for each platform
-    markup.add(
-        types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"),
-        types.InlineKeyboardButton("📱 Android", callback_data="download:android"),
-        types.InlineKeyboardButton("💻 Windows", callback_data="download:windows")
-    )
-    
+    for btn in platform_buttons:
+        markup.add(btn)
+
     bot.reply_to(
         message,
         get_message_text(language, "select_platform"),
@@ -60,14 +66,13 @@ def handle_download_selection(call):
         # Handle platform selection (iOS, Android, Windows)
         if action in ["ios", "android", "windows"]:
             platform = action
-            # Show app selection menu (Karing or Hiddify or v2ray)
+            # Show app selection menu (only apps that have this platform)
             markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(
-                types.InlineKeyboardButton("Hiddify", callback_data=f"download:app:hiddify:{platform}"),
-                types.InlineKeyboardButton("Karing", callback_data=f"download:app:karing:{platform}"),
-                types.InlineKeyboardButton("V2ray", callback_data=f"download:app:v2ray:{platform}"),
-                types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back")
-            )
+            for app in DOWNLOAD_LINKS:
+                if platform in DOWNLOAD_LINKS[app]:
+                    app_name = app.capitalize()
+                    markup.add(types.InlineKeyboardButton(app_name, callback_data=f"download:app:{app}:{platform}"))
+            markup.add(types.InlineKeyboardButton("◀️ Back to Platforms", callback_data="download:back"))
             
             # Create platform-specific title
             if platform == "ios":
@@ -136,13 +141,20 @@ def handle_download_selection(call):
                 
         # Handle back button to return to platform selection
         elif action == "back":
+            # Dynamically determine available platforms for back button
+            available_platforms = set()
+            for app_links in DOWNLOAD_LINKS.values():
+                available_platforms.update(app_links.keys())
+            platform_buttons = []
+            if "ios" in available_platforms:
+                platform_buttons.append(types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"))
+            if "android" in available_platforms:
+                platform_buttons.append(types.InlineKeyboardButton("📱 Android", callback_data="download:android"))
+            if "windows" in available_platforms:
+                platform_buttons.append(types.InlineKeyboardButton("💻 Windows", callback_data="download:windows"))
             markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(
-                types.InlineKeyboardButton("📱 iOS", callback_data="download:ios"),
-                types.InlineKeyboardButton("📱 Android", callback_data="download:android"),
-                types.InlineKeyboardButton("💻 Windows", callback_data="download:windows")
-            )
-            
+            for btn in platform_buttons:
+                markup.add(btn)
             bot.edit_message_text(
                 get_message_text(language, "select_platform"),
                 chat_id=call.message.chat.id,
