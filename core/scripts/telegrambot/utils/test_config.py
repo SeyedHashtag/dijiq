@@ -88,7 +88,7 @@ def handle_cancel_test_config(call):
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_test_config")
 def handle_confirm_test_config(call):
     user_id = call.from_user.id
-      # Double check if user has already used a test config
+    # Double check if user has already used a test config
     if has_used_test_config(user_id):
         bot.answer_callback_query(call.id)
         language = get_user_language(user_id)
@@ -98,14 +98,14 @@ def handle_confirm_test_config(call):
             message_id=call.message.message_id
         )
         return
-    
+
     # Create a username for the test config
     username = create_username_from_user_id(user_id)
-    
+
     # Constants for test config
     TEST_TRAFFIC_GB = 1  # 1 GB
     TEST_DAYS = 30       # 30 days
-    
+
     # Display processing message
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
@@ -113,25 +113,24 @@ def handle_confirm_test_config(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
     )
-    
-    # Use APIClient to create the test user
+
     api_client = APIClient()
     result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS)
-    
+
     if result:
         # Mark the test config as used
         mark_test_config_used(user_id)
-        
-        # Get subscription URL
-        sub_url = api_client.get_subscription_url(username)
-        
-        if sub_url:
+
+        # Get user URI from API
+        user_uri_data = api_client.get_user_uri(username)
+        if user_uri_data and 'normal_sub' in user_uri_data:
+            sub_url = user_uri_data['normal_sub']
             # Create QR code for subscription URL
             qr = qrcode.make(sub_url)
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
-            
+
             # Format success message
             success_message = (
                 f"✅ Your test configuration has been created successfully!\n\n"
@@ -142,7 +141,6 @@ def handle_confirm_test_config(call):
                 f"Subscription URL: `{sub_url}`\n\n"
                 f"Scan the QR code to configure your VPN client."
             )
-            
             # Send the QR code with config details
             bot.send_photo(
                 call.message.chat.id,
