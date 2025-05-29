@@ -216,19 +216,17 @@ def handle_check_payment(call):
         result = api_client.add_user(username, int(plan_gb), int(days))
         
         if result:
-            # Get subscription URL
-            sub_url = api_client.get_subscription_url(username)
-            
-            # Update payment status
-            update_payment_status(payment_id, 'completed')
-            
-            # Create QR code for subscription URL if available
-            if sub_url:
+            # Get user URI from API
+            user_uri_data = api_client.get_user_uri(username)
+            if user_uri_data and 'normal_sub' in user_uri_data:
+                sub_url = user_uri_data['normal_sub']
+                # Update payment status
+                update_payment_status(payment_id, 'completed')
+                # Create QR code for subscription URL if available
                 qr = qrcode.make(sub_url)
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
                 bio.seek(0)
-                
                 # Format the message with available links
                 success_message = (
                     f"✅ Payment completed!\n\n"
@@ -237,7 +235,6 @@ def handle_check_payment(call):
                     f"Subscription URL: `{sub_url}`\n\n"
                     f"Scan the QR code to configure your VPN."
                 )
-                
                 # Send the success message with QR code
                 bot.send_photo(
                     call.message.chat.id,
