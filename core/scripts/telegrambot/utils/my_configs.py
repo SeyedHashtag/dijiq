@@ -173,10 +173,9 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
                 bot.send_message(chat_id, message, parse_mode="Markdown")
             return
         
-        # User is active, get subscription URL
-        sub_url = api_client.get_subscription_url(username)
-        
-        if not sub_url:
+        # User is active, get subscription URL using the new API endpoint
+        user_uri_data = api_client.get_user_uri(username)
+        if not user_uri_data or 'normal_sub' not in user_uri_data:
             if is_callback:
                 bot.edit_message_text(
                     f"⚠️ Error: Could not generate subscription URL for '{username}'. Please contact support.",
@@ -189,6 +188,7 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
                     f"⚠️ Error: Could not generate subscription URL for '{username}'. Please contact support."
                 )
             return
+        sub_url = user_uri_data['normal_sub']
         
         # Create QR code for subscription URL
         qr_code = qrcode.make(sub_url)
