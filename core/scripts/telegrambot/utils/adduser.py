@@ -166,12 +166,13 @@ def process_add_user_step3(message, username, traffic_limit):
             bot.reply_to(message, "Failed to add user. Please check API connection and try again.", reply_markup=create_main_markup())
             return
 
-        # Generate subscription URL
-        sub_url = api_client.get_subscription_url(username)
-        
-        if not sub_url:
-            bot.reply_to(message, f"User '{username}' created successfully, but failed to generate subscription URL. Check SUB_URL configuration.", reply_markup=create_main_markup())
+        # Get user URI from API
+        user_uri_data = api_client.get_user_uri(username)
+        if not user_uri_data or 'normal_sub' not in user_uri_data:
+            bot.reply_to(message, f"User '{username}' created successfully, but failed to get subscription URI. Check API configuration.", reply_markup=create_main_markup())
             return
+
+        sub_url = user_uri_data['normal_sub']
 
         # Generate QR code for subscription URL
         qr_code = qrcode.make(sub_url)
