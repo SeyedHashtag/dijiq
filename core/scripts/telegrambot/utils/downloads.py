@@ -6,18 +6,18 @@ from utils.language import get_user_language
 
 # Download links for different platforms
 DOWNLOAD_LINKS = {
+    "karing": {
+        "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
+        "android": "https://github.com/KaringX/karing/releases/download/v1.1.4.730/karing_1.1.4.730_android_arm64-v8a.apk",
+        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.4.730/karing_1.1.4.730_windows_x64.exe"
+    },
     "hiddify": {
         "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
         "android": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Android-arm64.apk",
         "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
     },
-    "karing": {
-        "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
-        "android": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_android_arm64-v8a.apk",
-        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.2.606/karing_1.1.2.606_windows_x64.exe"
-    },
     "v2ray": {
-        "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.2/v2rayNG_1.10.2_arm64-v8a.apk",
+        "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.4/v2rayNG_1.10.4_arm64-v8a.apk",
         "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.3/v2rayN-windows-64.zip"
     }
 }
