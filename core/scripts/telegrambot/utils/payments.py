@@ -12,7 +12,7 @@ class CryptomusPayment:
     def __init__(self):
         self.merchant_id = os.getenv('CRYPTOMUS_MERCHANT_ID')
         self.payment_api_key = os.getenv('CRYPTOMUS_API_KEY')
-        self.base_url = "https://api.cryptomus.com/v1"
+        self.base_url = "https://api.heleket.com"
 
     def _check_credentials(self):
         if not self.merchant_id or not self.payment_api_key:
