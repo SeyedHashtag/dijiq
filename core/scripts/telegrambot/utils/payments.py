@@ -25,23 +25,54 @@ class CryptomusPayment:
         ).decode("utf-8")
         return md5(f"{encoded_data}{self.payment_api_key}".encode("utf-8")).hexdigest()
 
-    def create_payment(self, amount, plan_gb, user_id):
+    def create_payment(self, amount, plan_gb, user_id, currency="USD", network=None, to_currency=None, url_return=None, url_success=None, url_callback=None, is_payment_multiple=False, lifetime=3600, additional_data=None, subtract=None, accuracy_payment_percent=None, currencies=None, except_currencies=None, course_source=None, from_referral_code=None, discount_percent=None, is_refresh=False):
         if not self._check_credentials():
             return {"error": "Payment credentials not configured"}
 
         payment_id = str(uuid.uuid4())
         payload = {
             "amount": str(amount),
-            "currency": "USD",
+            "currency": currency,
             "order_id": payment_id,
-            "is_payment_multiple": False,
-            "lifetime": 3600,
-            "additional_data": json.dumps({
-                "plan_gb": plan_gb,
-                "payment_id": payment_id,
-                "user_id": user_id
-            })
+            "is_payment_multiple": is_payment_multiple,
+            "lifetime": lifetime
         }
+        # Optional parameters
+        if network:
+            payload["network"] = network
+        if to_currency:
+            payload["to_currency"] = to_currency
+        if url_return:
+            payload["url_return"] = url_return
+        if url_success:
+            payload["url_success"] = url_success
+        if url_callback:
+            payload["url_callback"] = url_callback
+        if subtract is not None:
+            payload["subtract"] = subtract
+        if accuracy_payment_percent is not None:
+            payload["accuracy_payment_percent"] = accuracy_payment_percent
+        if currencies:
+            payload["currencies"] = currencies
+        if except_currencies:
+            payload["except_currencies"] = except_currencies
+        if course_source:
+            payload["course_source"] = course_source
+        if from_referral_code:
+            payload["from_referral_code"] = from_referral_code
+        if discount_percent is not None:
+            payload["discount_percent"] = discount_percent
+        if is_refresh:
+            payload["is_refresh"] = is_refresh
+        # Additional data
+        if additional_data is None:
+            additional_data = {}
+        additional_data.update({
+            "plan_gb": plan_gb,
+            "payment_id": payment_id,
+            "user_id": user_id
+        })
+        payload["additional_data"] = json.dumps(additional_data)
 
         try:
             headers = {
@@ -50,7 +81,7 @@ class CryptomusPayment:
             }
 
             response = requests.post(
-                f"{self.base_url}/payment",
+                self.base_url,  # Fixed endpoint
                 json=payload,
                 headers=headers
             )
