@@ -8,17 +8,12 @@ from utils.language import get_user_language
 DOWNLOAD_LINKS = {
     "karing": {
         "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
-        "android": "https://github.com/KaringX/karing/releases/download/v1.1.4.730/karing_1.1.4.730_android_arm64-v8a.apk",
-        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.4.730/karing_1.1.4.730_windows_x64.exe"
-    },
-    "hiddify": {
-        "ios": "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532",
-        "android": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Android-arm64.apk",
-        "windows": "https://github.com/hiddify/hiddify-next/releases/download/v2.0.5/Hiddify-Windows-Setup-x64.exe"
+        "android": "https://github.com/KaringX/karing/releases/download/v1.1.5.748/karing_1.1.5.748_android_arm.apk",
+        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.5.748/karing_1.1.5.748_windows_x64.exe"
     },
     "v2ray": {
         "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.4/v2rayNG_1.10.4_arm64-v8a.apk",
-        "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.3/v2rayN-windows-64.zip"
+        "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.7/v2rayN-windows-64-SelfContained.zip"
     }
 }
 
@@ -89,9 +84,9 @@ def handle_download_selection(call):
                 reply_markup=markup
             )
             
-        # Handle app selection (Karing or Hiddify or v2ray)
+        # Handle app selection (Karing or v2ray)
         elif action == "app" and len(data_parts) == 4:
-            app = data_parts[2]  # karing or hiddify or v2ray
+            app = data_parts[2]  # karing or v2ray
             platform = data_parts[3]  # ios, android, windows
             
             if app in DOWNLOAD_LINKS and platform in DOWNLOAD_LINKS[app]:
