@@ -4,6 +4,8 @@ from utils.common import create_main_markup
 from utils.adduser import APIClient
 import re
 import json
+import os
+from datetime import datetime, timedelta
 
 def create_broadcast_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -14,7 +16,40 @@ def create_broadcast_markup():
     return markup
 
 def get_user_ids(filter_type):
-    # Create API client to fetch user data
+    # For test users, use the test_configs.json file
+    test_config_path = "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
+    
+    if filter_type in ['all_test', 'active_test', 'expired_test']:
+        user_ids = set()
+        try:
+            if not os.path.exists(test_config_path):
+                print(f"Test config file not found: {test_config_path}")
+                return []
+            with open(test_config_path, 'r') as f:
+                test_users = json.load(f)
+            now = datetime.now()
+            for telegram_id, info in test_users.items():
+                used_at_str = info.get('used_at')
+                if not used_at_str:
+                    continue
+                try:
+                    used_at = datetime.strptime(used_at_str, "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"Invalid date for user {telegram_id}: {used_at_str}")
+                    continue
+                expired = (now - used_at) > timedelta(days=30)
+                if filter_type == 'all_test':
+                    user_ids.add(telegram_id)
+                elif filter_type == 'active_test' and not expired:
+                    user_ids.add(telegram_id)
+                elif filter_type == 'expired_test' and expired:
+                    user_ids.add(telegram_id)
+            return list(user_ids)
+        except Exception as e:
+            print(f"Error reading test configs: {str(e)}")
+            return []
+    
+    # For regular users (format: {telegram_id}t{timestamp})
     api_client = APIClient()
     
     # Get all users using API
@@ -29,7 +64,6 @@ def get_user_ids(filter_type):
             if not username:
                 continue
                 
-            # For regular users (format: {telegram_id}t{timestamp})
             if filter_type in ['all', 'active', 'expired']:
                 match = re.match(r'^(\d+)t', username)
                 if match:
@@ -41,20 +75,7 @@ def get_user_ids(filter_type):
                         user_ids.add(telegram_id)
                     elif filter_type == 'expired' and details.get('blocked', True):
                         user_ids.add(telegram_id)
-            
-            # For test users (format: test{telegram_id}t{timestamp})
-            if filter_type in ['all_test', 'active_test', 'expired_test']:
-                test_match = re.match(r'^test(\d+)t', username)
-                if test_match:
-                    telegram_id = test_match.group(1)
-                    
-                    if filter_type == 'all_test':
-                        user_ids.add(telegram_id)
-                    elif filter_type == 'active_test' and not details.get('blocked', False):
-                        user_ids.add(telegram_id)
-                    elif filter_type == 'expired_test' and details.get('blocked', True):
-                        user_ids.add(telegram_id)
-                    
+        
         return list(user_ids)
     except Exception as e:
         print(f"Error getting user IDs: {str(e)}")
