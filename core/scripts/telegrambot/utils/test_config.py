@@ -30,11 +30,14 @@ def has_used_test_config(user_id):
     configs = load_test_configs()
     return str(user_id) in configs
 
-def mark_test_config_used(user_id):
+def mark_test_config_used(user_id, username=None):
     configs = load_test_configs()
-    configs[str(user_id)] = {
+    entry = {
         'used_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
+    if username:
+        entry['username'] = username
+    configs[str(user_id)] = entry
     save_test_configs(configs)
 
 def format_datetime_string():
@@ -118,8 +121,8 @@ def handle_confirm_test_config(call):
     result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS)
 
     if result:
-        # Mark the test config as used
-        mark_test_config_used(user_id)
+        # Mark the test config as used (save username as well)
+        mark_test_config_used(user_id, username=username)
 
         # Get user URI from API
         user_uri_data = api_client.get_user_uri(username)
