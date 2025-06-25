@@ -8,8 +8,8 @@ from utils.language import get_user_language
 DOWNLOAD_LINKS = {
     "karing": {
         "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
-        "android": "https://github.com/KaringX/karing/releases/download/v1.1.5.748/karing_1.1.5.748_android_arm.apk",
-        "windows": "https://github.com/KaringX/karing/releases/download/v1.1.5.748/karing_1.1.5.748_windows_x64.exe"
+        "android": "https://github.com/KaringX/karing/releases/download/v1.2.0.800/karing_1.2.0.800_android_arm.apk",
+        "windows": "https://github.com/KaringX/karing/releases/download/v1.2.0.800/karing_1.2.0.800_windows_x64.exe"
     },
     "v2ray": {
         "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.4/v2rayNG_1.10.4_arm64-v8a.apk",
