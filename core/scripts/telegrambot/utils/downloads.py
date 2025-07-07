@@ -12,7 +12,6 @@ DOWNLOAD_LINKS = {
         "windows": "https://github.com/KaringX/karing/releases/download/v1.2.0.800/karing_1.2.0.800_windows_x64.exe"
     },
     "v2ray": {
-        "android": "https://github.com/2dust/v2rayNG/releases/download/1.10.4/v2rayNG_1.10.4_arm64-v8a.apk",
         "windows": "https://github.com/2dust/v2rayN/releases/download/7.12.7/v2rayN-windows-64-SelfContained.zip"
     }
 }
