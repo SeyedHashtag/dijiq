@@ -19,4 +19,11 @@ def monitoring_thread():
         monitor_system_resources()
         time.sleep(60)
 
+if __name__ == '__main__':
+    monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
+    monitor_thread.start()
+    version_thread = threading.Thread(target=version_monitoring, daemon=True)
+    version_thread.start()
+    bot.polling(none_stop=True)
+
 
