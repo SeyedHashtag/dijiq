@@ -11,6 +11,9 @@ from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode
 import io
+from flask import Flask, request, jsonify
+import threading
+from tbot import monitoring_thread, version_monitoring
 
 def format_datetime_string():
     """Generate a datetime string in the format required for username"""
@@ -101,7 +104,9 @@ def handle_confirm_purchase(call):
             payment_response = payment_handler.create_payment(
                 plan['price'],
                 plan_gb,
-                user_id
+                user_id,
+                call.message.chat.id,
+                url_callback='YOUR_WEBHOOK_URL'
             )
             
             if "error" in payment_response:
@@ -263,8 +268,10 @@ def handle_check_payment(call):
 def process_payment_webhook(request_data):
     try:
         # This function would be called by your webhook endpoint
-        payment_id = request_data.get('order_id')
+        additional_data = json.loads(request_data.get('additional_data', '{}'))
+        payment_id = additional_data.get('payment_id')
         status = request_data.get('status')
+        chat_id = additional_data.get('chat_id')
         
         if payment_id and status == 'paid':
             payment_record = get_payment_record(payment_id)
@@ -301,7 +308,7 @@ def process_payment_webhook(request_data):
                     
                     # Send the success message to user
                     bot.send_message(
-                        user_id,
+                        chat_id,
                         success_message,
                         parse_mode="Markdown"
                     )
@@ -314,7 +321,7 @@ def process_payment_webhook(request_data):
                         bio.seek(0)
                         
                         bot.send_photo(
-                            user_id,
+                            chat_id,
                             photo=bio,
                             caption="Scan this QR code to configure your VPN client."
                         )
@@ -323,7 +330,7 @@ def process_payment_webhook(request_data):
                 else:
                     # Send error message to user
                     bot.send_message(
-                        user_id,
+                        chat_id,
                         f"✅ Payment completed but error creating account. Please contact support.",
                         parse_mode="Markdown"
                     )
@@ -331,3 +338,23 @@ def process_payment_webhook(request_data):
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
         return False
+
+app = Flask(__name__)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    process_payment_webhook(data)
+    return jsonify({'status': 'ok'})
+
+def run_flask_app():
+    app.run(port=5000)
+
+if __name__ == '__main__':
+    monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
+    monitor_thread.start()
+    version_thread = threading.Thread(target=version_monitoring, daemon=True)
+    version_thread.start()
+    flask_thread = threading.Thread(target=run_flask_app)
+    flask_thread.start()
+    bot.polling(none_stop=True)

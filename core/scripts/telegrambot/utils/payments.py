@@ -25,7 +25,7 @@ class CryptomusPayment:
         ).decode("utf-8")
         return md5(f"{encoded_data}{self.payment_api_key}".encode("utf-8")).hexdigest()
 
-    def create_payment(self, amount, plan_gb, user_id, currency="USD", network=None, to_currency=None, url_return=None, url_success=None, url_callback=None, is_payment_multiple=False, lifetime=3600, additional_data=None, subtract=None, accuracy_payment_percent=None, currencies=None, except_currencies=None, course_source=None, from_referral_code=None, discount_percent=None, is_refresh=False):
+    def create_payment(self, amount, plan_gb, user_id, chat_id, currency="USD", network=None, to_currency=None, url_return=None, url_success=None, url_callback=None, is_payment_multiple=False, lifetime=3600, additional_data=None, subtract=None, accuracy_payment_percent=None, currencies=None, except_currencies=None, course_source=None, from_referral_code=None, discount_percent=None, is_refresh=False):
         if not self._check_credentials():
             return {"error": "Payment credentials not configured"}
 
@@ -70,9 +70,14 @@ class CryptomusPayment:
         additional_data.update({
             "plan_gb": plan_gb,
             "payment_id": payment_id,
-            "user_id": user_id
+            "user_id": user_id,
+            "chat_id": chat_id
         })
         payload["additional_data"] = json.dumps(additional_data)
+
+        # Set a default callback URL if not provided
+        if not url_callback:
+            payload["url_callback"] = f"https://your-domain.com/payments/callback?payment_id={payment_id}"
 
         try:
             headers = {
@@ -107,7 +112,7 @@ class CryptomusPayment:
             }
 
             response = requests.post(
-                f"{self.base_url}/payment/info",
+                "https://api.heleket.com/v1/payment/info",
                 json=payload,
                 headers=headers
             )
