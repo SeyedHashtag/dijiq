@@ -32,6 +32,7 @@ class Command(Enum):
     SHOW_USER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'show_user_uri.py')
     WRAPPER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'wrapper_uri.py')
     IP_ADD = os.path.join(SCRIPT_DIR, 'hysteria2', 'ip.py')
+    NODE_MANAGER = os.path.join(SCRIPT_DIR, 'hysteria2', 'node.py')
     MANAGE_OBFS = os.path.join(SCRIPT_DIR, 'hysteria2', 'manage_obfs.py')
     MASQUERADE_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'masquerade.py')
     TRAFFIC_STATUS = 'traffic.py'  # won't be called directly (it's a python module)
@@ -426,6 +427,23 @@ def edit_ip_address(ipv4: str, ipv6: str):
     if ipv6:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-6', ipv6])
 
+def add_node(name: str, ip: str):
+    """
+    Adds a new external node.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'add', '--name', name, '--ip', ip])
+
+def delete_node(name: str):
+    """
+    Deletes an external node by name.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'delete', '--name', name])
+
+def list_nodes():
+    """
+    Lists all configured external nodes.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'list'])
 
 def update_geo(country: str):
     '''

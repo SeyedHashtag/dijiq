@@ -298,6 +298,41 @@ def ip_address(edit: bool, ipv4: str, ipv6: str):
         click.echo(f'{e}', err=True)
 
 
+@cli.group()
+def node():
+    """Manage external node IPs for multi-server setups."""
+    pass
+
+@node.command('add')
+@click.option('--name', required=True, type=str, help='A unique name for the node (e.g., "Node-DE").')
+@click.option('--ip', required=True, type=str, help='The public IP address of the node.')
+def add_node(name, ip):
+    """Add a new external node."""
+    try:
+        output = cli_api.add_node(name, ip)
+        click.echo(output.strip())
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+@node.command('delete')
+@click.option('--name', required=True, type=str, help='The name of the node to delete.')
+def delete_node(name):
+    """Delete an external node by its name."""
+    try:
+        output = cli_api.delete_node(name)
+        click.echo(output.strip())
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+@node.command('list')
+def list_nodes():
+    """List all configured external nodes."""
+    try:
+        output = cli_api.list_nodes()
+        click.echo(output.strip())
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
 @cli.command('update-geo')
 @click.option('--country', '-c',
               type=click.Choice(['iran', 'china', 'russia'], case_sensitive=False),
@@ -323,9 +358,6 @@ def masquerade(remove: bool, enable: str):
             raise click.UsageError('Error: You cannot use both --remove and --enable at the same time')
 
         if enable:
-            # NOT SURE THIS IS NEEDED
-            # if not enable.startswith('http://') and not enable.startswith('https://'):
-            #     enable = 'https://' + enable
             cli_api.enable_hysteria2_masquerade(enable)
             click.echo('Masquerade enabled successfully.')
         elif remove:
