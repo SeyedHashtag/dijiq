@@ -6,7 +6,7 @@ import time
 import shlex
 import base64
 from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 
 from aiohttp import web
@@ -29,6 +29,7 @@ class AppConfig:
     singbox_template_path: str
     hysteria_cli_path: str
     users_json_path: str
+    nodes_json_path: str
     rate_limit: int
     rate_limit_window: int
     sni: str
@@ -107,17 +108,22 @@ class UserInfo:
 
 
 @dataclass
+class NodeURI:
+    label: str
+    uri: str
+    qrcode: Optional[str] = None
+
+
+@dataclass
 class TemplateContext:
     username: str
     usage: str
     usage_raw: str
     expiration_date: str
     sublink_qrcode: str
-    ipv4_qrcode: Optional[str]
-    ipv6_qrcode: Optional[str]
     sub_link: str
-    ipv4_uri: Optional[str]
-    ipv6_uri: Optional[str]
+    local_uris: List[NodeURI] = field(default_factory=list)
+    node_uris: List[NodeURI] = field(default_factory=list)
 
 
 class Utils:
@@ -244,17 +250,23 @@ class HysteriaCLI:
             print(f"JSONDecodeError: {e}, Raw output: {raw_info_str}")
             return None
 
-    def get_user_uri(self, username: str, ip_version: Optional[str] = None) -> str:
-        if ip_version:
-            return self._run_command(['show-user-uri', '-u', username, '-ip', ip_version])
-        else:
-            return self._run_command(['show-user-uri', '-u', username, '-a'])
-
-    def get_uris(self, username: str) -> Tuple[Optional[str], Optional[str]]:
+    def get_all_uris(self, username: str) -> List[str]:
+        """Fetches all available URIs (local and nodes) for a user."""
         output = self._run_command(['show-user-uri', '-u', username, '-a'])
-        ipv4_uri = re.search(r'IPv4:\s*(.*)', output)
-        ipv6_uri = re.search(r'IPv6:\s*(.*)', output)
-        return (ipv4_uri.group(1).strip() if ipv4_uri else None, ipv6_uri.group(1).strip() if ipv6_uri else None)
+        if not output:
+            return []
+        # Find all hy2:// links in the output
+        return re.findall(r'(hy2://[^\s]+)', output)
+
+    def get_all_labeled_uris(self, username: str) -> List[Dict[str, str]]:
+        """Fetches all URIs and their labels."""
+        output = self._run_command(['show-user-uri', '-u', username, '-a'])
+        if not output:
+            return []
+        
+        # This regex captures the label (e.g., "IPv4", "Node: DE (IPv6)") and the URI
+        matches = re.findall(r"^(.*?):\s*(hy2://[^\s]+)", output, re.MULTILINE)
+        return [{'label': label.strip(), 'uri': uri} for label, uri in matches]
 
 
 class UriParser:
@@ -303,74 +315,67 @@ class SingboxConfigGenerator:
                 raise RuntimeError(f"Error loading Singbox template: {e}") from e
         return self._template_cache.copy()
 
-    def generate_config(self, username: str, ip_version: str, fragment: str) -> Optional[Dict[str, Any]]:
-        try:
-            uri = self.hysteria_cli.get_user_uri(username, ip_version)
-        except Exception:
-            print(f"Failed to get URI for {username} with IP version {ip_version}. Skipping.")
-            return None
+    def generate_config_from_uri(self, uri: str, username: str, fragment: str) -> Optional[Dict[str, Any]]:
+        """Generates a Singbox outbound config from a single Hysteria URI."""
         if not uri:
-            print(f"No URI found for {username} with IP version {ip_version}. Skipping.")
             return None
-        components = UriParser.extract_uri_components(uri, f'IPv{ip_version}:')
-        if components is None or components.port is None:
-            print(f"Invalid URI components for {username} with IP version {ip_version}. Skipping.")
+
+        # A simplified parser since we already have the full URI
+        try:
+            parsed_url = urlparse(uri)
+            server = parsed_url.hostname
+            server_port = parsed_url.port
+            password = parsed_url.password
+            full_user = unquote(parsed_url.username)
+            obfs_password = parse_qs(parsed_url.query).get('obfs-password', [''])[0]
+        except Exception:
             return None
 
         return {
-            "outbounds": [{
-                "type": "hysteria2",
-                "tag": f"{username}-Hysteria2",
-                "server": components.ip,
-                "server_port": components.port,
-                "obfs": {
-                    "type": "salamander",
-                    "password": components.obfs_password
-                },
-                "password": f"{username}:{components.password}",
-                "tls": {
-                    "enabled": True,
-                    "server_name": fragment if fragment else self.default_sni,
-                    "insecure": True
-                }
-            }]
+            "type": "hysteria2",
+            "tag": unquote(parsed_url.fragment), 
+            "server": server,
+            "server_port": server_port,
+            "obfs": {
+                "type": "salamander",
+                "password": obfs_password
+            },
+            "password": f"{full_user}:{password}",
+            "tls": {
+                "enabled": True,
+                "server_name": fragment if fragment else self.default_sni,
+                "insecure": True
+            }
         }
 
-    def combine_configs(self, username: str, config_v4: Optional[Dict[str, Any]], config_v6: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def combine_configs(self, all_uris: List[str], username: str, fragment: str) -> Optional[Dict[str, Any]]:
+        """Generates a combined Singbox config from a list of URIs."""
+        if not all_uris:
+            return None
+        
         combined_config = self.get_template()
-        combined_config['outbounds'] = [outbound for outbound in combined_config['outbounds']
-                                        if outbound.get('type') != 'hysteria2']
+        # Clear any placeholder hysteria2 outbounds
+        combined_config['outbounds'] = [out for out in combined_config['outbounds'] if out.get('type') != 'hysteria2']
 
-        modified_v4_outbounds = []
-        if config_v4:
-            v4_outbound = config_v4['outbounds'][0]
-            v4_outbound['tag'] = f"{username}-IPv4"
-            modified_v4_outbounds.append(v4_outbound)
+        hysteria_outbounds = []
+        for uri in all_uris:
+            outbound = self.generate_config_from_uri(uri, username, fragment)
+            if outbound:
+                hysteria_outbounds.append(outbound)
 
-        modified_v6_outbounds = []
-        if config_v6:
-            v6_outbound = config_v6['outbounds'][0]
-            v6_outbound['tag'] = f"{username}-IPv6"
-            modified_v6_outbounds.append(v6_outbound)
+        if not hysteria_outbounds:
+            return None
 
-        select_outbounds = ["auto"]
-        if config_v4:
-            select_outbounds.append(f"{username}-IPv4")
-        if config_v6:
-            select_outbounds.append(f"{username}-IPv6")
+        all_tags = [out['tag'] for out in hysteria_outbounds]
 
-        auto_outbounds = []
-        if config_v4:
-            auto_outbounds.append(f"{username}-IPv4")
-        if config_v6:
-            auto_outbounds.append(f"{username}-IPv6")
-
+        # Update 'select' and 'auto' groups
         for outbound in combined_config['outbounds']:
             if outbound.get('tag') == 'select':
-                outbound['outbounds'] = select_outbounds
+                outbound['outbounds'] = ["auto"] + all_tags
             elif outbound.get('tag') == 'auto':
-                outbound['outbounds'] = auto_outbounds
-        combined_config['outbounds'].extend(modified_v4_outbounds + modified_v6_outbounds)
+                outbound['outbounds'] = all_tags
+
+        combined_config['outbounds'].extend(hysteria_outbounds)
         return combined_config
 
 
@@ -383,13 +388,13 @@ class SubscriptionManager:
         user_info = self.hysteria_cli.get_user_info(username)
         if user_info is None:
             return "User not found"
-        ipv4_uri, ipv6_uri = self.hysteria_cli.get_uris(username)
-        output_lines = [uri for uri in [ipv4_uri, ipv6_uri] if uri]
-        if not output_lines:
+            
+        all_uris = self.hysteria_cli.get_all_uris(username)
+        if not all_uris:
             return "No URI available"
 
         processed_uris = []
-        for uri in output_lines:
+        for uri in all_uris:
             if "v2ray" in user_agent and "ng" in user_agent:
                 match = re.search(r'pinSHA256=sha256/([^&]+)', uri)
                 if match:
@@ -455,6 +460,7 @@ class HysteriaServer:
         singbox_template_path = '/etc/hysteria/core/scripts/normalsub/singbox.json'
         hysteria_cli_path = '/etc/hysteria/core/cli.py'
         users_json_path = os.getenv('HYSTERIA_USERS_JSON_PATH', '/etc/hysteria/users.json')
+        nodes_json_path = '/etc/hysteria/nodes.json'
         rate_limit = 100
         rate_limit_window = 60
         template_dir = os.path.dirname(__file__)
@@ -467,6 +473,7 @@ class HysteriaServer:
                          singbox_template_path=singbox_template_path,
                          hysteria_cli_path=hysteria_cli_path,
                          users_json_path=users_json_path,
+                         nodes_json_path=nodes_json_path,
                          rate_limit=rate_limit, rate_limit_window=rate_limit_window,
                          sni=sni, template_dir=template_dir,
                          subpath=subpath)
@@ -548,22 +555,21 @@ class HysteriaServer:
         return web.Response(text=self.template_renderer.render(context), content_type='text/html')
 
     async def _handle_singbox(self, username: str, fragment: str, user_info: UserInfo) -> web.Response:
-        config_v4 = self.singbox_generator.generate_config(username, '4', fragment)
-        config_v6 = self.singbox_generator.generate_config(username, '6', fragment)
-        if config_v4 is None and config_v6 is None:
+        all_uris = self.hysteria_cli.get_all_uris(username)
+        if not all_uris:
             return web.Response(status=404, text=f"Error: No valid URIs found for user {username}.")
-        combined_config = self.singbox_generator.combine_configs(username, config_v4, config_v6)
+        combined_config = self.singbox_generator.combine_configs(all_uris, username, fragment)
         return web.Response(text=json.dumps(combined_config, indent=4, sort_keys=True), content_type='application/json')
 
     async def _handle_normalsub(self, request: web.Request, username: str, user_info: UserInfo) -> web.Response:
         user_agent = request.headers.get('User-Agent', '').lower()
         subscription = self.subscription_manager.get_normal_subscription(username, user_agent)
-        if subscription == "User not found": # Should be caught earlier by user_info check
+        if subscription == "User not found":
             return web.Response(status=404, text=f"User '{username}' not found.")
         return web.Response(text=subscription, content_type='text/plain')
 
     async def _get_template_context(self, username: str, user_info: UserInfo) -> TemplateContext:
-        ipv4_uri, ipv6_uri = self.hysteria_cli.get_uris(username)
+        labeled_uris = self.hysteria_cli.get_all_labeled_uris(username)
         port_str = f":{self.config.external_port}" if self.config.external_port not in [80, 443, 0] else ""
         base_url = f"https://{self.config.domain}{port_str}"
 
@@ -571,10 +577,21 @@ class HysteriaServer:
             print(f"Warning: Constructed base URL '{base_url}' might be invalid. Check domain and port config.")
         
         sub_link = f"{base_url}/{self.config.subpath}/sub/normal/{user_info.password}"
-
-        ipv4_qrcode = Utils.generate_qrcode_base64(ipv4_uri)
-        ipv6_qrcode = Utils.generate_qrcode_base64(ipv6_uri)
         sublink_qrcode = Utils.generate_qrcode_base64(sub_link)
+        
+        local_uris = []
+        node_uris = []
+
+        for item in labeled_uris:
+            node_uri = NodeURI(
+                label=item['label'], 
+                uri=item['uri'], 
+                qrcode=Utils.generate_qrcode_base64(item['uri'])
+            )
+            if item['label'].startswith('Node:'):
+                node_uris.append(node_uri)
+            else:
+                local_uris.append(node_uri)
 
         return TemplateContext(
             username=username,
@@ -582,11 +599,9 @@ class HysteriaServer:
             usage_raw=user_info.usage_detailed,
             expiration_date=user_info.expiration_date,
             sublink_qrcode=sublink_qrcode,
-            ipv4_qrcode=ipv4_qrcode,
-            ipv6_qrcode=ipv6_qrcode,
             sub_link=sub_link,
-            ipv4_uri=ipv4_uri,
-            ipv6_uri=ipv6_uri
+            local_uris=local_uris,
+            node_uris=node_uris
         )
 
     async def robots_handler(self, request: web.Request) -> web.Response:
@@ -604,7 +619,6 @@ class HysteriaServer:
             host=self.config.aiohttp_listen_address,
             port=self.config.aiohttp_listen_port
         )
-
 
 if __name__ == '__main__':
     server = HysteriaServer()

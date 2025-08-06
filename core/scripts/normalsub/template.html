@@ -41,7 +41,6 @@
             color: var(--text-dark);
         }
 
-        /* Animated background elements */
         .background-animation {
             position: fixed;
             top: 0;
@@ -78,17 +77,14 @@
             0% {
                 transform: translate(0, 0) rotate(0deg);
             }
-
             50% {
                 transform: translate(100px, 100px) rotate(180deg);
             }
-
             100% {
                 transform: translate(0, 0) rotate(360deg);
             }
         }
 
-        /* Rest of the styles remain the same */
         .container {
             max-width: 1000px;
             margin: 2rem auto;
@@ -175,10 +171,10 @@
             background: var(--card-bg-light);
             border-radius: 1rem;
             overflow: hidden;
-            /* Add this to contain the header */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 1.5rem;
         }
 
         .qr-header {
@@ -195,7 +191,6 @@
         .qr-content {
             padding: 2rem;
         }
-
 
         .dark-mode .qr-section {
             background: rgba(31, 41, 55, 0.8);
@@ -228,6 +223,14 @@
             background: white;
             border-radius: 0.5rem;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .uri-unavailable {
+            color: #9ca3af;
+        }
+        
+        .dark-mode .uri-unavailable {
+            color: #4b5563;
         }
 
         .btn-group {
@@ -278,6 +281,7 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             display: none;
             backdrop-filter: blur(10px);
+            z-index: 100;
         }
 
         .dark-mode .loading-indicator {
@@ -355,63 +359,81 @@
                 </div>
             </div>
         </div>
-
+        
         <div class="qr-section">
             <div class="qr-header">
-                <i class="fas fa-qrcode"></i>
-                QR Codes
+                <i class="fas fa-link"></i>
+                Subscription Link
             </div>
-            <div class="qr-content">
+             <div class="qr-content">
                 <div class="qr-grid">
-                    <div class="qr-item">
-                        <h3 class="qr-title">Subscription Link</h3>
+                    <div class="qr-item" style="grid-column: 1 / -1;">
+                        <h3 class="qr-title">Universal Subscription Link</h3>
                         <img src="{{ sublink_qrcode }}" alt="Subscription QR Code" class="qrcode">
                         <div class="btn-group">
                             <button class="btn btn-primary" onclick="copyToClipboard('{{ sub_link }}')">
                                 <i class="fas fa-copy"></i> Copy
                             </button>
-                            <!-- <a href="{{ sub_link }}" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-                                <i class="fas fa-external-link-alt"></i> Open
-                            </a> -->
                         </div>
-                    </div>
-
-                    <div class="qr-item">
-                        <h3 class="qr-title">IPv4 URI</h3>
-                        {% if ipv4_qrcode %}
-                        <img src="{{ ipv4_qrcode }}" alt="IPv4 QR Code" class="qrcode">
-                        <div class="btn-group">
-                            <button class="btn btn-primary" onclick="copyToClipboard('{{ ipv4_uri }}')">
-                                <i class="fas fa-copy"></i> Copy
-                            </button>
-                            <!-- <a href="{{ ipv4_uri }}" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-                                    <i class="fas fa-external-link-alt"></i> Open
-                                </a> -->
-                        </div>
-                        {% else %}
-                        <p class="uri-unavailable">IPv4 URI not available</p>
-                        {% endif %}
-                    </div>
-
-                    <div class="qr-item">
-                        <h3 class="qr-title">IPv6 URI</h3>
-                        {% if ipv6_qrcode %}
-                        <img src="{{ ipv6_qrcode }}" alt="IPv6 QR Code" class="qrcode">
-                        <div class="btn-group">
-                            <button class="btn btn-primary" onclick="copyToClipboard('{{ ipv6_uri }}')">
-                                <i class="fas fa-copy"></i> Copy
-                            </button>
-                            <!-- <a href="{{ ipv6_uri }}" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-                                    <i class="fas fa-external-link-alt"></i> Open
-                                </a> -->
-                        </div>
-                        {% else %}
-                        <p class="uri-unavailable">IPv6 URI not available</p>
-                        {% endif %}
                     </div>
                 </div>
             </div>
         </div>
+
+        <div class="qr-section">
+            <div class="qr-header">
+                <i class="fas fa-server"></i>
+                Local Server Connections
+            </div>
+            <div class="qr-content">
+                <div class="qr-grid">
+                    {% for item in local_uris %}
+                    <div class="qr-item">
+                        <h3 class="qr-title">{{ item.label }} URI</h3>
+                        {% if item.qrcode %}
+                        <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
+                        <div class="btn-group">
+                            <button class="btn btn-primary" onclick="copyToClipboard('{{ item.uri }}')">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                        {% else %}
+                        <p class="uri-unavailable">{{ item.label }} URI not available</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        {% if node_uris %}
+        <div class="qr-section">
+            <div class="qr-header">
+                <i class="fas fa-globe-americas"></i>
+                External Nodes
+            </div>
+            <div class="qr-content">
+                <div class="qr-grid">
+                    {% for item in node_uris %}
+                    <div class="qr-item">
+                        <h3 class="qr-title">{{ item.label }}</h3>
+                        {% if item.qrcode %}
+                        <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
+                        <div class="btn-group">
+                            <button class="btn btn-primary" onclick="copyToClipboard('{{ item.uri }}')">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                        {% else %}
+                        <p class="uri-unavailable">{{ item.label }} URI not available</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
     </div>
 
     <script>
