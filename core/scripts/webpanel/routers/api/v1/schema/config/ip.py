@@ -22,3 +22,25 @@ class StatusResponse(BaseModel):
 
 class EditInputBody(StatusResponse):
     pass
+
+class Node(BaseModel):
+    name: str
+    ip: str
+
+    @field_validator('ip', mode='before')
+    def check_ip(cls, v: str, info: ValidationInfo):
+        if v is None:
+            raise ValueError("IP cannot be None")
+        try:
+            ip_address(v)
+            return v
+        except ValueError:
+            raise ValueError(f"'{v}' is not a valid IPv4 or IPv6 address")
+
+class AddNodeBody(Node):
+    pass
+
+class DeleteNodeBody(BaseModel):
+    name: str
+
+NodeListResponse = list[Node]

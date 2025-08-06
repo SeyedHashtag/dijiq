@@ -14,6 +14,7 @@ CONFIG_FILE = '/etc/hysteria/config.json'
 CONFIG_ENV_FILE = '/etc/hysteria/.configs.env'
 WEBPANEL_ENV_FILE = '/etc/hysteria/core/scripts/webpanel/.env'
 NORMALSUB_ENV_FILE = '/etc/hysteria/core/scripts/normalsub/.env'
+NODES_JSON_PATH = "/etc/hysteria/nodes.json"
 
 
 class Command(Enum):

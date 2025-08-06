@@ -178,10 +178,12 @@ async def show_user_uri_api(username: str):
         uri_data_list = cli_api.show_user_uri_json([username])
         if not uri_data_list:
             raise HTTPException(status_code=404, detail=f'URI for user {username} not found.')
+        
         uri_data = uri_data_list[0]
         if uri_data.get('error'):
             raise HTTPException(status_code=404, detail=f"{uri_data['error']}")
-        return uri_data
+        
+        return UserUriResponse(**uri_data)
     except cli_api.ScriptNotFoundError as e:
         raise HTTPException(status_code=500, detail=f'Server script error: {str(e)}')
     except cli_api.CommandExecutionError as e:
