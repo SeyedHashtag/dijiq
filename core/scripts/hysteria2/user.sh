@@ -13,13 +13,13 @@ MAX_DOWNLOAD_BYTES=$(jq -r --arg user "$USERNAME" '.[$user].max_download_bytes' 
 EXPIRATION_DAYS=$(jq -r --arg user "$USERNAME" '.[$user].expiration_days' "$USERS_FILE")
 ACCOUNT_CREATION_DATE=$(jq -r --arg user "$USERNAME" '.[$user].account_creation_date' "$USERS_FILE")
 BLOCKED=$(jq -r --arg user "$USERNAME" '.[$user].blocked' "$USERS_FILE")
-CURRENT_DOWNLOAD_BYTES=$(jq -r --arg user "$USERNAME" '.[$user].download_bytes' "$USERS_FILE")
-CURRENT_UPLOAD_BYTES=$(jq -r --arg user "$USERNAME" '.[$user].upload_bytes' "$USERS_FILE")
+CURRENT_DOWNLOAD_BYTES=$(jq -r --arg user "$USERNAME" '.[$user].download_bytes // 0' "$USERS_FILE")
+CURRENT_UPLOAD_BYTES=$(jq -r --arg user "$USERNAME" '.[$user].upload_bytes // 0' "$USERS_FILE")
 
 TOTAL_BYTES=$((CURRENT_DOWNLOAD_BYTES + CURRENT_UPLOAD_BYTES))
 
 if [ "$BLOCKED" == "true" ]; then
-  sleep 20 
+  sleep 20
   exit 1
 fi
 
@@ -28,21 +28,25 @@ if [ "$STORED_PASSWORD" != "$PASSWORD" ]; then
   exit 1
 fi
 
-CURRENT_DATE=$(date +%s)
-EXPIRATION_DATE=$(date -d "$ACCOUNT_CREATION_DATE + $EXPIRATION_DAYS days" +%s)
+if [ "$EXPIRATION_DAYS" -ne 0 ]; then
+  CURRENT_DATE=$(date +%s)
+  EXPIRATION_DATE=$(date -d "$ACCOUNT_CREATION_DATE + $EXPIRATION_DAYS days" +%s)
 
-if [ "$CURRENT_DATE" -ge "$EXPIRATION_DATE" ]; then
-  jq --arg user "$USERNAME" '.[$user].blocked = true' "$USERS_FILE" > temp.json && mv temp.json "$USERS_FILE"
-  exit 1
+  if [ "$CURRENT_DATE" -ge "$EXPIRATION_DATE" ]; then
+    jq --arg user "$USERNAME" '.[$user].blocked = true' "$USERS_FILE" > temp.json && mv temp.json "$USERS_FILE"
+    exit 1
+  fi
 fi
 
-if [ "$TOTAL_BYTES" -ge "$MAX_DOWNLOAD_BYTES" ]; then
-  SECRET=$(jq -r '.trafficStats.secret' "$CONFIG_FILE")
-  KICK_ENDPOINT="http://127.0.0.1:25413/kick"
-  curl -s -H "Authorization: $SECRET" -X POST -d "[\"$USERNAME\"]" "$KICK_ENDPOINT"
+if [ "$MAX_DOWNLOAD_BYTES" -ne 0 ]; then
+  if [ "$TOTAL_BYTES" -ge "$MAX_DOWNLOAD_BYTES" ]; then
+    SECRET=$(jq -r '.trafficStats.secret' "$CONFIG_FILE")
+    KICK_ENDPOINT="http://127.0.0.1:25413/kick"
+    curl -s -H "Authorization: $SECRET" -X POST -d "[\"$USERNAME\"]" "$KICK_ENDPOINT"
 
-  jq --arg user "$USERNAME" '.[$user].blocked = true' "$USERS_FILE" > temp.json && mv temp.json "$USERS_FILE"
-  exit 1
+    jq --arg user "$USERNAME" '.[$user].blocked = true' "$USERS_FILE" > temp.json && mv temp.json "$USERS_FILE"
+    exit 1
+  fi
 fi
 
 echo "$USERNAME"
