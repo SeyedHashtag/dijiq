@@ -283,20 +283,22 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
     '''
     if not username:
         raise InvalidInputError('Error: username is required')
-    if not any([new_username, new_traffic_limit, new_expiration_days, renew_password, renew_creation_date, blocked is not None]):  # type: ignore
-        raise InvalidInputError('Error: at least one option is required')
-    if new_traffic_limit is not None and new_traffic_limit <= 0:
-        raise InvalidInputError('Error: traffic limit must be greater than 0')
-    if new_expiration_days is not None and new_expiration_days <= 0:
-        raise InvalidInputError('Error: expiration days must be greater than 0')
+
+    if new_traffic_limit is not None and new_traffic_limit < 0:
+        raise InvalidInputError('Error: traffic limit must be a non-negative number.')
+    if new_expiration_days is not None and new_expiration_days < 0:
+        raise InvalidInputError('Error: expiration days must be a non-negative number.')
+
     if renew_password:
         password = generate_password()
     else:
         password = ''
+
     if renew_creation_date:
         creation_date = datetime.now().strftime('%Y-%m-%d')
     else:
         creation_date = ''
+
     command_args = [
         'bash',
         Command.EDIT_USER.value,
