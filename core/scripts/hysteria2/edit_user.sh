@@ -20,11 +20,11 @@ validate_username() {
 
 validate_traffic_limit() {
     local traffic_limit=$1
-      if [ -z "$traffic_limit" ]; then
-          return 0 # Optional value is valid
+    if [ -z "$traffic_limit" ]; then
+        return 0 # Optional value is valid
     fi
     if ! [[ "$traffic_limit" =~ ^[0-9]+$ ]]; then
-        echo "Traffic limit must be a valid integer."
+        echo "Error: Traffic limit must be a valid non-negative number (use 0 for unlimited)."
         return 1
     fi
     return 0
@@ -32,11 +32,11 @@ validate_traffic_limit() {
 
 validate_expiration_days() {
     local expiration_days=$1
-      if [ -z "$expiration_days" ]; then
+    if [ -z "$expiration_days" ]; then
         return 0 # Optional value is valid
     fi
     if ! [[ "$expiration_days" =~ ^[0-9]+$ ]]; then
-        echo "Expiration days must be a valid integer."
+        echo "Error: Expiration days must be a valid non-negative number (use 0 for unlimited)."
          return 1
     fi
      return 0
