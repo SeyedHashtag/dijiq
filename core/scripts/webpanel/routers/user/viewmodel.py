@@ -1,16 +1,14 @@
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-
-import cli_api
-
+from typing import Optional
 
 class User(BaseModel):
     username: str
     status: str
     quota: str
     traffic_used: str
-    expiry_date: datetime
-    expiry_days: int
+    expiry_date: str
+    expiry_days: str
     enable: bool
 
     @staticmethod
@@ -21,44 +19,51 @@ class User(BaseModel):
 
     @staticmethod
     def __parse_user_data(user_data: dict) -> dict:
-        expiry_date = 'N/A'
-        creation_date_str = user_data.get("account_creation_date")
         expiration_days = user_data.get('expiration_days', 0)
-        if creation_date_str and expiration_days:
-            try:
-                creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
-                expiry_date = creation_date + timedelta(days=expiration_days)
-            except ValueError:
-                pass
 
-        # Calculate traffic values and percentage
+        if expiration_days > 0:
+            creation_date_str = user_data.get("account_creation_date")
+            display_expiry_days = str(expiration_days)
+            
+            if isinstance(creation_date_str, str):
+                try:
+                    creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
+                    expiry_dt_obj = creation_date + timedelta(days=expiration_days)
+                    display_expiry_date = expiry_dt_obj.strftime("%Y-%m-%d")
+                except ValueError:
+                    display_expiry_date = "Error"
+            else:
+                display_expiry_date = "Error"
+        else:
+            display_expiry_days = "Unlimited"
+            display_expiry_date = "Unlimited"
+
         used_bytes = user_data.get("download_bytes", 0) + user_data.get("upload_bytes", 0)
         quota_bytes = user_data.get('max_download_bytes', 0)
         
-        # Format individual values for combining
         used_formatted = User.__format_traffic(used_bytes)
-        quota_formatted = User.__format_traffic(quota_bytes)
+        quota_formatted = "Unlimited" if quota_bytes == 0 else User.__format_traffic(quota_bytes)
         
-        # Calculate percentage if quota is not zero
         percentage = 0
         if quota_bytes > 0:
             percentage = (used_bytes / quota_bytes) * 100
         
-        # Combine the values with percentage
-        traffic_used = f"{used_formatted}/{quota_formatted} ({percentage:.1f}%)"
+        traffic_used_display = f"{used_formatted}/{quota_formatted} ({percentage:.1f}%)"
 
         return {
             'username': user_data['username'],
             'status': user_data.get('status', 'Not Active'),
-            'quota': User.__format_traffic(quota_bytes),
-            'traffic_used': traffic_used,
-            'expiry_date': expiry_date,
-            'expiry_days': expiration_days,
-            'enable': False if user_data.get('blocked', False) else True,
+            'quota': quota_formatted,
+            'traffic_used': traffic_used_display,
+            'expiry_date': display_expiry_date,
+            'expiry_days': display_expiry_days,
+            'enable': not user_data.get('blocked', False),
         }
 
     @staticmethod
     def __format_traffic(traffic_bytes) -> str:
+        if traffic_bytes == 0:
+            return "0 B"
         if traffic_bytes < 1024:
             return f'{traffic_bytes} B'
         elif traffic_bytes < 1024**2:
