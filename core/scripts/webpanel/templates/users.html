@@ -243,7 +243,6 @@
 <script>
     $(function () {
 
-        //** Username validation  */
         const usernameRegex = /^[a-zA-Z0-9]+$/;
 
         function validateUsername(username, errorElementId) {
@@ -254,16 +253,14 @@
                 errorElement.text("Usernames can only contain letters and numbers.");
                 return false;
             } else {
-                errorElement.text(""); // Clear any previous error
+                errorElement.text("");
                 return true;
             }
         }
 
-        // Disable submit buttons by default
         $("#addSubmitButton").prop("disabled", true);
         // $("#editSubmitButton").prop("disabled", true);
 
-        //**  Add Username validation on Add User Modal  */
         $("#addUsername").on("input", function () {
             const username = $(this).val();
             const isValid = validateUsername(username, "addUsernameError");
@@ -271,7 +268,6 @@
             $("#addSubmitButton").prop("disabled", !isValid);
         });
 
-        //**  Add Username validation on Edit User Modal  */
         $("#editUsername").on("input", function () {
             const username = $(this).val();
             const isValid = validateUsername(username, "editUsernameError");
@@ -279,11 +275,9 @@
             $("#editSubmitButton").prop("disabled", !isValid);
         });
 
-        // Filter Buttons Functionality
         $(".filter-button").on("click", function () {
             const filter = $(this).data("filter");
 
-            // Deselect "Select All" checkbox when a filter is applied
             $("#selectAll").prop("checked", false);
 
             $("#userTable tbody tr").each(function () {
@@ -342,7 +336,6 @@
                 confirmButtonText: "Yes, delete them!",
             }).then((result) => {
                 if (result.isConfirmed) {
-                    //AJAX request for each user selected
                     Promise.all(selectedUsers.map(username => {
                         const removeUserUrl = "{{ url_for('remove_user_api', username='USERNAME_PLACEHOLDER') }}";
                         const url = removeUserUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
@@ -386,7 +379,6 @@
             });
         });
 
-        // Add User Form Submit
         $("#addUserForm").on("submit", function (e) {
             e.preventDefault();
             if (!validateUsername($("#addUsername").val(), "addUsernameError")) {
@@ -437,23 +429,33 @@
             });
         });
 
-        // Edit User Form Populate and Submit
         $(document).on("click", ".edit-user", function () {
             const username = $(this).data("user");
             const row = $(this).closest("tr");
-            const quota = row.find("td:eq(4)").text().trim(); 
-            const expiry_days = row.find("td:eq(6)").text().trim(); 
+            const trafficUsageText = row.find("td:eq(4)").text().trim();
+            const expiryDaysText = row.find("td:eq(6)").text().trim();
             const blocked = row.find("td:eq(7) i").hasClass("text-danger");
-
-            const quotaMatch = quota.match(/\/\s*([\d.]+)/);
-            const quotaValue = quotaMatch ? parseFloat(quotaMatch[1]) : 0;
-
+        
+            const expiryDaysValue = (expiryDaysText.toLowerCase() === 'unlimited') ? 0 : parseInt(expiryDaysText, 10);
+            
+            let trafficLimitValue = 0;
+            if (!trafficUsageText.toLowerCase().includes('/unlimited')) {
+                const parts = trafficUsageText.split('/');
+                if (parts.length > 1) {
+                    const limitPart = parts[1].trim();
+                    const match = limitPart.match(/^[\d.]+/);
+                    if (match) {
+                        trafficLimitValue = parseFloat(match[0]);
+                    }
+                }
+            }
+        
             $("#originalUsername").val(username);
             $("#editUsername").val(username);
-            $("#editTrafficLimit").val(quotaValue);
-            $("#editExpirationDays").val(expiry_days);
+            $("#editTrafficLimit").val(trafficLimitValue);
+            $("#editExpirationDays").val(expiryDaysValue);
             $("#editBlocked").prop("checked", blocked);
-
+        
             const isValid = validateUsername(username, "editUsernameError");
             $("#editUserForm button[type='submit']").prop("disabled", !isValid);
         });
@@ -480,7 +482,6 @@
                 data: JSON.stringify(jsonData),
                 success: function (response) {
                     if (typeof response === 'string' && response.includes("User updated successfully")) {
-                        // Hide the modal
                         $("#editUserModal").modal("hide");
                         Swal.fire({
                             title: "Success!",
