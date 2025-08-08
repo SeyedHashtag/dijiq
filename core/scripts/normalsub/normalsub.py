@@ -255,8 +255,7 @@ class HysteriaCLI:
         output = self._run_command(['show-user-uri', '-u', username, '-a'])
         if not output:
             return []
-        # Find all hy2:// links in the output
-        return re.findall(r'(hy2://[^\s]+)', output)
+        return re.findall(r'hy2://.*', output)
 
     def get_all_labeled_uris(self, username: str) -> List[Dict[str, str]]:
         """Fetches all URIs and their labels."""
@@ -264,8 +263,7 @@ class HysteriaCLI:
         if not output:
             return []
         
-        # This regex captures the label (e.g., "IPv4", "Node: DE (IPv6)") and the URI
-        matches = re.findall(r"^(.*?):\s*(hy2://[^\s]+)", output, re.MULTILINE)
+        matches = re.findall(r"^(.*?):\s*(hy2://.*)$", output, re.MULTILINE)
         return [{'label': label.strip(), 'uri': uri} for label, uri in matches]
 
 
@@ -320,15 +318,24 @@ class SingboxConfigGenerator:
         if not uri:
             return None
 
-        # A simplified parser since we already have the full URI
         try:
             parsed_url = urlparse(uri)
             server = parsed_url.hostname
             server_port = parsed_url.port
-            password = parsed_url.password
-            full_user = unquote(parsed_url.username)
+            auth_password = parsed_url.password
+            auth_user = unquote(parsed_url.username or '')
             obfs_password = parse_qs(parsed_url.query).get('obfs-password', [''])[0]
-        except Exception:
+            
+            if auth_password:
+                if auth_user:
+                    final_password = f"{auth_user}:{auth_password}"
+                else:
+                    final_password = auth_password
+            else:
+                final_password = auth_user
+                
+        except Exception as e:
+            print(f"Error during Singbox config generation from URI: {e}, URI: {uri}")
             return None
 
         return {
@@ -340,7 +347,7 @@ class SingboxConfigGenerator:
                 "type": "salamander",
                 "password": obfs_password
             },
-            "password": f"{full_user}:{password}",
+            "password": final_password,
             "tls": {
                 "enabled": True,
                 "server_name": fragment if fragment else self.default_sni,
@@ -354,7 +361,6 @@ class SingboxConfigGenerator:
             return None
         
         combined_config = self.get_template()
-        # Clear any placeholder hysteria2 outbounds
         combined_config['outbounds'] = [out for out in combined_config['outbounds'] if out.get('type') != 'hysteria2']
 
         hysteria_outbounds = []
@@ -368,7 +374,6 @@ class SingboxConfigGenerator:
 
         all_tags = [out['tag'] for out in hysteria_outbounds]
 
-        # Update 'select' and 'auto' groups
         for outbound in combined_config['outbounds']:
             if outbound.get('tag') == 'select':
                 outbound['outbounds'] = ["auto"] + all_tags
