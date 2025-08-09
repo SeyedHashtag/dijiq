@@ -24,8 +24,8 @@ def parse_output(username, output):
     ipv4 = None
     ipv6 = None
     normal_sub = None
+    nodes = []
 
-    # Match links
     ipv4_match = re.search(r"IPv4:\s*(hy2://[^\s]+)", output)
     ipv6_match = re.search(r"IPv6:\s*(hy2://[^\s]+)", output)
     normal_sub_match = re.search(r"Normal-SUB Sublink:\s*(https?://[^\s]+)", output)
@@ -37,10 +37,16 @@ def parse_output(username, output):
     if normal_sub_match:
         normal_sub = normal_sub_match.group(1)
 
+    node_matches = re.findall(r"Node: (.+?) \(IPv[46]\):\s*(hy2://[^\s]+)", output)
+    for name, uri in node_matches:
+        nodes.append({"name": name.strip(), "uri": uri})
+
+
     return {
         "username": username,
         "ipv4": ipv4,
         "ipv6": ipv6,
+        "nodes": nodes,
         "normal_sub": normal_sub
     }
 

@@ -32,6 +32,7 @@ FILES=(
     "$HYSTERIA_INSTALL_DIR/users.json"
     "$HYSTERIA_INSTALL_DIR/config.json"
     "$HYSTERIA_INSTALL_DIR/.configs.env"
+    "$HYSTERIA_INSTALL_DIR/nodes.json"
     "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot/.env"
     # "$HYSTERIA_INSTALL_DIR/core/scripts/singbox/.env"
     "$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/.env"

@@ -14,6 +14,7 @@ CONFIG_FILE = '/etc/hysteria/config.json'
 CONFIG_ENV_FILE = '/etc/hysteria/.configs.env'
 WEBPANEL_ENV_FILE = '/etc/hysteria/core/scripts/webpanel/.env'
 NORMALSUB_ENV_FILE = '/etc/hysteria/core/scripts/normalsub/.env'
+NODES_JSON_PATH = "/etc/hysteria/nodes.json"
 
 
 class Command(Enum):
@@ -32,6 +33,7 @@ class Command(Enum):
     SHOW_USER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'show_user_uri.py')
     WRAPPER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'wrapper_uri.py')
     IP_ADD = os.path.join(SCRIPT_DIR, 'hysteria2', 'ip.py')
+    NODE_MANAGER = os.path.join(SCRIPT_DIR, 'hysteria2', 'node.py')
     MANAGE_OBFS = os.path.join(SCRIPT_DIR, 'hysteria2', 'manage_obfs.py')
     MASQUERADE_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'masquerade.py')
     TRAFFIC_STATUS = 'traffic.py'  # won't be called directly (it's a python module)
@@ -281,20 +283,22 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
     '''
     if not username:
         raise InvalidInputError('Error: username is required')
-    if not any([new_username, new_traffic_limit, new_expiration_days, renew_password, renew_creation_date, blocked is not None]):  # type: ignore
-        raise InvalidInputError('Error: at least one option is required')
-    if new_traffic_limit is not None and new_traffic_limit <= 0:
-        raise InvalidInputError('Error: traffic limit must be greater than 0')
-    if new_expiration_days is not None and new_expiration_days <= 0:
-        raise InvalidInputError('Error: expiration days must be greater than 0')
+
+    if new_traffic_limit is not None and new_traffic_limit < 0:
+        raise InvalidInputError('Error: traffic limit must be a non-negative number.')
+    if new_expiration_days is not None and new_expiration_days < 0:
+        raise InvalidInputError('Error: expiration days must be a non-negative number.')
+
     if renew_password:
         password = generate_password()
     else:
         password = ''
+
     if renew_creation_date:
         creation_date = datetime.now().strftime('%Y-%m-%d')
     else:
         creation_date = ''
+
     command_args = [
         'bash',
         Command.EDIT_USER.value,
@@ -426,6 +430,23 @@ def edit_ip_address(ipv4: str, ipv6: str):
     if ipv6:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-6', ipv6])
 
+def add_node(name: str, ip: str):
+    """
+    Adds a new external node.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'add', '--name', name, '--ip', ip])
+
+def delete_node(name: str):
+    """
+    Deletes an external node by name.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'delete', '--name', name])
+
+def list_nodes():
+    """
+    Lists all configured external nodes.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'list'])
 
 def update_geo(country: str):
     '''

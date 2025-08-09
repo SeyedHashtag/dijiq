@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, RootModel
 
 
@@ -38,8 +38,14 @@ class EditUserInputBody(BaseModel):
     renew_creation_date: bool = False
     blocked: bool = False
 
+class NodeUri(BaseModel):
+    name: str
+    uri: str
+
 class UserUriResponse(BaseModel):
     username: str
-    ipv4: str | None = None
-    ipv6: str | None = None
-    normal_sub: str | None = None
+    ipv4: Optional[str] = None
+    ipv6: Optional[str] = None
+    nodes: Optional[List[NodeUri]] = []
+    normal_sub: Optional[str] = None
+    error: Optional[str] = None

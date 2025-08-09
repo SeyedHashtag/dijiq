@@ -49,7 +49,7 @@
                             <li class='nav-item'>
                                 <a class='nav-link' id='ip-tab' data-toggle='pill' href='#change_ip' role='tab'
                                     aria-controls='change_ip' aria-selected='false'><i class="fas fa-network-wired"></i>
-                                    Change IP</a>
+                                    IP Management</a>
                             </li>
                             <li class='nav-item'>
                                 <a class='nav-link' id='backup-tab' data-toggle='pill' href='#backup' role='tab'
@@ -208,27 +208,70 @@
                                 </button>
                             </div>
 
-                            <!-- Change IP Tab -->
+                            <!-- IP Management Tab -->
                             <div class='tab-pane fade' id='change_ip' role='tabpanel' aria-labelledby='ip-tab'>
-                                <form id="change_ip_form">
-                                    <div class='form-group'>
-                                        <label for='ipv4'>IPv4:</label>
-                                        <input type='text' class='form-control' id='ipv4' placeholder='Enter IPv4 or Domain'
-                                            value="{{ ipv4 or '' }}">
-                                        <div class="invalid-feedback">
-                                            Please enter a valid IPv4 address or Domain.
-                                        </div>
+                                <div class="card card-outline card-primary">
+                                    <div class="card-header">
+                                        <h3 class="card-title">Local Server IP / Domain</h3>
                                     </div>
-                                    <div class='form-group'>
-                                        <label for='ipv6'>IPv6:</label>
-                                        <input type='text' class='form-control' id='ipv6' placeholder='Enter IPv6 or Domain'
-                                            value="{{ ipv6 or '' }}">
-                                        <div class="invalid-feedback">
-                                            Please enter a valid IPv6 address or Domain.
-                                        </div>
+                                    <div class="card-body">
+                                        <form id="change_ip_form">
+                                            <div class='form-group'>
+                                                <label for='ipv4'>IPv4 / Domain:</label>
+                                                <input type='text' class='form-control' id='ipv4' placeholder='Enter IPv4 or Domain' value="{{ ipv4 or '' }}">
+                                                <div class="invalid-feedback">Please enter a valid IPv4 address or Domain.</div>
+                                            </div>
+                                            <div class='form-group'>
+                                                <label for='ipv6'>IPv6 / Domain:</label>
+                                                <input type='text' class='form-control' id='ipv6' placeholder='Enter IPv6 or Domain' value="{{ ipv6 or '' }}">
+                                                <div class="invalid-feedback">Please enter a valid IPv6 address or Domain.</div>
+                                            </div>
+                                            <button id="ip_change" type='button' class='btn btn-primary'>Save</button>
+                                        </form>
                                     </div>
-                                    <button id="ip_change" type='button' class='btn btn-primary'>Save</button>
-                                </form>
+                                </div>
+                            
+                                <div class="card card-outline card-secondary mt-4">
+                                    <div class="card-header">
+                                        <h3 class="card-title">External Nodes</h3>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="table-responsive">
+                                            <table class="table table-bordered table-striped" id="nodes_table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Node Name</th>
+                                                        <th>IP Address / Domain</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody></tbody>
+                                            </table>
+                                        </div>
+                                        <div id="no_nodes_message" class="alert alert-info" style="display: none;">
+                                            No external nodes have been configured.
+                                        </div>
+                            
+                                        <hr>
+                                        <h5>Add New Node</h5>
+                                        <form id="add_node_form" class="form-inline">
+                                            <div class="form-group mb-2 mr-sm-2">
+                                                <label for="node_name" class="sr-only">Node Name</label>
+                                                <input type="text" class="form-control" id="node_name" placeholder="e.g., Node-US">
+                                                <div class="invalid-feedback">Please enter a name.</div>
+                                            </div>
+                                            <div class="form-group mb-2 mr-sm-2">
+                                                <label for="node_ip" class="sr-only">IP Address / Domain</label>
+                                                <input type="text" class="form-control" id="node_ip" placeholder="e.g., node.example.com">
+                                                <div class="invalid-feedback">Please enter a valid IP or domain.</div>
+                                            </div>
+                                            <button type="button" id="add_node_btn" class="btn btn-success mb-2">
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                Add Node
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Backup Tab -->
@@ -414,7 +457,6 @@
 
                         </div>
                     </div>
-                    <!-- /.card -->
                 </div>
             </div>
         </div>
@@ -436,6 +478,7 @@
         initUI();
         fetchDecoyStatus();
         fetchObfsStatus();
+        fetchNodes();
 
         function isValidPath(path) {
             if (!path) return false;
@@ -458,20 +501,17 @@
             return /^[a-zA-Z0-9]+$/.test(subpath);
         }
 
-
         function isValidIPorDomain(input) {
-            if (!input) return true;
-
+            if (input === null || typeof input === 'undefined') return false;
+            input = input.trim();
+            if (input === '') return false;
+        
             const ipV4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
             const ipV6Regex = /^(([0-9a-fA-F]{1,4}:){7,7}([0-9a-fA-F]{1,4}|:)|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
             const domainRegex = /^(?!-)(?:[a-zA-Z\d-]{0,62}[a-zA-Z\d]\.){1,126}(?!\d+$)[a-zA-Z\d]{1,63}$/;
             const lowerInput = input.toLowerCase();
 
-            if (ipV4Regex.test(input)) return true;
-            if (ipV6Regex.test(input)) return true;
-            if (domainRegex.test(lowerInput) && !lowerInput.startsWith("http://") && !lowerInput.startsWith("https://")) return true;
-
-            return false;
+            return ipV4Regex.test(input) || ipV6Regex.test(input) || domainRegex.test(lowerInput);
         }
 
         function isValidPositiveNumber(value) {
@@ -518,12 +558,16 @@
                             }
                         }
                     });
-                    console.log("Success Response:", response);
                 },
                 error: function (xhr, status, error) {
-                    let errorMessage = "Something went wrong.";
+                    let errorMessage = "An unexpected error occurred.";
                     if (xhr.responseJSON && xhr.responseJSON.detail) {
-                        errorMessage = xhr.responseJSON.detail;
+                        const detail = xhr.responseJSON.detail;
+                        if (Array.isArray(detail)) {
+                            errorMessage = detail.map(err => `Error in '${err.loc[1]}': ${err.msg}`).join('\n');
+                        } else if (typeof detail === 'string') {
+                            errorMessage = detail;
+                        }
                     }
                     Swal.fire("Error!", errorMessage, "error");
                     console.error("AJAX Error:", status, error, xhr.responseText);
@@ -552,6 +596,10 @@
                     fieldValid = isValidSubPath(input.val());
                 } else if (id === 'ipv4' || id === 'ipv6') {
                     fieldValid = (input.val().trim() === '') ? true : isValidIPorDomain(input.val());
+                } else if (id === 'node_ip') {
+                    fieldValid = isValidIPorDomain(input.val());
+                } else if (id === 'node_name') {
+                    fieldValid = input.val().trim() !== "";
                 } else if (id === 'block_duration' || id === 'max_ips') {
                     fieldValid = isValidPositiveNumber(input.val());
                 } else if (id === 'decoy_path') {
@@ -571,7 +619,6 @@
             });
             return isValid;
         }
-
 
         function initUI() {
             $.ajax({
@@ -620,6 +667,83 @@
                 }
             });
         }
+        
+        function fetchNodes() {
+            $.ajax({
+                url: "{{ url_for('get_all_nodes') }}",
+                type: "GET",
+                success: function (nodes) {
+                    renderNodes(nodes);
+                },
+                error: function(xhr) {
+                    Swal.fire("Error!", "Failed to fetch external nodes list.", "error");
+                    console.error("Error fetching nodes:", xhr.responseText);
+                }
+            });
+        }
+        
+        function renderNodes(nodes) {
+            const tableBody = $("#nodes_table tbody");
+            tableBody.empty();
+        
+            if (nodes && nodes.length > 0) {
+                $("#nodes_table").show();
+                $("#no_nodes_message").hide();
+                nodes.forEach(node => {
+                    const row = `<tr>
+                                    <td>${node.name}</td>
+                                    <td>${node.ip}</td>
+                                    <td>
+                                        <button class="btn btn-xs btn-danger delete-node-btn" data-name="${node.name}">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </td>
+                                </tr>`;
+                    tableBody.append(row);
+                });
+            } else {
+                $("#nodes_table").hide();
+                $("#no_nodes_message").show();
+            }
+        }
+        
+        function addNode() {
+            if (!validateForm('add_node_form')) return;
+        
+            const name = $("#node_name").val().trim();
+            const ip = $("#node_ip").val().trim();
+        
+            confirmAction(`add the node '${name}'`, function () {
+                sendRequest(
+                    "{{ url_for('add_node') }}",
+                    "POST",
+                    { name: name, ip: ip },
+                    `Node '${name}' added successfully!`,
+                    "#add_node_btn",
+                    false,
+                    function() {
+                        $("#node_name").val('');
+                        $("#node_ip").val('');
+                        $("#add_node_form .form-control").removeClass('is-invalid');
+                        fetchNodes();
+                    }
+                );
+            });
+        }
+        
+        function deleteNode(nodeName) {
+             confirmAction(`delete the node '${nodeName}'`, function () {
+                sendRequest(
+                    "{{ url_for('delete_node') }}",
+                    "POST",
+                    { name: nodeName },
+                    `Node '${nodeName}' deleted successfully!`,
+                    null,
+                    false,
+                    fetchNodes
+                );
+            });
+        }
 
         function updateServiceUI(data) {
              const servicesMap = {
@@ -632,7 +756,6 @@
             Object.keys(servicesMap).forEach(serviceKey => {
                 let targetSelector = servicesMap[serviceKey];
                 let isRunning = data[serviceKey];
-
 
                 if (serviceKey === "hysteria_normal_sub") {
                     const $normalForm = $("#normal_sub_service_form");
@@ -771,7 +894,6 @@
             });
         }
 
-
         function setupDecoy() {
             if (!validateForm('decoy_form')) return;
             const domain = $("#decoy_domain").val();
@@ -846,7 +968,6 @@
             }
         }
 
-
         function fetchObfsStatus() {
             $.ajax({
                 url: "{{ url_for('check_obfs') }}", 
@@ -907,7 +1028,6 @@
                 );
             });
         }
-
 
         function startTelegram() {
             if (!validateForm('telegram_form')) return;
@@ -1197,7 +1317,6 @@
             });
         });
 
-
         $("#telegram_start").on("click", startTelegram);
         $("#telegram_stop").on("click", stopTelegram);
         $("#normal_start").on("click", startNormal);
@@ -1215,7 +1334,11 @@
         $("#decoy_stop").on("click", stopDecoy);
         $("#obfs_enable_btn").on("click", enableObfs);
         $("#obfs_disable_btn").on("click", disableObfs);
-
+        $("#add_node_btn").on("click", addNode);
+        $("#nodes_table").on("click", ".delete-node-btn", function() {
+            const nodeName = $(this).data("name");
+            deleteNode(nodeName);
+        });
 
         $('#normal_domain, #sni_domain, #decoy_domain').on('input', function () {
             if (isValidDomain($(this).val())) {
@@ -1247,9 +1370,20 @@
             }
         });
 
-        $('#ipv4, #ipv6').on('input', function () {
-             if (isValidIPorDomain($(this).val()) || $(this).val().trim() === '') {
+        $('#ipv4, #ipv6, #node_ip').on('input', function () {
+            const isLocalIpField = $(this).attr('id') === 'ipv4' || $(this).attr('id') === 'ipv6';
+            if (isLocalIpField && $(this).val().trim() === '') {
                  $(this).removeClass('is-invalid');
+            } else if (isValidIPorDomain($(this).val())) {
+                 $(this).removeClass('is-invalid');
+            } else {
+                $(this).addClass('is-invalid');
+            }
+        });
+        
+        $('#node_name').on('input', function() {
+            if ($(this).val().trim() !== "") {
+                $(this).removeClass('is-invalid');
             } else {
                 $(this).addClass('is-invalid');
             }
