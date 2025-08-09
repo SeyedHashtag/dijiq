@@ -1,7 +1,10 @@
-# [1.12.1] - 2025-07-09
+# [1.13.0] - 2025-08-10
 
 #### ✨ UI Enhancements
 
-* 📌 **Sticky Sidebar:** Sidebar now stays fixed when scrolling through long pages for easier navigation
-* 🃏 **Sticky Headers:** Card headers are now sticky with a sleek **bokeh blur** effect – better usability on settings and user lists
-* ⏎ **Login UX:** Pressing **Enter** now submits the login form properly for faster access
+* ✨ feat(core): Implement external node management system
+* 🌐 feat(api): Add external node management endpoints
+* 🔗 feat(normalsub): Add external node URIs to subscriptions
+* 💾 feat: Backup nodes.json
+* 🛠️ fix: Robust parsing, unlimited user handling, and various script/UI issues
+* 📦 chore: Dependency updates (pytelegrambotapi, aiohttp)
