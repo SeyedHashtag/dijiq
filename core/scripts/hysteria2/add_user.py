@@ -9,7 +9,7 @@ from datetime import datetime
 from init_paths import *
 from paths import *
 
-def add_user(username, traffic_gb, expiration_days, password=None, creation_date=None):
+def add_user(username, traffic_gb, expiration_days, password=None, creation_date=None, unlimited_user=False):
     """
     Adds a new user to the USERS_FILE.
 
@@ -19,12 +19,13 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
         expiration_days (str): The number of days until the account expires.
         password (str, optional): The user's password. If None, a random one is generated.
         creation_date (str, optional): The account creation date in YYYY-MM-DD format. If None, the current date is used.
+        unlimited_user (bool, optional): If True, user is exempt from IP limits. Defaults to False.
 
     Returns:
         int: 0 on success, 1 on failure.
     """
     if not username or not traffic_gb or not expiration_days:
-        print(f"Usage: {sys.argv[0]} <username> <traffic_limit_GB> <expiration_days> [password] [creation_date]")
+        print(f"Usage: {sys.argv[0]} <username> <traffic_limit_GB> <expiration_days> [password] [creation_date] [unlimited_user (true/false)]")
         return 1
 
     try:
@@ -45,6 +46,7 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
                 password = subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], text=True).strip()
             except Exception:
                 print("Error: Failed to generate password. Please install 'pwgen' or ensure /proc access.")
+                return 1
 
     if not creation_date:
         creation_date = datetime.now().strftime("%Y-%m-%d")
@@ -88,7 +90,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
                 "max_download_bytes": traffic_bytes,
                 "expiration_days": expiration_days,
                 "account_creation_date": creation_date,
-                "blocked": False
+                "blocked": False,
+                "unlimited_user": unlimited_user
             }
 
             f.seek(0)
@@ -103,8 +106,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
         return 1
 
 if __name__ == "__main__":
-    if len(sys.argv) not in [4, 6]:
-        print(f"Usage: {sys.argv[0]} <username> <traffic_limit_GB> <expiration_days> [password] [creation_date]")
+    if len(sys.argv) < 4 or len(sys.argv) > 7:
+        print(f"Usage: {sys.argv[0]} <username> <traffic_limit_GB> <expiration_days> [password] [creation_date] [unlimited_user (true/false)]")
         sys.exit(1)
 
     username = sys.argv[1]
@@ -112,6 +115,8 @@ if __name__ == "__main__":
     expiration_days = sys.argv[3]
     password = sys.argv[4] if len(sys.argv) > 4 else None
     creation_date = sys.argv[5] if len(sys.argv) > 5 else None
+    unlimited_user_str = sys.argv[6] if len(sys.argv) > 6 else "false"
+    unlimited_user = unlimited_user_str.lower() == 'true'
 
-    exit_code = add_user(username, traffic_gb, expiration_days, password, creation_date)
+    exit_code = add_user(username, traffic_gb, expiration_days, password, creation_date, unlimited_user)
     sys.exit(exit_code)
