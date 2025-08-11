@@ -266,15 +266,23 @@ def get_user(username: str) -> dict[str, Any] | None:
         return json.loads(res)
 
 
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool):
     '''
-    Adds a new user with the given parameters.
+    Adds a new user with the given parameters, respecting positional argument requirements.
     '''
-    if not password:
-        password = generate_password()
-    if not creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    run_cmd(['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days), password, creation_date])
+    command = ['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days)]
+
+    if unlimited:
+        final_password = password if password else generate_password()
+        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
+        command.extend([final_password, final_creation_date, 'true'])
+    elif creation_date:
+        final_password = password if password else generate_password()
+        command.extend([final_password, creation_date])
+    elif password:
+        command.append(password)
+        
+    run_cmd(command)
 
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):

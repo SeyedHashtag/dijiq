@@ -9,7 +9,7 @@ from datetime import datetime
 from init_paths import *
 from paths import *
 
-def add_user(username, traffic_gb, expiration_days, password=None, creation_date=None, unlimited_user=False):
+def add_user(username, traffic_gb, expiration_days, password=None, creation_date=None, unlimited_user=True):
     """
     Adds a new user to the USERS_FILE.
 
@@ -19,7 +19,7 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
         expiration_days (str): The number of days until the account expires.
         password (str, optional): The user's password. If None, a random one is generated.
         creation_date (str, optional): The account creation date in YYYY-MM-DD format. If None, the current date is used.
-        unlimited_user (bool, optional): If True, user is exempt from IP limits. Defaults to False.
+        unlimited_user (bool, optional): If True, user is exempt from IP limits. Defaults to True.
 
     Returns:
         int: 0 on success, 1 on failure.
