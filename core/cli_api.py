@@ -285,7 +285,7 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
     run_cmd(command)
 
 
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
+def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     '''
     Edits an existing user's details.
     '''
@@ -297,15 +297,20 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
     if new_expiration_days is not None and new_expiration_days < 0:
         raise InvalidInputError('Error: expiration days must be a non-negative number.')
 
-    if renew_password:
-        password = generate_password()
-    else:
-        password = ''
+    password = generate_password() if renew_password else ''
+    creation_date = datetime.now().strftime('%Y-%m-%d') if renew_creation_date else ''
 
-    if renew_creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    else:
-        creation_date = ''
+    blocked_str = ''
+    if blocked is True:
+        blocked_str = 'true'
+    elif blocked is False:
+        blocked_str = 'false'
+
+    unlimited_str = ''
+    if unlimited_ip is True:
+        unlimited_str = 'true'
+    elif unlimited_ip is False:
+        unlimited_str = 'false'
 
     command_args = [
         'bash',
@@ -316,7 +321,8 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         str(new_expiration_days) if new_expiration_days is not None else '',
         password,
         creation_date,
-        'true' if blocked else 'false'
+        blocked_str,
+        unlimited_str
     ]
     run_cmd(command_args)
 

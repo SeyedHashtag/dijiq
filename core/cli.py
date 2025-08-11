@@ -146,13 +146,14 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
 @click.option('--new-expiration-days', '-ne', required=False, help='Expiration days for the new user', type=int)
 @click.option('--renew-password', '-rp', is_flag=True, help='Renew password for the user')
 @click.option('--renew-creation-date', '-rc', is_flag=True, help='Renew creation date for the user')
-@click.option('--blocked', '-b', is_flag=True, help='Block the user')
-def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool):
+@click.option('--blocked/--unblocked', 'blocked', default=None, help='Block or unblock the user.')
+@click.option('--unlimited-ip/--limited-ip', 'unlimited_ip', default=None, help='Set user to be exempt from or subject to IP limits.')
+def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     try:
         cli_api.kick_user_by_name(username)
         cli_api.traffic_status(display_output=False)
         cli_api.edit_user(username, new_username, new_traffic_limit, new_expiration_days,
-                          renew_password, renew_creation_date, blocked)
+                          renew_password, renew_creation_date, blocked, unlimited_ip)
         click.echo(f"User '{username}' updated successfully.")
     except Exception as e:
         click.echo(f'{e}', err=True)
