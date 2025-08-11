@@ -3,7 +3,7 @@ import subprocess
 from enum import Enum
 from datetime import datetime
 import json
-from typing import Any
+from typing import Any, Optional
 from dotenv import dotenv_values
 
 import traffic
@@ -669,7 +669,7 @@ def stop_ip_limiter():
     '''Stops the IP limiter service.'''
     run_cmd(['bash', Command.LIMIT_SCRIPT.value, 'stop'])
 
-def config_ip_limiter(block_duration: int = None, max_ips: int = None):
+def config_ip_limiter(block_duration: Optional[int] = None, max_ips: Optional[int] = None):
     '''Configures the IP limiter service.'''
     if block_duration is not None and block_duration <= 0:
         raise InvalidInputError("Block duration must be greater than 0.")
