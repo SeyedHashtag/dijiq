@@ -10,6 +10,7 @@ class User(BaseModel):
     expiry_date: str
     expiry_days: str
     enable: bool
+    unlimited_ip: bool
 
     @staticmethod
     def from_dict(username: str, user_data: dict):
@@ -58,6 +59,7 @@ class User(BaseModel):
             'expiry_date': display_expiry_date,
             'expiry_days': display_expiry_days,
             'enable': not user_data.get('blocked', False),
+            'unlimited_ip': user_data.get('unlimited_user', False)
         }
 
     @staticmethod
