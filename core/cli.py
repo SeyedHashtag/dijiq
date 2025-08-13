@@ -130,7 +130,7 @@ def get_user(username: str):
 @click.option('--expiration-days', '-e', required=True, help='Expiration days for the new user', type=int)
 @click.option('--password', '-p', required=False, help='Password for the user', type=str)
 @click.option('--creation-date', '-c', required=False, help='Creation date for the user (YYYY-MM-DD)', type=str)
-@click.option('--unlimited', is_flag=True, default=True, help='Exempt user from IP limit checks.')
+@click.option('--unlimited', is_flag=True, default=False, help='Exempt user from IP limit checks.')
 def add_user(username: str, traffic_limit: int, expiration_days: int, password: str, creation_date: str, unlimited: bool):
     try:
         cli_api.add_user(username, traffic_limit, expiration_days, password, creation_date, unlimited)
