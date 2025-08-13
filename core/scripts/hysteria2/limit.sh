@@ -183,6 +183,23 @@ check_ip_limit() {
     local username="$1"
     local ips=()
 
+    local is_unlimited="false"
+    if [ -f "$USERS_FILE" ]; then
+        if command -v jq &>/dev/null; then
+            is_unlimited=$(jq -r --arg user "$username" '.[$user].unlimited_user // "false"' "$USERS_FILE" 2>/dev/null)
+        else
+            if grep -q "\"$username\"" "$USERS_FILE" && \
+               grep -A 5 "\"$username\"" "$USERS_FILE" | grep -q '"unlimited_user": true'; then
+                is_unlimited="true"
+            fi
+        fi
+    fi
+
+    if [ "$is_unlimited" = "true" ]; then
+        log_message "INFO" "User $username is exempt from IP limit. Skipping check."
+        return
+    fi
+
     # Get all IPs for this user
     if command -v jq &>/dev/null; then
         readarray -t ips < <(jq -r --arg user "$username" '.[$user][]' "$CONNECTIONS_FILE" 2>/dev/null)

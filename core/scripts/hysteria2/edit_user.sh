@@ -8,7 +8,7 @@ readonly GB_TO_BYTES=$((1024 * 1024 * 1024))
 validate_username() {
     local username=$1
     if [ -z "$username" ]; then
-      return 0  # Optional value is valid
+      return 0
     fi
     if ! [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
         echo "Username can only contain letters and numbers."
@@ -21,7 +21,7 @@ validate_username() {
 validate_traffic_limit() {
     local traffic_limit=$1
     if [ -z "$traffic_limit" ]; then
-        return 0 # Optional value is valid
+        return 0
     fi
     if ! [[ "$traffic_limit" =~ ^[0-9]+$ ]]; then
         echo "Error: Traffic limit must be a valid non-negative number (use 0 for unlimited)."
@@ -33,7 +33,7 @@ validate_traffic_limit() {
 validate_expiration_days() {
     local expiration_days=$1
     if [ -z "$expiration_days" ]; then
-        return 0 # Optional value is valid
+        return 0
     fi
     if ! [[ "$expiration_days" =~ ^[0-9]+$ ]]; then
         echo "Error: Expiration days must be a valid non-negative number (use 0 for unlimited)."
@@ -45,7 +45,7 @@ validate_expiration_days() {
 validate_date() {
     local date_str=$1
     if [ -z "$date_str" ]; then
-        return 0 # Optional value is valid
+        return 0
     fi
     if ! [[ "$date_str" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         echo "Invalid date format. Expected YYYY-MM-DD."
@@ -59,8 +59,8 @@ validate_date() {
 
 validate_blocked_status() {
     local status=$1
-     if [ -z "$status" ]; then
-      return 0 # Optional value is valid
+    if [ -z "$status" ]; then
+      return 0
     fi
     if [ "$status" != "true" ] && [ "$status" != "false" ]; then
         echo "Blocked status must be 'true' or 'false'."
@@ -69,14 +69,26 @@ validate_blocked_status() {
     return 0
 }
 
+validate_unlimited_status() {
+    local status=$1
+    if [ -z "$status" ]; then
+      return 0
+    fi
+    if [ "$status" != "true" ] && [ "$status" != "false" ]; then
+        echo "Unlimited status must be 'true' or 'false'."
+         return 1
+    fi
+    return 0
+}
 
-convert_blocked_status() {
+
+convert_boolean_status() {
     local status=$1
     case "$status" in
         y|Y) echo "true" ;;
         n|N) echo "false" ;;
         true|false) echo "$status" ;;
-        *) echo "false" ;; # Default to false for safety
+        *) echo "false" ;;
     esac
 }
 
@@ -93,6 +105,7 @@ update_user_info() {
     local new_expiration_days=$5
     local new_account_creation_date=$6
     local new_blocked=$7
+    local new_unlimited=$8
 
     if [ ! -f "$USERS_FILE" ]; then
         echo -e "${red}Error:${NC} File '$USERS_FILE' not found."
@@ -120,30 +133,32 @@ update_user_info() {
       echo "Expiration Days: ${new_expiration_days:-(not changed)}"
       echo "Creation Date: ${new_account_creation_date:-(not changed)}"
       echo "Blocked: $new_blocked"
+      echo "Unlimited IP: $new_unlimited"
 
 
-    # Update user fields, only if new values are provided
      jq \
         --arg old_username "$old_username" \
         --arg new_username "$new_username" \
         --arg password "${new_password:-null}" \
-         --argjson max_download_bytes "${new_max_download_bytes:-null}" \
+        --argjson max_download_bytes "${new_max_download_bytes:-null}" \
         --argjson expiration_days "${new_expiration_days:-null}" \
-         --arg account_creation_date "${new_account_creation_date:-null}" \
-        --argjson blocked "$(convert_blocked_status "${new_blocked:-false}")" \
-         --argjson upload_bytes "$upload_bytes" \
+        --arg account_creation_date "${new_account_creation_date:-null}" \
+        --argjson blocked "$new_blocked" \
+        --argjson unlimited "$new_unlimited" \
+        --argjson upload_bytes "$upload_bytes" \
         --argjson download_bytes "$download_bytes" \
         --arg status "$status" \
       '
       .[$new_username] = .[$old_username] |
-      del(.[$old_username]) |
+      (if $old_username != $new_username then del(.[$old_username]) else . end) |
       .[$new_username] |= (
         .password = ($password // .password) |
         .max_download_bytes = ($max_download_bytes // .max_download_bytes) |
         .expiration_days = ($expiration_days // .expiration_days) |
         .account_creation_date = ($account_creation_date // .account_creation_date) |
-         .blocked = $blocked |
-         .upload_bytes = $upload_bytes |
+        .blocked = $blocked |
+        .unlimited_user = $unlimited |
+        .upload_bytes = $upload_bytes |
         .download_bytes = $download_bytes |
         .status = $status
       )
@@ -166,6 +181,7 @@ edit_user() {
     local new_password=$5
     local new_creation_date=$6
     local new_blocked=$7
+    local new_unlimited=$8
 
 
    local user_info=$(get_user_info "$username")
@@ -180,6 +196,7 @@ edit_user() {
     local expiration_days=$(echo "$user_info" | jq -r '.expiration_days')
     local creation_date=$(echo "$user_info" | jq -r '.account_creation_date')
     local blocked=$(echo "$user_info" | jq -r '.blocked')
+    local unlimited_user=$(echo "$user_info" | jq -r '.unlimited_user // false')
 
    if ! validate_username "$new_username"; then
         echo "Invalid username: $new_username"
@@ -208,6 +225,10 @@ edit_user() {
       return 1
     fi
 
+    if ! validate_unlimited_status "$new_unlimited"; then
+        echo "Invalid unlimited status: $new_unlimited"
+      return 1
+    fi
 
 
    new_username=${new_username:-$username}
@@ -222,19 +243,18 @@ edit_user() {
 
     new_expiration_days=${new_expiration_days:-$expiration_days}
     new_creation_date=${new_creation_date:-$creation_date}
-    new_blocked=$(convert_blocked_status "${new_blocked:-$blocked}")
+    new_blocked=$(convert_boolean_status "${new_blocked:-$blocked}")
+    new_unlimited=$(convert_boolean_status "${new_unlimited:-$unlimited_user}")
 
-#   python3 $CLI_PATH restart-hysteria2
   
-  if ! update_user_info "$username" "$new_username" "$new_password" "$new_traffic_limit" "$new_expiration_days" "$new_creation_date" "$new_blocked"; then
-        return 1 # Update user failed
+  if ! update_user_info "$username" "$new_username" "$new_password" "$new_traffic_limit" "$new_expiration_days" "$new_creation_date" "$new_blocked" "$new_unlimited"; then
+        return 1
   fi
 
    echo "User updated successfully."
-   return 0 # Operation complete without error.
+   return 0
 
 }
 
 
-# Run the script
-edit_user "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+edit_user "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"

@@ -1,10 +1,6 @@
 from typing import Optional, List
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, RootModel, Field
 
-
-# WE CAN'T USE SHARED SCHEMA BECAUSE THE CLI IS RETURNING SAME FIELD IN DIFFERENT NAMES SOMETIMES
-# WHAT I'M SAYING IS THAT OUR CODE IN HERE WILL BE SPAGHETTI CODE IF WE WANT TO HAVE CONSISTENCY IN ALL RESPONSES OF THE APIs
-# THE MAIN PROBLEM IS IN THE CLI CODE NOT IN THE WEB PANEL CODE (HERE)
 
 class UserInfoResponse(BaseModel):
     password: str
@@ -12,12 +8,13 @@ class UserInfoResponse(BaseModel):
     expiration_days: int
     account_creation_date: str
     blocked: bool
-    status: str | None = None
-    upload_bytes: int | None = None
-    download_bytes: int | None = None
+    unlimited_ip: bool = Field(False, alias='unlimited_user')
+    status: Optional[str] = None
+    upload_bytes: Optional[int] = None
+    download_bytes: Optional[int] = None
 
 
-class UserListResponse(RootModel):  # type: ignore
+class UserListResponse(RootModel):
     root: dict[str, UserInfoResponse]
 
 
@@ -25,18 +22,19 @@ class AddUserInputBody(BaseModel):
     username: str
     traffic_limit: int
     expiration_days: int
-    password: str | None = None
-    creation_date: str | None = None
+    password: Optional[str] = None
+    creation_date: Optional[str] = None
+    unlimited: bool = False
 
 
 class EditUserInputBody(BaseModel):
-    # username: str
-    new_username: str | None = None
-    new_traffic_limit: int | None = None
-    new_expiration_days: int | None = None
+    new_username: Optional[str] = None
+    new_traffic_limit: Optional[int] = None
+    new_expiration_days: Optional[int] = None
     renew_password: bool = False
     renew_creation_date: bool = False
-    blocked: bool = False
+    blocked: Optional[bool] = None
+    unlimited_ip: Optional[bool] = None
 
 class NodeUri(BaseModel):
     name: str

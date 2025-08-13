@@ -3,7 +3,7 @@ import subprocess
 from enum import Enum
 from datetime import datetime
 import json
-from typing import Any
+from typing import Any, Optional
 from dotenv import dotenv_values
 
 import traffic
@@ -266,18 +266,26 @@ def get_user(username: str) -> dict[str, Any] | None:
         return json.loads(res)
 
 
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None):
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool):
     '''
-    Adds a new user with the given parameters.
+    Adds a new user with the given parameters, respecting positional argument requirements.
     '''
-    if not password:
-        password = generate_password()
-    if not creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    run_cmd(['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days), password, creation_date])
+    command = ['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days)]
+
+    if unlimited:
+        final_password = password if password else generate_password()
+        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
+        command.extend([final_password, final_creation_date, 'true'])
+    elif creation_date:
+        final_password = password if password else generate_password()
+        command.extend([final_password, creation_date])
+    elif password:
+        command.append(password)
+        
+    run_cmd(command)
 
 
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool):
+def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     '''
     Edits an existing user's details.
     '''
@@ -289,15 +297,20 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
     if new_expiration_days is not None and new_expiration_days < 0:
         raise InvalidInputError('Error: expiration days must be a non-negative number.')
 
-    if renew_password:
-        password = generate_password()
-    else:
-        password = ''
+    password = generate_password() if renew_password else ''
+    creation_date = datetime.now().strftime('%Y-%m-%d') if renew_creation_date else ''
 
-    if renew_creation_date:
-        creation_date = datetime.now().strftime('%Y-%m-%d')
-    else:
-        creation_date = ''
+    blocked_str = ''
+    if blocked is True:
+        blocked_str = 'true'
+    elif blocked is False:
+        blocked_str = 'false'
+
+    unlimited_str = ''
+    if unlimited_ip is True:
+        unlimited_str = 'true'
+    elif unlimited_ip is False:
+        unlimited_str = 'false'
 
     command_args = [
         'bash',
@@ -308,7 +321,8 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         str(new_expiration_days) if new_expiration_days is not None else '',
         password,
         creation_date,
-        'true' if blocked else 'false'
+        blocked_str,
+        unlimited_str
     ]
     run_cmd(command_args)
 
@@ -655,7 +669,7 @@ def stop_ip_limiter():
     '''Stops the IP limiter service.'''
     run_cmd(['bash', Command.LIMIT_SCRIPT.value, 'stop'])
 
-def config_ip_limiter(block_duration: int = None, max_ips: int = None):
+def config_ip_limiter(block_duration: Optional[int] = None, max_ips: Optional[int] = None):
     '''Configures the IP limiter service.'''
     if block_duration is not None and block_duration <= 0:
         raise InvalidInputError("Block duration must be greater than 0.")
