@@ -1,10 +1,9 @@
-# [1.13.0] - 2025-08-10
+# [1.14.0] - 2025-08-13
 
-#### ✨ UI Enhancements
+* ✨ feat: Add per-user IP limit exemption ("unlimited_user" flag)
+* 🖥️ feat(web): UI for unlimited IP control in users page & conditional IP limit display
+* 🛠️ feat(cli/scripts): Integrate unlimited IP option in add/edit user commands
+* 🔄 refactor(api): Align user schemas with CLI output & unlimited IP feature
+* 🐛 fix: Correct type hints in IP limiter configuration
+* 📦 chore: Dependency updates (anyio, certbot, charset-normalizer)
 
-* ✨ feat(core): Implement external node management system
-* 🌐 feat(api): Add external node management endpoints
-* 🔗 feat(normalsub): Add external node URIs to subscriptions
-* 💾 feat: Backup nodes.json
-* 🛠️ fix: Robust parsing, unlimited user handling, and various script/UI issues
-* 📦 chore: Dependency updates (pytelegrambotapi, aiohttp)
