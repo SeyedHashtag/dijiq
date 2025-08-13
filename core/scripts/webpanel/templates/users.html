@@ -76,7 +76,7 @@
                             <th class="text-nowrap">Expiry Date</th>
                             <th class="text-nowrap">Expiry Days</th>
                             <th>Enable</th>
-                            <th class="text-nowrap">Unlimited IP</th>
+                            <th class="text-nowrap requires-iplimit-service" style="display: none;">Unlimited IP</th>
                             <th class="text-nowrap">Configs</th>
                             <th class="text-nowrap">Actions</th>
                         </tr>
@@ -108,7 +108,7 @@
                                 <i class="fas fa-times-circle text-danger"></i>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="unlimited-ip-cell requires-iplimit-service" style="display: none;">
                                 {% if user['unlimited_ip'] %}
                                 <i class="fas fa-shield-alt text-primary"></i>
                                 {% else %}
@@ -181,7 +181,7 @@
                         <input type="number" class="form-control" id="addExpirationDays" name="expiration_days"
                             required>
                     </div>
-                    <div class="form-check mb-3">
+                    <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                         <input type="checkbox" class="form-check-input" id="addUnlimited" name="unlimited">
                         <label class="form-check-label" for="addUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
                     </div>
@@ -221,7 +221,7 @@
                         <input type="checkbox" class="form-check-input" id="editBlocked" name="blocked">
                         <label class="form-check-label" for="editBlocked">Blocked</label>
                     </div>
-                    <div class="form-check mb-3">
+                    <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                         <input type="checkbox" class="form-check-input" id="editUnlimitedIp" name="unlimited_ip">
                         <label class="form-check-label" for="editUnlimitedIp">Unlimited IP (Exempt from IP limit checks)</label>
                     </div>
@@ -258,6 +258,19 @@
 
 <script>
     $(function () {
+        
+        function checkIpLimitServiceStatus() {
+            fetch('{{ url_for("server_services_status_api") }}')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.hysteria_iplimit === true) {
+                        $('.requires-iplimit-service').show();
+                    }
+                })
+                .catch(error => console.error('Error fetching IP limit service status:', error));
+        }
+
+        checkIpLimitServiceStatus();
 
         const usernameRegex = /^[a-zA-Z0-9]+$/;
 
@@ -297,7 +310,7 @@
 
             $("#userTable tbody tr").each(function () {
                 let showRow = true;
-
+                
                 switch (filter) {
                     case "all":
                         showRow = true;
@@ -451,7 +464,7 @@
             const trafficUsageText = row.find("td:eq(4)").text().trim();
             const expiryDaysText = row.find("td:eq(6)").text().trim();
             const blocked = row.find("td:eq(7) i").hasClass("text-danger");
-            const unlimited_ip = row.find("td:eq(8) i").hasClass("text-primary");
+            const unlimited_ip = row.find(".unlimited-ip-cell i").hasClass("text-primary");
         
             const expiryDaysValue = (expiryDaysText.toLowerCase() === 'unlimited') ? 0 : parseInt(expiryDaysText, 10);
             
