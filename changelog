@@ -1,9 +1,32 @@
 # [1.14.0] - 2025-08-13
 
-* ✨ feat: Add per-user IP limit exemption ("unlimited_user" flag)
-* 🖥️ feat(web): UI for unlimited IP control in users page & conditional IP limit display
-* 🛠️ feat(cli/scripts): Integrate unlimited IP option in add/edit user commands
-* 🔄 refactor(api): Align user schemas with CLI output & unlimited IP feature
-* 🐛 fix: Correct type hints in IP limiter configuration
-* 📦 chore: Dependency updates (anyio, certbot, charset-normalizer)
+#### ✨ New Features
 
+* 🌐 **Per-User Unlimited IP Option**:
+
+  * Added `unlimited_user` flag to exempt specific users from concurrent IP limits
+  * Works in both CLI and web panel
+  * Integrated into `limit.sh` for enforcement bypass
+* 🖥️ **Web Panel Enhancements**:
+
+  * Unlimited IP control added to **Users** page
+  * IP limit UI now conditionally shown based on service status
+* 🛠️ **CLI & Scripts**:
+
+  * Add unlimited IP option to user creation and editing
+  * Menu script now supports unlimited IP configuration
+
+#### 🔄 Improvements
+
+* 📜 **API**:
+
+  * Updated user schemas to match CLI output and new unlimited IP feature
+* 🐛 **Fixes**:
+
+  * Corrected type hints for optional parameters in `config_ip_limiter`
+
+#### 📦 Dependency Updates
+
+* ⬆️ `anyio` → 4.10.0
+* ⬆️ `certbot` → 4.2.0
+* ⬆️ `charset-normalizer` → 3.4.3
