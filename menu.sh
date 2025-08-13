@@ -52,7 +52,7 @@ hysteria2_add_user_handler() {
         read -p "Enter the username: " username
 
         if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
-            if [[ -n $(python3 $CLI_PATH get-user -u "$username") ]]; then
+            if [[ -n $(python3 $CLI_PATH get-user -u "$username" 2>/dev/null) ]]; then
                 echo -e "${red}Error:${NC} Username already exists. Please choose another username."
             else
                 break
@@ -65,14 +65,24 @@ hysteria2_add_user_handler() {
     read -p "Enter the traffic limit (in GB): " traffic_limit_GB
 
     read -p "Enter the expiration days: " expiration_days
+    
+    local unlimited_arg=""
+    while true; do
+        read -p "Exempt user from IP limit checks (unlimited IP)? (y/n) [n]: " unlimited_choice
+        case "$unlimited_choice" in
+            y|Y) unlimited_arg="--unlimited"; break ;;
+            n|N|"") break ;;
+            *) echo -e "${red}Error:${NC} Please answer 'y' or 'n'." ;;
+        esac
+    done
+    
     password=$(pwgen -s 32 1)
     creation_date=$(date +%Y-%m-%d)
 
-    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --password "$password" --creation-date "$creation_date"
+    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --password "$password" --creation-date "$creation_date" $unlimited_arg
 }
 
 hysteria2_edit_user_handler() {
-    # Function to prompt for user input with validation
     prompt_for_input() {
         local prompt_message="$1"
         local validation_regex="$2"
@@ -93,65 +103,69 @@ hysteria2_edit_user_handler() {
         done
     }
 
-    # Prompt for username
     prompt_for_input "Enter the username you want to edit: " '^[a-zA-Z0-9]+$' '' username
 
-    # Check if user exists
     user_exists_output=$(python3 $CLI_PATH get-user -u "$username" 2>&1)
     if [[ -z "$user_exists_output" ]]; then
         echo -e "${red}Error:${NC} User '$username' not found or an error occurred."
         return 1
     fi
 
-    # Prompt for new username
     prompt_for_input "Enter the new username (leave empty to keep the current username): " '^[a-zA-Z0-9]*$' '' new_username
 
-    # Prompt for new traffic limit
     prompt_for_input "Enter the new traffic limit (in GB) (leave empty to keep the current limit): " '^[0-9]*$' '' new_traffic_limit_GB
 
-    # Prompt for new expiration days
     prompt_for_input "Enter the new expiration days (leave empty to keep the current expiration days): " '^[0-9]*$' '' new_expiration_days
 
-    # Determine if we need to renew password
     while true; do
-        read -p "Do you want to generate a new password? (y/n): " renew_password
+        read -p "Do you want to generate a new password? (y/n) [n]: " renew_password
         case "$renew_password" in
             y|Y) renew_password=true; break ;;
-            n|N) renew_password=false; break ;;
+            n|N|"") renew_password=false; break ;;
             *) echo -e "${red}Error:${NC} Please answer 'y' or 'n'." ;;
         esac
     done
 
-    # Determine if we need to renew creation date
     while true; do
-        read -p "Do you want to generate a new creation date? (y/n): " renew_creation_date
+        read -p "Do you want to generate a new creation date? (y/n) [n]: " renew_creation_date
         case "$renew_creation_date" in
             y|Y) renew_creation_date=true; break ;;
-            n|N) renew_creation_date=false; break ;;
+            n|N|"") renew_creation_date=false; break ;;
             *) echo -e "${red}Error:${NC} Please answer 'y' or 'n'." ;;
         esac
     done
 
-    # Determine if user should be blocked
+    local blocked_arg=""
     while true; do
-        read -p "Do you want to block the user? (y/n): " block_user
+        read -p "Change user block status? ([b]lock/[u]nblock/[s]kip) [s]: " block_user
         case "$block_user" in
-            y|Y) blocked=true; break ;;
-            n|N) blocked=false; break ;;
-            *) echo -e "${red}Error:${NC} Please answer 'y' or 'n'." ;;
+            b|B) blocked_arg="--blocked"; break ;;
+            u|U) blocked_arg="--unblocked"; break ;;
+            s|S|"") break ;;
+            *) echo -e "${red}Error:${NC} Please answer 'b', 'u', or 's'." ;;
         esac
     done
 
-    # Construct the arguments for the edit-user command
+    local ip_limit_arg=""
+    while true; do
+        read -p "Change IP limit status? ([u]nlimited/[l]imited/[s]kip) [s]: " ip_limit_status
+        case "$ip_limit_status" in
+            u|U) ip_limit_arg="--unlimited-ip"; break ;;
+            l|L) ip_limit_arg="--limited-ip"; break ;;
+            s|S|"") break ;;
+            *) echo -e "${red}Error:${NC} Please answer 'u', 'l', or 's'." ;;
+        esac
+    done
+
     args=()
     if [[ -n "$new_username" ]]; then args+=("--new-username" "$new_username"); fi
     if [[ -n "$new_traffic_limit_GB" ]]; then args+=("--new-traffic-limit" "$new_traffic_limit_GB"); fi
     if [[ -n "$new_expiration_days" ]]; then args+=("--new-expiration-days" "$new_expiration_days"); fi
     if [[ "$renew_password" == "true" ]]; then args+=("--renew-password"); fi
     if [[ "$renew_creation_date" == "true" ]]; then args+=("--renew-creation-date"); fi
-    if [[ "$blocked" == "true" ]]; then args+=("--blocked"); fi
+    if [[ -n "$blocked_arg" ]]; then args+=("$blocked_arg"); fi
+    if [[ -n "$ip_limit_arg" ]]; then args+=("$ip_limit_arg"); fi
 
-    # Call the edit-user script with the constructed arguments
     python3 $CLI_PATH edit-user --username "$username" "${args[@]}"
 }
 
