@@ -3,555 +3,462 @@
 This document provides a comprehensive guide to using the `cli.py` script, a command-line interface for managing Hysteria2 and related services.  It covers installation, user management, advanced configurations, and troubleshooting. The commands are organized into sections for clarity. Each command is described with its options, arguments, and expected behavior.
 
 ---
-
 ## Table of Contents
-1.  [Hysteria2 Management](#hysteria2-management)
-    *   [install-hysteria2](#install-hysteria2)
-    *   [uninstall-hysteria2](#uninstall-hysteria2)
-    *   [update-hysteria2](#update-hysteria2)
-    *   [restart-hysteria2](#restart-hysteria2)
-    *   [change-hysteria2-port](#change-hysteria2-port)
-    *   [change-hysteria2-sni](#change-hysteria2-sni)
-    *   [backup-hysteria](#backup-hysteria)
-    *   [restore-hysteria2](#restore-hysteria2)
-2.  [User Management](#user-management)
-    *   [list-users](#list-users)
-    *   [get-user](#get-user)
-    *   [add-user](#add-user)
-    *   [edit-user](#edit-user)
-    *   [reset-user](#reset-user)
-    *   [remove-user](#remove-user)
-    *   [show-user-uri](#show-user-uri)
-3.  [Server Management](#server-management)
-    *   [traffic-status](#traffic-status)
-    *   [server-info](#server-info)
-    *   [manage\_obfs](#manage_obfs)
-    *   [ip-address](#ip-address)
-    *   [update-geo](#update-geo)
-    *   [masquerade](#masquerade)
-4.  [Advanced Menu](#advanced-menu)
-    *   [install-tcp-brutal](#install-tcp-brutal)
-    *   [install-warp](#install-warp)
-    *   [uninstall-warp](#uninstall-warp)
-    *   [configure-warp](#configure-warp)
-    *   [warp-status](#warp-status)
-    *   [telegram](#telegram)
-    *   [singbox](#singbox)
-    *   [normal-sub](#normal-sub)
-    *   [webpanel](#webpanel)
-    *  [get-webpanel-url](#get-webpanel-url)
-    *   [get-webpanel-api-token](#get-webpanel-api-token)
-    *   [get-webpanel-services-status](#get-webpanel-services-status)
-    *   [get-services-status](#get-services-status)
 
+- [Installation & Setup](#installation--setup)
+- [Command Categories](#command-categories)
+  - [🚀 Hysteria2 Server Management](#-hysteria2-server-management)
+    - [Install Hysteria2](#install-hysteria2)
+    - [Server Operations](#server-operations)
+    - [Backup & Restore](#backup--restore)
+  - [👥 User Management](#-user-management)
+    - [List and View Users](#list-and-view-users)
+    - [Add New Users](#add-new-users)
+    - [Edit Existing Users](#edit-existing-users)
+    - [User Operations](#user-operations)
+    - [User URI & QR Codes](#user-uri--qr-codes)
+  - [🖥️ Server Information & Monitoring](#️-server-information--monitoring)
+    - [Traffic and Status](#traffic-and-status)
+    - [Server Information](#server-information)
+    - [Service Status](#service-status)
+  - [⚙️ Server Configuration](#️-server-configuration)
+    - [Obfuscation Management](#obfuscation-management)
+    - [IP Address Management](#ip-address-management)
+    - [External Node Management](#external-node-management)
+    - [Masquerade Configuration](#masquerade-configuration)
+    - [Geo Files Update](#geo-files-update)
+  - [🔧 Advanced Features](#-advanced-features)
+    - [TCP Brutal Installation](#tcp-brutal-installation)
+    - [WARP Integration](#warp-integration)
+    - [Telegram Bot](#telegram-bot)
+    - [Singbox Service](#singbox-service)
+    - [Normal Subscription Service](#normal-subscription-service)
+    - [Web Panel Management](#web-panel-management)
+    - [IP Limiter Service](#ip-limiter-service)
+- [Common Usage Examples](#common-usage-examples)
+  - [Setting Up a New Server](#setting-up-a-new-server)
+  - [User Management Workflow](#user-management-workflow)
+  - [Advanced Server Configuration](#advanced-server-configuration)
+- [Error Handling](#error-handling)
+- [Tips & Best Practices](#tips--best-practices)
+- [Troubleshooting](#troubleshooting)
 
----
+## Command Categories
 
-## Hysteria2 Management
+### 🚀 Hysteria2 Server Management
 
-This section covers commands related to installing, updating, and configuring the core Hysteria2 service.
-
-### install-hysteria2
-
-Installs and configures Hysteria2.
-
+#### Install Hysteria2
 ```bash
-./cli.py install-hysteria2 --port <port> --sni <sni>
+# Install with required port and optional SNI
+python3 cli.py install-hysteria2 --port 8080 --sni example.com
+python3 cli.py install-hysteria2 -p 8080 -s example.com
+
+# Install with default SNI (bts.com)
+python3 cli.py install-hysteria2 --port 8080
 ```
 
-*   **`--port` / `-p` (Required):**  The port number Hysteria2 will listen on.  This must be an integer.
-*   **`--sni` / `-s` (Optional):**  The Server Name Indication (SNI) to use.  Defaults to `bts.com`.
-
-**Example:**
-
+#### Server Operations
 ```bash
-./cli.py install-hysteria2 -p 443 -s example.com
+# Uninstall Hysteria2
+python3 cli.py uninstall-hysteria2
+
+# Update Hysteria2
+python3 cli.py update-hysteria2
+
+# Restart Hysteria2 service
+python3 cli.py restart-hysteria2
+
+# Change server port
+python3 cli.py change-hysteria2-port --port 9090
+
+# Change SNI (Server Name Indication)
+python3 cli.py change-hysteria2-sni --sni newdomain.com
 ```
 
----
-
-### uninstall-hysteria2
-
-Uninstalls Hysteria2.
-
+#### Backup & Restore
 ```bash
-./cli.py uninstall-hysteria2
+# Create backup of Hysteria configuration
+python3 cli.py backup-hysteria
+
+# Restore from backup file
+python3 cli.py restore-hysteria2 /path/to/backup.zip
 ```
 
----
+### 👥 User Management
 
-### update-hysteria2
-
-Updates the Hysteria2 core to the latest version.
-
+#### List and View Users
 ```bash
-./cli.py update-hysteria2
+# List all users
+python3 cli.py list-users
+
+# Get specific user details
+python3 cli.py get-user --username john_doe
+python3 cli.py get-user -u john_doe
 ```
 
----
-
-### restart-hysteria2
-
-Restarts the Hysteria2 service.
-
+#### Add New Users
 ```bash
-./cli.py restart-hysteria2
+# Add user with basic settings
+python3 cli.py add-user -u john_doe -t 50 -e 30
+
+# Add user with custom password and creation date
+python3 cli.py add-user \
+  --username john_doe \
+  --traffic-limit 100 \
+  --expiration-days 60 \
+  --password mypassword123 \
+  --creation-date 2024-01-15
+
+# Add unlimited user (no IP limit checks)
+python3 cli.py add-user -u premium_user -t 500 -e 365 --unlimited
 ```
 
----
-
-### change-hysteria2-port
-
-Changes the port Hysteria2 listens on.
-
+#### Edit Existing Users
 ```bash
-./cli.py change-hysteria2-port --port <new_port>
+# Change username
+python3 cli.py edit-user -u old_name --new-username new_name
+
+# Update traffic limit and expiration
+python3 cli.py edit-user -u john_doe --new-traffic-limit 200 --new-expiration-days 90
+
+# Renew password and creation date
+python3 cli.py edit-user -u john_doe --renew-password --renew-creation-date
+
+# Block/unblock user
+python3 cli.py edit-user -u john_doe --blocked
+python3 cli.py edit-user -u john_doe --unblocked
+
+# Set unlimited IP access
+python3 cli.py edit-user -u john_doe --unlimited-ip
+python3 cli.py edit-user -u john_doe --limited-ip
 ```
 
-*   **`--port` / `-p` (Required):** The new port number.
-
-**Example:**
-
+#### User Operations
 ```bash
-./cli.py change-hysteria2-port -p 8080
+# Reset user (clears usage statistics)
+python3 cli.py reset-user --username john_doe
+
+# Remove user completely
+python3 cli.py remove-user --username john_doe
+
+# Kick user (disconnect active sessions)
+python3 cli.py kick-user --username john_doe
 ```
 
----
-
-### change-hysteria2-sni
-
-Changes the SNI used by Hysteria2.
-
+#### User URI & QR Codes
 ```bash
-./cli.py change-hysteria2-sni --sni <new_sni>
+# Show user connection URI
+python3 cli.py show-user-uri --username john_doe
+
+# Generate QR code for URI
+python3 cli.py show-user-uri -u john_doe --qrcode
+
+# Show IPv6 URI
+python3 cli.py show-user-uri -u john_doe --ipv 6
+
+# Show both IPv4 and IPv6 URIs with QR codes
+python3 cli.py show-user-uri -u john_doe --all --qrcode
+
+# Generate Singbox sublink
+python3 cli.py show-user-uri -u john_doe --singbox
+
+# Generate normal sublink
+python3 cli.py show-user-uri -u john_doe --normalsub
+
+# Get JSON format for multiple users
+python3 cli.py show-user-uri-json user1 user2 user3
 ```
 
-*   **`--sni` / `-s` (Required):** The new SNI.
+### 🖥️ Server Information & Monitoring
 
-**Example:**
-
+#### Traffic and Status
 ```bash
-./cli.py change-hysteria2-sni -s mynew.sni.com
+# Show traffic status for all users
+python3 cli.py traffic-status
+
+# Update traffic data without GUI (kicks expired users)
+python3 cli.py traffic-status --no-gui
 ```
 
----
-
-### backup-hysteria
-Back up the current hysteria configuration.
+#### Server Information
 ```bash
-./cli.py backup-hysteria
-```
-Creates a zip file containing your configuration files in the `/etc/hysteria/` directory.
+# Display server information
+python3 cli.py server-info
 
+# Show current version
+python3 cli.py show-version
 
----
-
-### restore-hysteria2
-
-Restores Hysteria configuration from a backup ZIP file.
-
-```bash
-./cli.py restore-hysteria2 <backup_file_path>
-```
-*  `backup_file_path`: Path to the ZIP file containing the backup. It must be a path to an *existing* file. It cannot be a directory. It must be readable.
-
-**Example**
-```bash
-./cli.py restore-hysteria2 /path/to/backup.zip
+# Check for updates
+python3 cli.py check-version
 ```
 
----
-
-
-## User Management
-
-This section details commands for managing Hysteria2 users.
-
-### list-users
-
-Lists all configured Hysteria2 users.
-
+#### Service Status
 ```bash
-./cli.py list-users
-```
-The output will be in JSON format
+# Check all services status
+python3 cli.py get-services-status
 
----
-
-
-### get-user
-
-Retrieves detailed information about a specific user.
-
-```bash
-./cli.py get-user --username <username>
+# Check web panel specific services
+python3 cli.py get-webpanel-services-status
 ```
 
-*   **`--username` / `-u` (Required):** The username of the user to retrieve.
+### ⚙️ Server Configuration
 
-**Example:**
-
+#### Obfuscation Management
 ```bash
-./cli.py get-user -u testuser
-```
-The output will be in JSON format
+# Check obfuscation status
+python3 cli.py manage_obfs --check
 
----
+# Enable obfuscation
+python3 cli.py manage_obfs --generate
 
-### add-user
-
-Adds a new Hysteria2 user.
-
-```bash
-./cli.py add-user --username <username> --traffic-limit <traffic_limit_gb> --expiration-days <expiration_days> --password <password> --creation-date <date>
+# Disable obfuscation
+python3 cli.py manage_obfs --remove
 ```
 
-*   **`--username` / `-u` (Required):** The username for the new user.
-*   **`--traffic-limit` / `-t` (Required):** The traffic limit for the user, in gigabytes (GB).
-*   **`--expiration-days` / `-e` (Required):**  The number of days until the user account expires.
-*   **`--password` / `-p` (Optional):**  The password for the user.
-*   **`--creation-date` / `-c` (Optional):**  The account creation date in `YYYY-MM-DD` format.
-
-**Example:**
-
+#### IP Address Management
 ```bash
-./cli.py add-user -u newuser -t 100 -e 30 -p mysecretpassword -c 2023-12-25
+# Auto-detect and add IP addresses
+python3 cli.py ip-address
+
+# Manually edit IP addresses
+python3 cli.py ip-address --edit --ipv4 192.168.1.100
+python3 cli.py ip-address --edit --ipv6 2001:db8::1
+python3 cli.py ip-address --edit -4 192.168.1.100 -6 2001:db8::1
 ```
 
----
-
-### edit-user
-
-Edits an existing Hysteria2 user's settings.
-
+#### External Node Management
 ```bash
-./cli.py edit-user --username <username> --new-username <new_username> --new-traffic-limit <new_traffic_limit_gb> --new-expiration-days <new_expiration_days> --renew-password --renew-creation-date --blocked
+# Add external node
+python3 cli.py node add --name Node-DE --ip 45.67.89.123
+
+# List all nodes
+python3 cli.py node list
+
+# Delete node
+python3 cli.py node delete --name Node-DE
 ```
 
-*   **`--username` / `-u` (Required):** The username of the user to edit.
-*   **`--new-username` / `-nu` (Optional):** The new username for the user.
-*   **`--new-traffic-limit` / `-nt` (Optional):**  The new traffic limit in GB.
-*   **`--new-expiration-days` / `-ne` (Optional):** The new number of expiration days.
-*   **`--renew-password` / `-rp` (Optional, Flag):** If included, renews the user's password.
-*   **`--renew-creation-date` / `-rc` (Optional, Flag):** If included, resets the user's creation date.
-*   **`--blocked` / `-b` (Optional, Flag):** If included, blocks the user.
-
-**Example (changing traffic limit and blocking):**
-
+#### Masquerade Configuration
 ```bash
-./cli.py edit-user -u testuser -nt 50 -b
+# Enable masquerade with domain
+python3 cli.py masquerade --enable google.com
+
+# Disable masquerade
+python3 cli.py masquerade --remove
 ```
 
----
-
-### reset-user
-
-Resets a user's traffic statistics.
-
+#### Geo Files Update
 ```bash
-./cli.py reset-user --username <username>
+# Update geo files for Iran (default)
+python3 cli.py update-geo
+
+# Update for specific country
+python3 cli.py update-geo --country china
+python3 cli.py update-geo --country russia
+python3 cli.py update-geo --country iran
 ```
 
-*    **`--username` / `-u` (Required):** The username to reset.
+### 🔧 Advanced Features
 
----
-
-### remove-user
-
-Removes a Hysteria2 user.
-
+#### TCP Brutal Installation
 ```bash
-./cli.py remove-user --username <username>
+# Install TCP Brutal optimization
+python3 cli.py install-tcp-brutal
 ```
 
-*   **`--username` / `-u` (Required):** The username to remove.
-
----
-
-### show-user-uri
-
-Generates and displays the Hysteria2 URI for a user, optionally as a QR code.
-
+#### WARP Integration
 ```bash
-./cli.py show-user-uri --username <username> --qrcode --ipv <ip_version> --all --singbox --normalsub
+# Install WARP
+python3 cli.py install-warp
+
+# Uninstall WARP
+python3 cli.py uninstall-warp
+
+# Check WARP status
+python3 cli.py warp-status
+
+# Configure WARP settings
+python3 cli.py configure-warp --set-all on
+python3 cli.py configure-warp --set-popular-sites off
+python3 cli.py configure-warp --set-domestic-sites on
+python3 cli.py configure-warp --set-block-adult-sites on
+
+# Multiple WARP configurations
+python3 cli.py configure-warp \
+  --set-all off \
+  --set-popular-sites on \
+  --set-domestic-sites off \
+  --set-block-adult-sites on
 ```
 
-*   **`--username` / `-u` (Required):** The username for which to generate the URI.
-*   **`--qrcode` / `-qr` (Optional, Flag):** If included, generates a QR code of the URI.
-*   **`--ipv` / `-ip` (Optional):**  Specifies the IP version (4 or 6) for the URI. Defaults to 4.
-*   **`--all` / `-a` (Optional, Flag):**  Shows both IPv4 and IPv6 URIs.
-*   **`--singbox` / `-s` (Optional, Flag):** Includes a Singbox subscription link if the Singbox service is active.
-*    **`--normalsub` / `-n` (Optional, Flag):** Includes a Normal-Sub subscription link if the normalsub service is active.
-**Example (generating a QR code for IPv6):**
-
+#### Telegram Bot
 ```bash
-./cli.py show-user-uri -u testuser -qr -ip 6
+# Start Telegram bot
+python3 cli.py telegram --action start --token YOUR_BOT_TOKEN --adminid YOUR_ADMIN_ID
+
+# Stop Telegram bot
+python3 cli.py telegram --action stop
 ```
 
----
-
-## Server Management
-
-This section covers server-related commands.
-
-### traffic-status
-
-Displays the current traffic usage statistics.
-
+#### Singbox Service
 ```bash
-./cli.py traffic-status
+# Start Singbox service
+python3 cli.py singbox --action start --domain example.com --port 8443
+
+# Stop Singbox service
+python3 cli.py singbox --action stop
 ```
 
----
-
-### server-info
-
-Displays server information.
-
+#### Normal Subscription Service
 ```bash
-./cli.py server-info
-```
-The output will be in JSON format
+# Start NormalSub service
+python3 cli.py normal-sub --action start --domain example.com --port 8080
 
----
+# Stop NormalSub service
+python3 cli.py normal-sub --action stop
 
-### manage_obfs
-
-Manages Obfuscation (obfs) settings in the Hysteria2 configuration.
-
-```bash
-./cli.py manage_obfs --remove
-./cli.py manage_obfs --generate
+# Edit subpath
+python3 cli.py normal-sub --action edit_subpath --subpath newpath123
 ```
 
-*   **`--remove` / `-r` (Optional, Flag):**  Removes obfs from the configuration.
-*   **`--generate` / `-g` (Optional, Flag):** Generates a new obfs configuration.
-*  **Mutually Exclusive**: you should supply only one of `--remove` or `--generate`. Supplying Neither will print an error.
-
----
-
-### ip-address
-
-Manages the server's IP addresses stored in `.configs.env`.
-
+#### Web Panel Management
 ```bash
-./cli.py ip-address
-./cli.py ip-address --edit --ipv4 <ipv4_address>
-./cli.py ip-address --edit --ipv6 <ipv6_address>
+# Start web panel
+python3 cli.py webpanel \
+  --action start \
+  --domain panel.example.com \
+  --port 8090 \
+  --admin-username admin \
+  --admin-password securepass123 \
+  --expiration-minutes 60 \
+  --debug
+
+# Start with decoy site
+python3 cli.py webpanel \
+  --action start \
+  --domain panel.example.com \
+  --port 8090 \
+  --admin-username admin \
+  --admin-password securepass123 \
+  --decoy-path /var/www/html
+
+# Stop web panel
+python3 cli.py webpanel --action stop
+
+# Get web panel URL
+python3 cli.py get-webpanel-url
+
+# Get API token
+python3 cli.py get-webpanel-api-token
+
+# Reset credentials
+python3 cli.py reset-webpanel-creds --new-username newadmin
+python3 cli.py reset-webpanel-creds --new-password newpass123
+python3 cli.py reset-webpanel-creds --new-username newadmin --new-password newpass123
+
+# Setup decoy site
+python3 cli.py setup-webpanel-decoy --domain panel.example.com --decoy-path /var/www/decoy
+
+# Stop decoy site
+python3 cli.py stop-webpanel-decoy
 ```
 
-*   **No Options:**  Adds auto-detected IP addresses to the configuration.
-*   **`--edit` (Optional, Flag):** Enables manual editing of IP addresses.
-*   **`-4` / `--ipv4` (Optional):**  Specifies a new IPv4 address (requires `--edit`).
-*   **`-6` / `--ipv6` (Optional):** Specifies a new IPv6 address (requires `--edit`).
-    * **With Edit** You *must* supply at least one of `--ipv4` or `--ipv6`.
-
----
-
-### update-geo
-
-Updates GeoIP and GeoSite data files.
-
+#### IP Limiter Service
 ```bash
-./cli.py update-geo --country <country>
+# Start IP limiter
+python3 cli.py start-ip-limit
+
+# Stop IP limiter
+python3 cli.py stop-ip-limit
+
+# Configure IP limiter
+python3 cli.py config-ip-limit --block-duration 3600 --max-ips 3
+python3 cli.py config-ip-limit --block-duration 7200
+python3 cli.py config-ip-limit --max-ips 5
 ```
 
-*   **`--country` / `-c` (Optional):**  The country for which to update Geo files (`iran`, `china`, or `russia`). Defaults to `iran`.
+## Common Usage Examples
 
-**Example (updating for China):**
-
+### Setting Up a New Server
 ```bash
-./cli.py update-geo -c china
+# 1. Install Hysteria2
+python3 cli.py install-hysteria2 --port 8080 --sni google.com
+
+# 2. Add IP addresses
+python3 cli.py ip-address
+
+# 3. Enable obfuscation
+python3 cli.py manage_obfs --generate
+
+# 4. Create first user
+python3 cli.py add-user -u testuser -t 50 -e 30
+
+# 5. Get user connection URI
+python3 cli.py show-user-uri -u testuser --qrcode
 ```
 
----
-
-### masquerade
-
-Manages the masquerade settings in the Hysteria2 configuration.
-
+### User Management Workflow
 ```bash
-./cli.py masquerade --remove
-./cli.py masquerade --enable <domain>
+# Add premium user with unlimited access
+python3 cli.py add-user -u premium_user -t 1000 -e 365 --unlimited
+
+# Monitor user usage
+python3 cli.py traffic-status
+
+# Reset user if needed
+python3 cli.py reset-user -u premium_user
+
+# Generate connection details
+python3 cli.py show-user-uri -u premium_user --all --qrcode
 ```
 
-*   **`--remove` / `-r` (Optional, Flag):** Removes the masquerade configuration.
-*   **`--enable` / `-e` (Optional):** Enables masquerade with the specified domain.
-*   **Mutually Exclusive**: you should supply only one of `--remove` or `--enable`. Supplying Neither will print an error.
-
-**Example (enabling masquerade):**
-
+### Advanced Server Configuration
 ```bash
-./cli.py masquerade -e example.com
+# Install optimizations
+python3 cli.py install-tcp-brutal
+python3 cli.py install-warp
+
+# Configure WARP
+python3 cli.py configure-warp --set-popular-sites on --set-block-adult-sites on
+
+# Setup web panel with decoy
+python3 cli.py webpanel \
+  --action start \
+  --domain admin.example.com \
+  --port 8443 \
+  --admin-username admin \
+  --admin-password secure123 \
+  --decoy-path /var/www/fake-site
+
+# Start IP limiting
+python3 cli.py start-ip-limit
+python3 cli.py config-ip-limit --max-ips 2 --block-duration 3600
 ```
 
----
+## Error Handling
 
+The CLI includes comprehensive error handling. Common error scenarios:
 
-## Advanced Menu
+- **Missing required parameters**: The CLI will show usage information
+- **Invalid user operations**: Clear error messages for non-existent users
+- **Service conflicts**: Warnings when services are already running/stopped
+- **File permissions**: Errors for inaccessible backup files or paths
+- **Network issues**: Connection errors during updates or installations
 
-This section describes commands that provide additional functionality.
+## Tips & Best Practices
 
+1. **Regular Monitoring**: Use `traffic-status` regularly to monitor user usage
+2. **Backup Strategy**: Create backups before major changes using `backup-hysteria`
+3. **Security**: Use strong passwords for web panel and rotate them regularly
+4. **Performance**: Enable TCP Brutal for better performance on high-latency connections
+5. **Obfuscation**: Enable obfuscation in restrictive network environments
+6. **User Management**: Use descriptive usernames and set appropriate traffic limits
+7. **Monitoring**: Check service status regularly with `get-services-status`
 
-### install-tcp-brutal
+## Troubleshooting
 
-Installs TCP Brutal.
-
-```bash
-./cli.py install-tcp-brutal
-```
-
----
-
-### install-warp
-
-Installs WARP.
-
-```bash
-./cli.py install-warp
-```
-
----
-
-### uninstall-warp
-
-Uninstalls WARP.
-
-```bash
-./cli.py uninstall-warp
-```
-
----
-
-### configure-warp
-
-Configures WARP settings.
-
-```bash
-./cli.py configure-warp --all --popular-sites --domestic-sites --block-adult-sites --warp-option <option> --warp-key <key>
-```
-
-*   **`--all` / `-a` (Optional, Flag):** Uses WARP for all traffic.
-*   **`--popular-sites` / `-p` (Optional, Flag):** Uses WARP for popular websites.
-*   **`--domestic-sites` / `-d` (Optional, Flag):** Uses WARP for domestic (Iranian) websites.
-*   **`--block-adult-sites` / `-x` (Optional, Flag):** Blocks adult content.
-*   **`--warp-option` / `-w` (Optional):** Selects between `warp` (normal) and `warp plus`.
-*   **`--warp-key` / `-k` (Optional):** The WARP Plus key (required if `--warp-option` is `warp plus`).
-
-**Example (using WARP Plus):**
-
-```bash
-./cli.py configure-warp -w "warp plus" -k YOUR_WARP_PLUS_KEY
-```
-
----
-
-### warp-status
-
-Displays the current WARP status.
-
-```bash
-./cli.py warp-status
-```
-The output will be in JSON format
-
----
-
-### telegram
-
-Manages the Telegram bot integration.
-
-```bash
-./cli.py telegram --action <action> --token <token> --adminid <admin_id>
-```
-
-*   **`--action` / `-a` (Required):** The action to perform (`start` or `stop`).
-*   **`--token` / `-t` (Required for `start`):** The Telegram bot token.
-*   **`--adminid` / `-aid` (Required for `start`):** The Telegram admin ID(s) (comma-separated).
-
-**Example (starting the bot):**
-
-```bash
-./cli.py telegram -a start -t YOUR_BOT_TOKEN -aid 123456789,987654321
-```
-
----
-
-### singbox
-
-Manages the Singbox service.
-
-```bash
-./cli.py singbox --action <action> --domain <domain> --port <port>
-```
-
-*   **`--action` / `-a` (Required):**  `start` or `stop`.
-*   **`--domain` / `-d` (Required for `start`):**  The domain name for SSL.
-*   **`--port` / `-p` (Required for `start`):** The port number for the Singbox service.
-
----
-
-### normal-sub
-
-Manages the Normal-Sub service.
-
-```bash
-./cli.py normal-sub --action <action> --domain <domain> --port <port>
-```
-
-*   **`--action` / `-a` (Required):**  `start` or `stop`.
-*   **`--domain` / `-d` (Required for `start`):**  The domain name for SSL.
-*   **`--port` / `-p` (Required for `start`):** The port number for the service.
-
----
-
-### webpanel
-Manages the Web panel service.
-
-```bash
-./cli.py webpanel --action <action> --domain <domain> --port <port> --admin-username <admin_username>  --admin-password <admin_password> --expiration-minutes <expiration_minutes> --debug
-```
-
-*    **`--action` / `-a` (Required):** `start` or `stop`.
-*    **`--domain` / `-d` (Required for `start`):** Domain name for SSL.
-*    **`--port` / `-p` (Required for `start`):** Port number for WebPanel service.
-*    **`--admin-username` / `-au` (Required for `start`):** Admin username for WebPanel.
-*    **`--admin-password` / `-ap` (Required for `start`):** Admin password for WebPanel.
-*    **`--expiration-minutes` / `-e` (Optional):** Expiration time for WebPanel sessions in minutes, Default: 20.
-*   **`--debug` / `-g`** Enables WebPanel debug mode.
-*    when you start the webpanel the script will show related service status
-*    web panel have default port *80*
-    ```bash
-     ./cli.py webpanel -a start  -d example.com -p 8080 -au admin -ap 1234
-    ```
-
----
-
-### get-webpanel-url
-Gets the web panel URL
-```bash
-./cli.py get-webpanel-url
-```
-
----
-
-### get-webpanel-api-token
-```bash
-./cli.py get-webpanel-api-token
-```
-
----
-
-### get-webpanel-services-status
-  ```bash
-   ./cli.py get-webpanel-services-status
-  ```
-
----
-
-### get-services-status
-
-Displays the status of all managed services (Active or Inactive).
-  ```bash
-    ./cli.py get-services-status
-  ```
+- **Service not starting**: Check `get-services-status` and system logs
+- **Connection issues**: Verify firewall settings and port availability
+- **User can't connect**: Check user status with `get-user` and verify URI generation
+- **High resource usage**: Monitor with `traffic-status` and consider IP limiting
+- **SSL issues**: Verify domain configuration for web panel and other services
