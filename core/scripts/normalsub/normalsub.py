@@ -30,6 +30,7 @@ class AppConfig:
     hysteria_cli_path: str
     users_json_path: str
     nodes_json_path: str
+    extra_config_path: str
     rate_limit: int
     rate_limit_window: int
     sni: str
@@ -389,14 +390,29 @@ class SubscriptionManager:
         self.hysteria_cli = hysteria_cli
         self.config = config
 
+    def _get_extra_configs(self) -> List[str]:
+        """Reads extra proxy URIs from the JSON config file."""
+        if not os.path.exists(self.config.extra_config_path):
+            return []
+        try:
+            with open(self.config.extra_config_path, 'r') as f:
+                content = f.read()
+                if not content:
+                    return []
+                configs = json.loads(content)
+                if isinstance(configs, list):
+                    return [str(c['uri']) for c in configs if 'uri' in c]
+                return []
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            print(f"Warning: Could not read or parse extra configs from {self.config.extra_config_path}: {e}")
+            return []
+
     def get_normal_subscription(self, username: str, user_agent: str) -> str:
         user_info = self.hysteria_cli.get_user_info(username)
         if user_info is None:
             return "User not found"
             
         all_uris = self.hysteria_cli.get_all_uris(username)
-        if not all_uris:
-            return "No URI available"
 
         processed_uris = []
         for uri in all_uris:
@@ -407,6 +423,12 @@ class SubscriptionManager:
                     formatted = ":".join("{:02X}".format(byte) for byte in decoded)
                     uri = uri.replace(f'pinSHA256=sha256/{match.group(1)}', f'pinSHA256={formatted}')
             processed_uris.append(uri)
+        
+        extra_uris = self._get_extra_configs()
+        all_processed_uris = processed_uris + extra_uris
+
+        if not all_processed_uris:
+            return "No URI available"
 
         subscription_info = (
             f"//subscription-userinfo: upload={user_info.upload_bytes}; "
@@ -415,7 +437,7 @@ class SubscriptionManager:
             f"expire={user_info.expiration_timestamp}\n"
         )
         profile_lines = f"//profile-title: {username}-Hysteria2 🚀\n//profile-update-interval: 1\n"
-        return profile_lines + subscription_info + "\n".join(processed_uris)
+        return profile_lines + subscription_info + "\n".join(all_processed_uris)
 
 
 class TemplateRenderer:
@@ -466,6 +488,7 @@ class HysteriaServer:
         hysteria_cli_path = '/etc/hysteria/core/cli.py'
         users_json_path = os.getenv('HYSTERIA_USERS_JSON_PATH', '/etc/hysteria/users.json')
         nodes_json_path = '/etc/hysteria/nodes.json'
+        extra_config_path = '/etc/hysteria/extra.json'
         rate_limit = 100
         rate_limit_window = 60
         template_dir = os.path.dirname(__file__)
@@ -479,6 +502,7 @@ class HysteriaServer:
                          hysteria_cli_path=hysteria_cli_path,
                          users_json_path=users_json_path,
                          nodes_json_path=nodes_json_path,
+                         extra_config_path=extra_config_path,
                          rate_limit=rate_limit, rate_limit_window=rate_limit_window,
                          sni=sni, template_dir=template_dir,
                          subpath=subpath)
