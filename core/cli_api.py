@@ -36,6 +36,7 @@ class Command(Enum):
     NODE_MANAGER = os.path.join(SCRIPT_DIR, 'hysteria2', 'node.py')
     MANAGE_OBFS = os.path.join(SCRIPT_DIR, 'hysteria2', 'manage_obfs.py')
     MASQUERADE_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'masquerade.py')
+    EXTRA_CONFIG_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'extra_config.py')
     TRAFFIC_STATUS = 'traffic.py'  # won't be called directly (it's a python module)
     UPDATE_GEO = os.path.join(SCRIPT_DIR, 'hysteria2', 'update_geo.py')
     LIST_USERS = os.path.join(SCRIPT_DIR, 'hysteria2', 'list_users.sh')
@@ -476,6 +477,25 @@ def update_geo(country: str):
     except Exception as e:
         raise HysteriaError(f'An unexpected error occurred: {e}')
 
+def add_extra_config(name: str, uri: str) -> str:
+    """Adds an extra proxy configuration."""
+    return run_cmd(['python3', Command.EXTRA_CONFIG_SCRIPT.value, 'add', '--name', name, '--uri', uri])
+
+
+def delete_extra_config(name: str) -> str:
+    """Deletes an extra proxy configuration."""
+    return run_cmd(['python3', Command.EXTRA_CONFIG_SCRIPT.value, 'delete', '--name', name])
+
+
+def list_extra_configs() -> str:
+    """Lists all extra proxy configurations."""
+    return run_cmd(['python3', Command.EXTRA_CONFIG_SCRIPT.value, 'list'])
+
+
+def get_extra_config(name: str) -> dict[str, Any] | None:
+    """Gets a specific extra proxy configuration."""
+    if res := run_cmd(['python3', Command.EXTRA_CONFIG_SCRIPT.value, 'get', '--name', name]):
+        return json.loads(res)
 
 # endregion
 

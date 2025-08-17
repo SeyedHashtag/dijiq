@@ -368,6 +368,56 @@ def masquerade(remove: bool, enable: str):
     except Exception as e:
         click.echo(f'{e}', err=True)
 
+@cli.group('extra-config')
+def extra_config():
+    """Manage extra proxy configurations for subscription links."""
+    pass
+
+
+@extra_config.command('add')
+@click.option('--name', required=True, help='A unique name for the configuration.')
+@click.option('--uri', required=True, help='The proxy URI (vmess, vless, ss, trojan).')
+def add_extra_config(name: str, uri: str):
+    """Add a new extra proxy configuration."""
+    try:
+        output = cli_api.add_extra_config(name, uri)
+        click.echo(output)
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+
+@extra_config.command('delete')
+@click.option('--name', required=True, help='The name of the configuration to delete.')
+def delete_extra_config(name: str):
+    """Delete an extra proxy configuration."""
+    try:
+        output = cli_api.delete_extra_config(name)
+        click.echo(output)
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+
+@extra_config.command('list')
+def list_extra_configs():
+    """List all extra proxy configurations."""
+    try:
+        output = cli_api.list_extra_configs()
+        click.echo(output)
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+
+@extra_config.command('get')
+@click.option('--name', required=True, help='The name of the configuration to retrieve.')
+def get_extra_config(name: str):
+    """Get a specific extra proxy configuration."""
+    try:
+        res = cli_api.get_extra_config(name)
+        if res:
+            pretty_print(res)
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
 # endregion
 
 # region Advanced Menu
