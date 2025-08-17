@@ -30,6 +30,7 @@ class AppConfig:
     hysteria_cli_path: str
     users_json_path: str
     nodes_json_path: str
+    extra_config_path: str
     rate_limit: int
     rate_limit_window: int
     sni: str
@@ -73,6 +74,7 @@ class UserInfo:
     max_download_bytes: int
     account_creation_date: str
     expiration_days: int
+    blocked: bool = False
 
     @property
     def total_usage(self) -> int:
@@ -189,22 +191,16 @@ class HysteriaCLI:
             print(f"Hysteria CLI error: {e}")
             raise
 
-    def get_user_password(self, username: str) -> Optional[str]:
+    def get_user_details_from_json(self, username: str) -> Optional[Dict[str, Any]]:
         try:
             with open(self.users_json_path, 'r') as f:
                 users_data = json.load(f)
-            user_details = users_data.get(username)
-            if user_details and 'password' in user_details:
-                return user_details['password']
-            return None
-        except FileNotFoundError:
-            print(f"Error: Users file not found at {self.users_json_path}")
-            return None
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {self.users_json_path}")
+            return users_data.get(username)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Error reading user details from {self.users_json_path}: {e}")
             return None
         except Exception as e:
-            print(f"An unexpected error occurred while reading users file for password: {e}")
+            print(f"An unexpected error occurred while reading users file: {e}")
             return None
 
     def get_username_by_password(self, password_token: str) -> Optional[str]:
@@ -230,8 +226,8 @@ class HysteriaCLI:
         if raw_info_str is None:
             return None
 
-        user_password = self.get_user_password(username)
-        if user_password is None:
+        user_details = self.get_user_details_from_json(username)
+        if not user_details or 'password' not in user_details:
             print(f"Warning: Password for user '{username}' could not be fetched from {self.users_json_path}. Cannot create UserInfo.")
             return None
 
@@ -239,26 +235,25 @@ class HysteriaCLI:
             raw_info = json.loads(raw_info_str)
             return UserInfo(
                 username=username,
-                password=user_password,
+                password=user_details['password'],
                 upload_bytes=raw_info.get('upload_bytes', 0),
                 download_bytes=raw_info.get('download_bytes', 0),
                 max_download_bytes=raw_info.get('max_download_bytes', 0),
                 account_creation_date=raw_info.get('account_creation_date', ''),
-                expiration_days=raw_info.get('expiration_days', 0)
+                expiration_days=raw_info.get('expiration_days', 0),
+                blocked=user_details.get('blocked', False)
             )
         except json.JSONDecodeError as e:
             print(f"JSONDecodeError: {e}, Raw output: {raw_info_str}")
             return None
 
     def get_all_uris(self, username: str) -> List[str]:
-        """Fetches all available URIs (local and nodes) for a user."""
         output = self._run_command(['show-user-uri', '-u', username, '-a'])
         if not output:
             return []
         return re.findall(r'hy2://.*', output)
 
     def get_all_labeled_uris(self, username: str) -> List[Dict[str, str]]:
-        """Fetches all URIs and their labels."""
         output = self._run_command(['show-user-uri', '-u', username, '-a'])
         if not output:
             return []
@@ -314,7 +309,6 @@ class SingboxConfigGenerator:
         return self._template_cache.copy()
 
     def generate_config_from_uri(self, uri: str, username: str, fragment: str) -> Optional[Dict[str, Any]]:
-        """Generates a Singbox outbound config from a single Hysteria URI."""
         if not uri:
             return None
 
@@ -356,7 +350,6 @@ class SingboxConfigGenerator:
         }
 
     def combine_configs(self, all_uris: List[str], username: str, fragment: str) -> Optional[Dict[str, Any]]:
-        """Generates a combined Singbox config from a list of URIs."""
         if not all_uris:
             return None
         
@@ -389,14 +382,28 @@ class SubscriptionManager:
         self.hysteria_cli = hysteria_cli
         self.config = config
 
+    def _get_extra_configs(self) -> List[str]:
+        if not os.path.exists(self.config.extra_config_path):
+            return []
+        try:
+            with open(self.config.extra_config_path, 'r') as f:
+                content = f.read()
+                if not content:
+                    return []
+                configs = json.loads(content)
+                if isinstance(configs, list):
+                    return [str(c['uri']) for c in configs if 'uri' in c]
+                return []
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            print(f"Warning: Could not read or parse extra configs from {self.config.extra_config_path}: {e}")
+            return []
+
     def get_normal_subscription(self, username: str, user_agent: str) -> str:
         user_info = self.hysteria_cli.get_user_info(username)
         if user_info is None:
             return "User not found"
             
         all_uris = self.hysteria_cli.get_all_uris(username)
-        if not all_uris:
-            return "No URI available"
 
         processed_uris = []
         for uri in all_uris:
@@ -407,6 +414,12 @@ class SubscriptionManager:
                     formatted = ":".join("{:02X}".format(byte) for byte in decoded)
                     uri = uri.replace(f'pinSHA256=sha256/{match.group(1)}', f'pinSHA256={formatted}')
             processed_uris.append(uri)
+        
+        extra_uris = self._get_extra_configs()
+        all_processed_uris = processed_uris + extra_uris
+
+        if not all_processed_uris:
+            return "No URI available"
 
         subscription_info = (
             f"//subscription-userinfo: upload={user_info.upload_bytes}; "
@@ -415,7 +428,7 @@ class SubscriptionManager:
             f"expire={user_info.expiration_timestamp}\n"
         )
         profile_lines = f"//profile-title: {username}-Hysteria2 🚀\n//profile-update-interval: 1\n"
-        return profile_lines + subscription_info + "\n".join(processed_uris)
+        return profile_lines + subscription_info + "\n".join(all_processed_uris)
 
 
 class TemplateRenderer:
@@ -466,6 +479,7 @@ class HysteriaServer:
         hysteria_cli_path = '/etc/hysteria/core/cli.py'
         users_json_path = os.getenv('HYSTERIA_USERS_JSON_PATH', '/etc/hysteria/users.json')
         nodes_json_path = '/etc/hysteria/nodes.json'
+        extra_config_path = '/etc/hysteria/extra.json'
         rate_limit = 100
         rate_limit_window = 60
         template_dir = os.path.dirname(__file__)
@@ -479,6 +493,7 @@ class HysteriaServer:
                          hysteria_cli_path=hysteria_cli_path,
                          users_json_path=users_json_path,
                          nodes_json_path=nodes_json_path,
+                         extra_config_path=extra_config_path,
                          rate_limit=rate_limit, rate_limit_window=rate_limit_window,
                          sni=sni, template_dir=template_dir,
                          subpath=subpath)
@@ -538,11 +553,14 @@ class HysteriaServer:
             if username is None:
                 return web.Response(status=404, text="User not found for the provided token.")
 
-            user_agent = request.headers.get('User-Agent', '').lower()
             user_info = self.hysteria_cli.get_user_info(username)
             if user_info is None:
                 return web.Response(status=404, text=f"User '{username}' details not found.")
 
+            if user_info.blocked:
+                return await self._handle_blocked_user(request)
+
+            user_agent = request.headers.get('User-Agent', '').lower()
             if any(browser in user_agent for browser in ['chrome', 'firefox', 'safari', 'edge', 'opera']):
                 return await self._handle_html(request, username, user_info)
             fragment = request.query.get('fragment', '')
@@ -554,6 +572,39 @@ class HysteriaServer:
         except Exception as e:
             print(f"Internal Server Error: {e}")
             return web.Response(status=500, text="Error: Internal server error")
+
+    async def _handle_blocked_user(self, request: web.Request) -> web.Response:
+        fake_uri = "hysteria2://x@end.com:443?sni=support.me#⛔Account-Expired⚠️"
+        user_agent = request.headers.get('User-Agent', '').lower()
+
+        if any(browser in user_agent for browser in ['chrome', 'firefox', 'safari', 'edge', 'opera']):
+            context = self._get_blocked_template_context(fake_uri)
+            return web.Response(text=self.template_renderer.render(context), content_type='text/html')
+
+        fragment = request.query.get('fragment', '')
+        if not user_agent.startswith('hiddifynext') and ('singbox' in user_agent or 'sing' in user_agent):
+            combined_config = self.singbox_generator.combine_configs([fake_uri], "blocked", fragment)
+            return web.Response(text=json.dumps(combined_config, indent=4, sort_keys=True), content_type='application/json')
+        
+        return web.Response(text=fake_uri, content_type='text/plain')
+
+    def _get_blocked_template_context(self, fake_uri: str) -> TemplateContext:
+        return TemplateContext(
+            username="blocked",
+            usage="N/A",
+            usage_raw="This account has been suspended.",
+            expiration_date="N/A",
+            sublink_qrcode=Utils.generate_qrcode_base64("blocked"),
+            sub_link="#blocked",
+            local_uris=[
+                NodeURI(
+                    label="Blocked",
+                    uri=fake_uri,
+                    qrcode=Utils.generate_qrcode_base64(fake_uri)
+                )
+            ],
+            node_uris=[]
+        )
 
     async def _handle_html(self, request: web.Request, username: str, user_info: UserInfo) -> web.Response:
         context = await self._get_template_context(username, user_info)

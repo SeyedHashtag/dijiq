@@ -1,32 +1,22 @@
-# [1.14.0] - 2025-08-13
+# [1.15.0] - 2025-08-17
 
 #### ✨ New Features
 
-* 🌐 **Per-User Unlimited IP Option**:
+* 🚫 **Blocked User Check**
 
-  * Added `unlimited_user` flag to exempt specific users from concurrent IP limits
-  * Works in both CLI and web panel
-  * Integrated into `limit.sh` for enforcement bypass
-* 🖥️ **Web Panel Enhancements**:
+  * Subscription endpoint now validates blocked users and prevents access
+* 🌐 **External Configs in Subscriptions**
 
-  * Unlimited IP control added to **Users** page
-  * IP limit UI now conditionally shown based on service status
-* 🛠️ **CLI & Scripts**:
+  * NormalSub links now include external proxy configs
+* ⚙️ **Settings Page**
 
-  * Add unlimited IP option to user creation and editing
-  * Menu script now supports unlimited IP configuration
+  * Added management UI for extra subscription configs
+* 🖥️ **Webpanel API**
 
-#### 🔄 Improvements
+  * New API endpoints for managing extra configs
+* 🛠️ **CLI & Scripts**
 
-* 📜 **API**:
+  * CLI support for extra subscription configs
+  * New `extra_config.py` script to manage additional proxy configs:
 
-  * Updated user schemas to match CLI output and new unlimited IP feature
-* 🐛 **Fixes**:
-
-  * Corrected type hints for optional parameters in `config_ip_limiter`
-
-#### 📦 Dependency Updates
-
-* ⬆️ `anyio` → 4.10.0
-* ⬆️ `certbot` → 4.2.0
-* ⬆️ `charset-normalizer` → 3.4.3
+    * `vmess`, `vless`, `ss`, `trojan`

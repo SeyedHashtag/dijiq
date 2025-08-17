@@ -52,6 +52,11 @@
                                     IP Management</a>
                             </li>
                             <li class='nav-item'>
+                                <a class='nav-link' id='extra-config-tab' data-toggle='pill' href='#extra-config' role='tab'
+                                    aria-controls='extra-config' aria-selected='false'><i class="fas fa-plus-circle"></i>
+                                    Extra Configs</a>
+                            </li>
+                            <li class='nav-item'>
                                 <a class='nav-link' id='backup-tab' data-toggle='pill' href='#backup' role='tab'
                                     aria-controls='backup' aria-selected='false'><i class="fas fa-download"></i>
                                     Backup</a>
@@ -273,6 +278,53 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Extra Configs Tab -->
+                            <div class='tab-pane fade' id='extra-config' role='tabpanel' aria-labelledby='extra-config-tab'>
+                                <div class="card card-outline card-info">
+                                    <div class="card-header">
+                                        <h3 class="card-title">External Proxy Configurations for Subscriptions</h3>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>Add external proxy links (Vmess, Vless, SS, Trojan) to be included in all users' subscription links.</p>
+                                        <div class="table-responsive">
+                                            <table class="table table-bordered table-striped" id="extra_configs_table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>URI</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody></tbody>
+                                            </table>
+                                        </div>
+                                        <div id="no_extra_configs_message" class="alert alert-info" style="display: none;">
+                                            No external configurations have been added yet.
+                                        </div>
+                            
+                                        <hr>
+                                        <h5>Add New Configuration</h5>
+                                        <form id="add_extra_config_form" class="form-inline">
+                                            <div class="form-group mb-2 mr-sm-2">
+                                                <label for="extra_config_name" class="sr-only">Name</label>
+                                                <input type="text" class="form-control" id="extra_config_name" placeholder="e.g., My-Vmess-Link">
+                                                <div class="invalid-feedback">Please enter a unique name.</div>
+                                            </div>
+                                            <div class="form-group mb-2 mr-sm-2 flex-grow-1">
+                                                <label for="extra_config_uri" class="sr-only">URI</label>
+                                                <input type="text" class="form-control w-100" id="extra_config_uri" placeholder="vmess://...">
+                                                <div class="invalid-feedback">URI must start with vmess://, vless://, ss://, or trojan://.</div>
+                                            </div>
+                                            <button type="button" id="add_extra_config_btn" class="btn btn-success mb-2">
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                Add Config
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+
 
                             <!-- Backup Tab -->
                             <div class='tab-pane fade' id='backup' role='tabpanel' aria-labelledby='backup-tab'>
@@ -479,6 +531,27 @@
         fetchDecoyStatus();
         fetchObfsStatus();
         fetchNodes();
+        fetchExtraConfigs();
+
+        function escapeHtml(text) {
+          var map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+          };
+          if (text === null || typeof text === 'undefined') {
+            return '';
+          }
+          return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+        
+        function isValidURI(uri) {
+            if (!uri) return false;
+            const lowerUri = uri.toLowerCase();
+            return lowerUri.startsWith("vmess://") || lowerUri.startsWith("vless://") || lowerUri.startsWith("ss://") || lowerUri.startsWith("trojan://");
+        }
 
         function isValidPath(path) {
             if (!path) return false;
@@ -566,7 +639,16 @@
                         if (Array.isArray(detail)) {
                             errorMessage = detail.map(err => `Error in '${err.loc[1]}': ${err.msg}`).join('\n');
                         } else if (typeof detail === 'string') {
-                            errorMessage = detail;
+                            let userMessage = detail;
+                            const failMarker = 'failed with exit code';
+                            const markerIndex = detail.indexOf(failMarker);
+                            if (markerIndex > -1) {
+                                const colonIndex = detail.indexOf(':', markerIndex);
+                                if (colonIndex > -1) {
+                                    userMessage = detail.substring(colonIndex + 1).trim();
+                                }
+                            }
+                            errorMessage = userMessage;
                         }
                     }
                     Swal.fire("Error!", errorMessage, "error");
@@ -598,8 +680,10 @@
                     fieldValid = (input.val().trim() === '') ? true : isValidIPorDomain(input.val());
                 } else if (id === 'node_ip') {
                     fieldValid = isValidIPorDomain(input.val());
-                } else if (id === 'node_name') {
+                } else if (id === 'node_name' || id === 'extra_config_name') {
                     fieldValid = input.val().trim() !== "";
+                } else if (id === 'extra_config_uri') {
+                    fieldValid = isValidURI(input.val());
                 } else if (id === 'block_duration' || id === 'max_ips') {
                     fieldValid = isValidPositiveNumber(input.val());
                 } else if (id === 'decoy_path') {
@@ -691,10 +775,10 @@
                 $("#no_nodes_message").hide();
                 nodes.forEach(node => {
                     const row = `<tr>
-                                    <td>${node.name}</td>
-                                    <td>${node.ip}</td>
+                                    <td>${escapeHtml(node.name)}</td>
+                                    <td>${escapeHtml(node.ip)}</td>
                                     <td>
-                                        <button class="btn btn-xs btn-danger delete-node-btn" data-name="${node.name}">
+                                        <button class="btn btn-xs btn-danger delete-node-btn" data-name="${escapeHtml(node.name)}">
                                             <i class="fas fa-trash"></i> Delete
                                         </button>
                                     </td>
@@ -741,6 +825,84 @@
                     null,
                     false,
                     fetchNodes
+                );
+            });
+        }
+
+        function fetchExtraConfigs() {
+            $.ajax({
+                url: "{{ url_for('get_all_extra_configs') }}",
+                type: "GET",
+                success: function (configs) {
+                    renderExtraConfigs(configs);
+                },
+                error: function(xhr) {
+                    Swal.fire("Error!", "Failed to fetch extra configurations.", "error");
+                    console.error("Error fetching extra configs:", xhr.responseText);
+                }
+            });
+        }
+        
+        function renderExtraConfigs(configs) {
+            const tableBody = $("#extra_configs_table tbody");
+            tableBody.empty();
+        
+            if (configs && configs.length > 0) {
+                $("#extra_configs_table").show();
+                $("#no_extra_configs_message").hide();
+                configs.forEach(config => {
+                    const shortUri = config.uri.length > 50 ? config.uri.substring(0, 50) + '...' : config.uri;
+                    const row = `<tr>
+                                    <td>${escapeHtml(config.name)}</td>
+                                    <td title="${escapeHtml(config.uri)}">${escapeHtml(shortUri)}</td>
+                                    <td>
+                                        <button class="btn btn-xs btn-danger delete-extra-config-btn" data-name="${escapeHtml(config.name)}">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </td>
+                                </tr>`;
+                    tableBody.append(row);
+                });
+            } else {
+                $("#extra_configs_table").hide();
+                $("#no_extra_configs_message").show();
+            }
+        }
+        
+        function addExtraConfig() {
+            if (!validateForm('add_extra_config_form')) return;
+        
+            const name = $("#extra_config_name").val().trim();
+            const uri = $("#extra_config_uri").val().trim();
+        
+            confirmAction(`add the configuration '${name}'`, function () {
+                sendRequest(
+                    "{{ url_for('add_extra_config') }}",
+                    "POST",
+                    { name: name, uri: uri },
+                    `Configuration '${name}' added successfully!`,
+                    "#add_extra_config_btn",
+                    false,
+                    function() {
+                        $("#extra_config_name").val('');
+                        $("#extra_config_uri").val('');
+                        $("#add_extra_config_form .form-control").removeClass('is-invalid');
+                        fetchExtraConfigs();
+                    }
+                );
+            });
+        }
+        
+        function deleteExtraConfig(configName) {
+             confirmAction(`delete the configuration '${configName}'`, function () {
+                sendRequest(
+                    "{{ url_for('delete_extra_config') }}",
+                    "POST",
+                    { name: configName },
+                    `Configuration '${configName}' deleted successfully!`,
+                    null,
+                    false,
+                    fetchExtraConfigs
                 );
             });
         }
@@ -1339,6 +1501,11 @@
             const nodeName = $(this).data("name");
             deleteNode(nodeName);
         });
+        $("#add_extra_config_btn").on("click", addExtraConfig);
+        $("#extra_configs_table").on("click", ".delete-extra-config-btn", function() {
+            const configName = $(this).data("name");
+            deleteExtraConfig(configName);
+        });
 
         $('#normal_domain, #sni_domain, #decoy_domain').on('input', function () {
             if (isValidDomain($(this).val())) {
@@ -1381,10 +1548,18 @@
             }
         });
         
-        $('#node_name').on('input', function() {
+        $('#node_name, #extra_config_name').on('input', function() {
             if ($(this).val().trim() !== "") {
                 $(this).removeClass('is-invalid');
             } else {
+                $(this).addClass('is-invalid');
+            }
+        });
+
+        $('#extra_config_uri').on('input', function () {
+            if (isValidURI($(this).val())) {
+                $(this).removeClass('is-invalid');
+            } else if ($(this).val().trim() !== "") {
                 $(this).addClass('is-invalid');
             }
         });
