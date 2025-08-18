@@ -95,7 +95,7 @@ def get_online_user_count(secret: str) -> int:
             secret=secret
         )
         online_users = client.get_online_clients()
-        return sum(1 for user in online_users.values() if user.is_online)
+        return sum(user.connections for user in online_users.values() if user.is_online)
     except Exception as e:
         print(f"Error getting online users: {e}", file=sys.stderr)
         return 0
