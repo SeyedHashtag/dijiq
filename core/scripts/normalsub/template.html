@@ -11,6 +11,7 @@
         :root {
             --primary-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
             --secondary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            --danger-color: #ef4444;
             --card-bg-light: #ffffff;
             --card-bg-dark: #1f2937;
             --text-light: #1f2937;
@@ -187,6 +188,10 @@
             align-items: center;
             gap: 0.75rem;
         }
+        
+        .qr-header.blocked {
+             background: var(--danger-color);
+        }
 
         .qr-content {
             padding: 2rem;
@@ -213,8 +218,16 @@
             margin-bottom: 1rem;
         }
 
+        .qr-title.blocked {
+            color: var(--danger-color);
+        }
+
         .dark-mode .qr-title {
             color: #818cf8;
+        }
+        
+        .dark-mode .qr-title.blocked {
+            color: #f87171;
         }
 
         .qrcode {
@@ -361,12 +374,18 @@
         </div>
         
         <div class="qr-section">
-            <div class="qr-header">
+            <div class="qr-header {% if blocked %}blocked{% endif %}">
                 <i class="fas fa-link"></i>
                 Subscription Link
             </div>
              <div class="qr-content">
                 <div class="qr-grid">
+                    {% if blocked %}
+                    <div class="qr-item" style="grid-column: 1 / -1;">
+                        <h3 class="qr-title blocked">Account Suspended</h3>
+                        <p class="card-text">Your subscription link is disabled. Please contact support.</p>
+                    </div>
+                    {% else %}
                     <div class="qr-item" style="grid-column: 1 / -1;">
                         <h3 class="qr-title">Universal Subscription Link</h3>
                         <img src="{{ sublink_qrcode }}" alt="Subscription QR Code" class="qrcode">
@@ -376,37 +395,51 @@
                             </button>
                         </div>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <div class="qr-section">
-            <div class="qr-header">
+            <div class="qr-header {% if blocked %}blocked{% endif %}">
                 <i class="fas fa-server"></i>
-                Local Server Connections
+                 {% if blocked %}
+                    Connection Status
+                {% else %}
+                    Local Server Connections
+                {% endif %}
             </div>
             <div class="qr-content">
                 <div class="qr-grid">
-                    {% for item in local_uris %}
-                    <div class="qr-item">
-                        <h3 class="qr-title">{{ item.label }} URI</h3>
-                        {% if item.qrcode %}
-                        <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
-                        <div class="btn-group">
-                            <button class="btn btn-primary" onclick="copyToClipboard('{{ item.uri }}')">
-                                <i class="fas fa-copy"></i> Copy
-                            </button>
+                     {% if blocked %}
+                        {% for item in local_uris %}
+                        <div class="qr-item" style="grid-column: 1 / -1;">
+                             <h3 class="qr-title blocked">{{ item.label }}</h3>
+                             <p class="card-text">{{ usage_raw }}</p>
                         </div>
-                        {% else %}
-                        <p class="uri-unavailable">{{ item.label }} URI not available</p>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+                    {% else %}
+                        {% for item in local_uris %}
+                        <div class="qr-item">
+                            <h3 class="qr-title">{{ item.label }} URI</h3>
+                            {% if item.qrcode %}
+                            <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
+                            <div class="btn-group">
+                                <button class="btn btn-primary" onclick="copyToClipboard('{{ item.uri }}')">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            {% else %}
+                            <p class="uri-unavailable">{{ item.label }} URI not available</p>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
         </div>
 
-        {% if node_uris %}
+        {% if node_uris and not blocked %}
         <div class="qr-section">
             <div class="qr-header">
                 <i class="fas fa-globe-americas"></i>

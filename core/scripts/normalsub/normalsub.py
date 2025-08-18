@@ -124,6 +124,7 @@ class TemplateContext:
     expiration_date: str
     sublink_qrcode: str
     sub_link: str
+    blocked: bool = False
     local_uris: List[NodeURI] = field(default_factory=list)
     node_uris: List[NodeURI] = field(default_factory=list)
 
@@ -558,7 +559,7 @@ class HysteriaServer:
                 return web.Response(status=404, text=f"User '{username}' details not found.")
 
             if user_info.blocked:
-                return await self._handle_blocked_user(request)
+                return await self._handle_blocked_user(request, user_info)
 
             user_agent = request.headers.get('User-Agent', '').lower()
             if any(browser in user_agent for browser in ['chrome', 'firefox', 'safari', 'edge', 'opera']):
@@ -573,12 +574,12 @@ class HysteriaServer:
             print(f"Internal Server Error: {e}")
             return web.Response(status=500, text="Error: Internal server error")
 
-    async def _handle_blocked_user(self, request: web.Request) -> web.Response:
+    async def _handle_blocked_user(self, request: web.Request, user_info: UserInfo) -> web.Response:
         fake_uri = "hysteria2://x@end.com:443?sni=support.me#⛔Account-Expired⚠️"
         user_agent = request.headers.get('User-Agent', '').lower()
 
         if any(browser in user_agent for browser in ['chrome', 'firefox', 'safari', 'edge', 'opera']):
-            context = self._get_blocked_template_context(fake_uri)
+            context = self._get_blocked_template_context(fake_uri, user_info)
             return web.Response(text=self.template_renderer.render(context), content_type='text/html')
 
         fragment = request.query.get('fragment', '')
@@ -588,19 +589,20 @@ class HysteriaServer:
         
         return web.Response(text=fake_uri, content_type='text/plain')
 
-    def _get_blocked_template_context(self, fake_uri: str) -> TemplateContext:
+    def _get_blocked_template_context(self, fake_uri: str, user_info: UserInfo) -> TemplateContext:
         return TemplateContext(
-            username="blocked",
-            usage="N/A",
+            username=user_info.username,
+            usage=user_info.usage_human_readable,
             usage_raw="This account has been suspended.",
-            expiration_date="N/A",
-            sublink_qrcode=Utils.generate_qrcode_base64("blocked"),
+            expiration_date=user_info.expiration_date,
+            sublink_qrcode="",
             sub_link="#blocked",
+            blocked=True,
             local_uris=[
                 NodeURI(
                     label="Blocked",
                     uri=fake_uri,
-                    qrcode=Utils.generate_qrcode_base64(fake_uri)
+                    qrcode=None
                 )
             ],
             node_uris=[]
@@ -656,6 +658,7 @@ class HysteriaServer:
             expiration_date=user_info.expiration_date,
             sublink_qrcode=sublink_qrcode,
             sub_link=sub_link,
+            blocked=user_info.blocked,
             local_uris=local_uris,
             node_uris=node_uris
         )
