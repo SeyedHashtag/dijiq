@@ -5,7 +5,7 @@ from utils.command import bot
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
 from utils.payments import CryptomusPayment
-from utils.payment_records import add_payment_record, update_payment_status, get_payment_record
+from utils.payment_records import add_payment_record, update_payment_status, get_payment_record, load_payments
 from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
@@ -117,6 +117,9 @@ def handle_confirm_purchase(call):
                 payment_data = payment_response.get('result', {})
                 payment_id = payment_data.get('uuid')
                 payment_url = payment_data.get('url')
+                # The gateway echoes back the order_id we sent when creating the invoice.
+                # Store it so webhook callbacks that send order_id can be matched to our records.
+                gateway_order_id = payment_data.get('order_id')
                 
                 if not payment_id or not payment_url:
                     bot.edit_message_text(
@@ -133,6 +136,8 @@ def handle_confirm_purchase(call):
                     'price': plan['price'],
                     'days': plan['days'],
                     'payment_id': payment_id,
+                    # gateway_order_id holds the order_id we generated and passed to the gateway
+                    'order_id': gateway_order_id,
                     'status': 'pending'
                 }
                 add_payment_record(payment_id, payment_record)
@@ -201,9 +206,10 @@ def handle_check_payment(call):
         return
     
     payment_status_data = payment_status_response.get('result', {})
-    status = payment_status_data.get('status')
+    # Support different field names returned by the gateway
+    status = payment_status_data.get('status') or payment_status_data.get('payment_status') or payment_status_data.get('paymentStatus')
     
-    if status == 'paid':
+    if status and status.lower() == 'paid':
         user_id = payment_record.get('user_id')
         plan_gb = payment_record.get('plan_gb')
         days = payment_record.get('days')
@@ -254,71 +260,97 @@ def handle_check_payment(call):
                 f"✅ Payment completed but error creating account. Please contact support.",
                 parse_mode="Markdown"
             )
-    elif status == 'pending':
+    elif status and status.lower() == 'pending':
         bot.answer_callback_query(call.id, text="Payment is still pending. Please complete the payment.")
     else:
-        bot.answer_callback_query(call.id, text=f"Payment status: {status}")
+        # If we didn't get a clear status, include some debug info for easier troubleshooting
+        bot.answer_callback_query(call.id, text=f"Payment status: {status or 'unknown'}")
+        try:
+            # Optionally log raw response to payments file for debugging (non-blocking)
+            import logging
+            logging.getLogger('dijiq.payments').debug(f"Check payment response for {payment_id}: {payment_status_response}")
+        except Exception:
+            pass
 
 # Webhook handler to process payment callbacks (implement if your payment gateway supports webhooks)
 def process_payment_webhook(request_data):
     try:
         # This function would be called by your webhook endpoint
-        payment_id = request_data.get('order_id')
-        status = request_data.get('status')
-        
-        if payment_id and status == 'paid':
-            payment_record = get_payment_record(payment_id)
+        # Webhook payloads may include either 'uuid' (gateway invoice uuid) or 'order_id'
+        status = request_data.get('status') or request_data.get('payment_status') or request_data.get('paymentStatus')
+
+        # Resolve the internal payment record key (we store records keyed by gateway uuid)
+        payments = load_payments()
+        record_key = None
+
+        # If gateway provided uuid, use it directly
+        if request_data.get('uuid'):
+            record_key = request_data.get('uuid')
+        # If only order_id provided, try to find matching record by stored order_id or payment_id
+        elif request_data.get('order_id'):
+            incoming_order = request_data.get('order_id')
+            for k, v in payments.items():
+                if v.get('order_id') == incoming_order or v.get('payment_id') == incoming_order:
+                    record_key = k
+                    break
+
+        if not record_key:
+            # Could not resolve payment record
+            return False
+
+        if status and status.lower() == 'paid':
+            payment_record = get_payment_record(record_key)
             if payment_record and payment_record.get('status') != 'completed':
                 # Process the payment as complete
                 user_id = payment_record.get('user_id')
                 plan_gb = payment_record.get('plan_gb')
                 days = payment_record.get('days')
-                
+
                 # Create a username based on user ID and current timestamp
                 username = create_username_from_user_id(user_id)
-                
+
                 # Use APIClient to create a user
                 api_client = APIClient()
                 result = api_client.add_user(username, int(plan_gb), int(days))
-                
+
                 if result:
                     # Get subscription URL
                     sub_url = api_client.get_subscription_url(username)
-                    
-                    # Update payment status
-                    update_payment_status(payment_id, 'completed')
-                    
+
+                    # Update payment status using the internal record key
+                    update_payment_status(record_key, 'completed')
+
                     # Format the message with available links
                     success_message = (
                         f"✅ Payment completed!\n\n"
                         f"📊 Your {plan_gb}GB plan is ready.\n"
                         f"📱 Username: `{username}`\n\n"
                     )
-                    
+
                     if sub_url:
                         success_message += f"Subscription URL: `{sub_url}`\n\n"
                         success_message += "Please save this information for your records."
-                    
+
                     # Send the success message to user
                     bot.send_message(
                         user_id,
                         success_message,
                         parse_mode="Markdown"
                     )
-                    
+
                     # If subscription URL is available, send it as a QR code
                     if sub_url:
                         qr = qrcode.make(sub_url)
                         bio = io.BytesIO()
                         qr.save(bio, 'PNG')
                         bio.seek(0)
-                        
+
                         bot.send_photo(
                             user_id,
                             photo=bio,
                             caption="Scan this QR code to configure your VPN client."
                         )
-                    
+
                     return True
                 else:
                     # Send error message to user
@@ -328,6 +360,8 @@ def process_payment_webhook(request_data):
                         parse_mode="Markdown"
                     )
                     return False
+
+        return False
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
         return False

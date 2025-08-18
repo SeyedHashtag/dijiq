@@ -1,7 +1,6 @@
 import base64
 import json
 import uuid
-import re
 from hashlib import md5
 import requests
 import os
@@ -9,39 +8,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 class CryptomusPayment:
     def __init__(self):
-        # support both HELEKET and legacy CRYPTOMUS env names
-        self.merchant_id = os.getenv('HELEKET_MERCHANT_ID')
-        self.payment_api_key = os.getenv('HELEKET_API_KEY')
+        self.merchant_id = os.getenv('CRYPTOMUS_MERCHANT_ID')
+        self.payment_api_key = os.getenv('CRYPTOMUS_API_KEY')
         self.base_url = "https://api.heleket.com/v1/payment"
 
     def _check_credentials(self):
-        return bool(self.merchant_id and self.payment_api_key)
+        if not self.merchant_id or not self.payment_api_key:
+            return False
+        return True
 
     def _generate_sign(self, payload):
-        # Use deterministic JSON encoding for consistent signatures
-        json_str = json.dumps(payload, separators=(',', ':'), sort_keys=True)
-        encoded_data = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
+        encoded_data = base64.b64encode(
+            json.dumps(payload).encode("utf-8")
+        ).decode("utf-8")
         return md5(f"{encoded_data}{self.payment_api_key}".encode("utf-8")).hexdigest()
 
-    def create_payment(self, amount, plan_gb, user_id, currency="USD", network=None, to_currency=None, url_return=None, url_success=None, url_callback=None, is_payment_multiple=True, lifetime=3600, additional_data=None, subtract=None, accuracy_payment_percent=None, currencies=None, except_currencies=None, course_source=None, from_referral_code=None, discount_percent=None, is_refresh=False, order_id=None):
+    def create_payment(self, amount, plan_gb, user_id, currency="USD", network=None, to_currency=None, url_return=None, url_success=None, url_callback=None, is_payment_multiple=False, lifetime=3600, additional_data=None, subtract=None, accuracy_payment_percent=None, currencies=None, except_currencies=None, course_source=None, from_referral_code=None, discount_percent=None, is_refresh=False):
         if not self._check_credentials():
             return {"error": "Payment credentials not configured"}
 
-        # If merchant supplies an order_id, validate it; otherwise generate one
-        if order_id:
-            if not (1 <= len(order_id) <= 128) or not re.match(r'^[A-Za-z0-9_-]+$', order_id):
-                return {"error": "order_id must be 1-128 chars and contain only letters, numbers, underscores or dashes"}
-            payment_order_id = order_id
-        else:
-            payment_order_id = str(uuid.uuid4())
-
+        payment_id = str(uuid.uuid4())
         payload = {
             "amount": str(amount),
             "currency": currency,
-            "order_id": payment_order_id,
+            "order_id": payment_id,
             "is_payment_multiple": is_payment_multiple,
             "lifetime": lifetime
         }
@@ -75,10 +67,9 @@ class CryptomusPayment:
         # Additional data
         if additional_data is None:
             additional_data = {}
-        # include some internal metadata in additional_data (string, max 255 chars)
         additional_data.update({
             "plan_gb": plan_gb,
-            "payment_id": payment_order_id,
+            "payment_id": payment_id,
             "user_id": user_id
         })
         payload["additional_data"] = json.dumps(additional_data)
@@ -86,19 +77,18 @@ class CryptomusPayment:
         try:
             headers = {
                 "merchant": self.merchant_id,
-                "sign": self._generate_sign(payload),
-                "Content-Type": "application/json"
+                "sign": self._generate_sign(payload)
             }
 
-            response = requests.post(self.base_url, json=payload, headers=headers)
+            response = requests.post(
+                self.base_url,  # Fixed endpoint
+                json=payload,
+                headers=headers
+            )
 
-            # treat any 2xx as success, attempt to return structured JSON on errors too
-            if response.ok:
+            if response.status_code == 200:
                 return response.json()
-            try:
-                return response.json()
-            except Exception:
-                return {"error": f"API Error: {response.text}"}
+            return {"error": f"API Error: {response.text}"}
         except Exception as e:
             return {"error": f"Request Error: {str(e)}"}
 
@@ -106,23 +96,29 @@ class CryptomusPayment:
         if not self._check_credentials():
             return {"error": "Payment credentials not configured"}
 
-        payload = {"uuid": payment_id}
+        payload = {
+            "uuid": payment_id
+        }
 
         try:
             headers = {
                 "merchant": self.merchant_id,
-                "sign": self._generate_sign(payload),
-                "Content-Type": "application/json"
+                "sign": self._generate_sign(payload)
             }
 
-            # fix duplicate 'payment' segment: /v1/payment/info
-            response = requests.post(f"{self.base_url}/info", json=payload, headers=headers)
+            # The base_url already contains the /payment segment (https://api.heleket.com/v1/payment)
+            # the info endpoint is exposed as /info, so call {base_url}/info
+            info_url = f"{self.base_url}/info"
 
-            if response.ok:
+            response = requests.post(
+                info_url,
+                json=payload,
+                headers=headers
+            )
+
+            # Return full response for easier debugging when not 200
+            if response.status_code == 200:
                 return response.json()
-            try:
-                return response.json()
-            except Exception:
-                return {"error": f"API Error: {response.text}"}
+            return {"error": f"API Error: {response.status_code} - {response.text}", "status_code": response.status_code}
         except Exception as e:
             return {"error": f"Request Error: {str(e)}"}
