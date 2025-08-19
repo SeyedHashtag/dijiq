@@ -11,7 +11,7 @@ async def server_status_api():
     Retrieve the server status.
 
     This endpoint provides information about the current server status,
-    including CPU usage, RAM usage, online users, and traffic statistics.
+    including uptime, CPU usage, RAM usage, online users, and traffic statistics.
 
     Returns:
         ServerStatusResponse: A response model containing server status details.
@@ -30,7 +30,6 @@ async def server_status_api():
 
 
 def __parse_server_status(server_info: str) -> ServerStatusResponse:
-    # Initial data with default values
     """
     Parse the server information provided by cli_api.server_info()
     and return a ServerStatusResponse instance.
@@ -45,57 +44,87 @@ def __parse_server_status(server_info: str) -> ServerStatusResponse:
         ValueError: If the server information is invalid or incomplete.
     """
     data = {
+        'uptime': 'N/A',
+        'boot_time': 'N/A',
         'cpu_usage': '0%',
         'total_ram': '0MB',
         'ram_usage': '0MB',
         'online_users': 0,
-        'uploaded_traffic': '0KB',
-        'downloaded_traffic': '0KB',
-        'total_traffic': '0KB'
+        'upload_speed': '0 B/s',
+        'download_speed': '0 B/s',
+        'tcp_connections': 0,
+        'udp_connections': 0,
+        'reboot_uploaded_traffic': '0 B',
+        'reboot_downloaded_traffic': '0 B',
+        'reboot_total_traffic': '0 B',
+        'user_uploaded_traffic': '0 B',
+        'user_downloaded_traffic': '0 B',
+        'user_total_traffic': '0 B'
     }
 
-    # Example output(server_info) from cli_api.server_info():
-    # 📈 CPU Usage: 9.4%
-    # 📋 Total RAM: 3815MB
-    # 💻 Used RAM: 2007MB
-    # 👥 Online Users: 0
-    #
-    # 🔼 Uploaded Traffic: 0 KB
-    # 🔽 Downloaded Traffic: 0 KB
-    # 📊 Total Traffic: 0 KB
+    current_section = 'general'
 
     for line in server_info.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        if 'Traffic Since Last Reboot' in line:
+            current_section = 'reboot'
+            continue
+        elif 'User Traffic (All Time)' in line:
+            current_section = 'user'
+            continue
+            
         key, _, value = line.partition(":")
         key = key.strip().lower()
         value = value.strip()
 
         if not key or not value:
-            continue  # Skip empty or malformed lines
-
+            continue
+        
         try:
-            if 'cpu usage' in key:
+            if 'uptime' in key:
+                uptime_part, _, boottime_part = value.partition('(')
+                data['uptime'] = uptime_part.strip()
+                data['boot_time'] = boottime_part.replace('since ', '').replace(')', '').strip()
+            elif 'cpu usage' in key:
                 data['cpu_usage'] = value
-            elif 'total ram' in key:
-                data['total_ram'] = value
             elif 'used ram' in key:
-                data['ram_usage'] = value
+                parts = value.split('/')
+                if len(parts) == 2:
+                    data['ram_usage'] = parts[0].strip()
+                    data['total_ram'] = parts[1].strip()
             elif 'online users' in key:
                 data['online_users'] = int(value)
-            elif 'uploaded traffic' in key:
-                value = value.replace(' ', '')
-                data['uploaded_traffic'] = value
-            elif "downloaded traffic" in key:
-                value = value.replace(' ', '')
-                data['downloaded_traffic'] = value
-            elif 'total traffic' in key:
-                value = value.replace(' ', '')
-                data["total_traffic"] = value
-        except ValueError as e:
+            elif 'upload speed' in key:
+                data['upload_speed'] = value
+            elif 'download speed' in key:
+                data['download_speed'] = value
+            elif 'tcp connections' in key:
+                data['tcp_connections'] = int(value)
+            elif 'udp connections' in key:
+                data['udp_connections'] = int(value)
+            elif 'total uploaded' in key or 'uploaded traffic' in key:
+                if current_section == 'reboot':
+                    data['reboot_uploaded_traffic'] = value
+                elif current_section == 'user':
+                    data['user_uploaded_traffic'] = value
+            elif 'total downloaded' in key or 'downloaded traffic' in key:
+                if current_section == 'reboot':
+                    data['reboot_downloaded_traffic'] = value
+                elif current_section == 'user':
+                    data['user_downloaded_traffic'] = value
+            elif 'combined traffic' in key or 'total traffic' in key:
+                if current_section == 'reboot':
+                    data['reboot_total_traffic'] = value
+                elif current_section == 'user':
+                    data['user_total_traffic'] = value
+        except (ValueError, IndexError) as e:
             raise ValueError(f'Error parsing line \'{line}\': {e}')
 
-    # Validate required fields
     try:
-        return ServerStatusResponse(**data)  # type: ignore
+        return ServerStatusResponse(**data)
     except Exception as e:
         raise ValueError(f'Invalid or incomplete server info: {e}')
 
@@ -141,8 +170,6 @@ def __parse_services_status(services_status: dict[str, bool]) -> ServerServicesS
             parsed_services_status['hysteria_telegram_bot'] = status
         elif 'hysteria-normal-sub' in service:
             parsed_services_status['hysteria_normal_sub'] = status
-        # elif 'hysteria-singbox' in service:
-        #     parsed_services_status['hysteria_singbox'] = status
         elif 'wg-quick' in service:
             parsed_services_status['hysteria_warp'] = status
     return ServerServicesStatusResponse(**parsed_services_status)
