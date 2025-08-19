@@ -1,22 +1,19 @@
-# [1.15.0] - 2025-08-17
+# [1.16.0] - 2025-08-19
 
 #### ✨ New Features
 
-* 🚫 **Blocked User Check**
+* 📊 **Dashboard Redesign**
 
-  * Subscription endpoint now validates blocked users and prevents access
-* 🌐 **External Configs in Subscriptions**
+  * Modernized UI with detailed server stats
+* 🖥️ **Server API Enhancements**
 
-  * NormalSub links now include external proxy configs
-* ⚙️ **Settings Page**
+  * Added uptime and traffic-since-reboot metrics
+* ⚡ **System Monitor Optimization**
 
-  * Added management UI for extra subscription configs
-* 🖥️ **Webpanel API**
+  * Improved performance with async I/O
+  * Accurate traffic tracking since reboot
 
-  * New API endpoints for managing extra configs
-* 🛠️ **CLI & Scripts**
+#### 🐛 Fixes
 
-  * CLI support for extra subscription configs
-  * New `extra_config.py` script to manage additional proxy configs:
-
-    * `vmess`, `vless`, `ss`, `trojan`
+* 🔧 Correctly count **actual device connections** instead of unique users
+* 🔥 Fixed subscription blocked page to display the right user data
