@@ -31,6 +31,11 @@
                         </button>
                     </div>
                     <div class="mr-2 mb-2">
+                        <button type="button" class="btn btn-sm btn-info filter-button" data-filter="online">
+                            <i class="fas fa-wifi"></i> Online
+                        </button>
+                    </div>
+                    <div class="mr-2 mb-2">
                         <button type="button" class="btn btn-sm btn-success filter-button" data-filter="enable">
                             <i class="fas fa-check"></i> Enable
                         </button>
@@ -317,6 +322,9 @@
                         break;
                     case "not-active":
                         showRow = $(this).find("td:eq(2) i").hasClass("text-danger");
+                        break;
+                    case "online":
+                        showRow = $(this).find("td:eq(2) i").hasClass("text-success");
                         break;
                     case "enable":
                         showRow = $(this).find("td:eq(7) i").hasClass("text-success");
