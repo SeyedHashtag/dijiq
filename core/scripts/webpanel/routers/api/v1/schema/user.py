@@ -1,5 +1,6 @@
+import re
 from typing import Optional, List
-from pydantic import BaseModel, RootModel, Field
+from pydantic import BaseModel, RootModel, Field, field_validator
 
 
 class UserInfoResponse(BaseModel):
@@ -26,6 +27,27 @@ class AddUserInputBody(BaseModel):
     creation_date: Optional[str] = None
     unlimited: bool = False
 
+    @field_validator('username')
+    def validate_username(cls, v):
+        if not re.match(r"^[a-zA-Z0-9_]+$", v):
+            raise ValueError('Username can only contain letters, numbers, and underscores.')
+        return v
+
+
+class AddBulkUsersInputBody(BaseModel):
+    traffic_gb: float
+    expiration_days: int
+    count: int
+    prefix: str
+    start_number: int = 1
+    unlimited: bool = False
+
+    @field_validator('prefix')
+    def validate_prefix(cls, v):
+        if not re.match(r"^[a-zA-Z0-9_]*$", v):
+            raise ValueError('Prefix can only contain letters, numbers, and underscores.')
+        return v
+
 
 class EditUserInputBody(BaseModel):
     new_username: Optional[str] = None
@@ -35,6 +57,12 @@ class EditUserInputBody(BaseModel):
     renew_creation_date: bool = False
     blocked: Optional[bool] = None
     unlimited_ip: Optional[bool] = None
+
+    @field_validator('new_username')
+    def validate_new_username(cls, v):
+        if v and not re.match(r"^[a-zA-Z0-9_]+$", v):
+            raise ValueError('Username can only contain letters, numbers, and underscores.')
+        return v
 
 class NodeUri(BaseModel):
     name: str
