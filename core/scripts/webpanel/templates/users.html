@@ -160,8 +160,7 @@
 
 
 <!-- Add User Modal -->
-<div class="modal fade" id="addUserModal" tabindex="-1" role="dialog" aria-labelledby="addUserModalLabel"
-    aria-hidden="true">
+<div class="modal fade" id="addUserModal" tabindex="-1" role="dialog" aria-labelledby="addUserModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -171,31 +170,77 @@
                 </button>
             </div>
             <div class="modal-body">
-                <form id="addUserForm">
-                    <div class="form-group">
-                        <label for="addUsername">Username</label>
-                        <input type="text" class="form-control" id="addUsername" name="username" required>
-                        <small class="form-text text-danger" id="addUsernameError"></small>
+                <ul class="nav nav-tabs" id="addUserTab" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="single-user-tab" data-toggle="tab" href="#single-user" role="tab" aria-controls="single-user" aria-selected="true">Add User</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="bulk-users-tab" data-toggle="tab" href="#bulk-users" role="tab" aria-controls="bulk-users" aria-selected="false">Bulk Add</a>
+                    </li>
+                </ul>
+                <div class="tab-content" id="addUserTabContent">
+                    <div class="tab-pane fade show active" id="single-user" role="tabpanel" aria-labelledby="single-user-tab">
+                        <form id="addUserForm" class="mt-3">
+                            <div class="form-group">
+                                <label for="addUsername">Username</label>
+                                <input type="text" class="form-control" id="addUsername" name="username" required>
+                                <small class="form-text text-danger" id="addUsernameError"></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="addTrafficLimit">Traffic Limit (GB)</label>
+                                <input type="number" class="form-control" id="addTrafficLimit" name="traffic_limit" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="addExpirationDays">Expiration Days</label>
+                                <input type="number" class="form-control" id="addExpirationDays" name="expiration_days" required>
+                            </div>
+                            <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
+                                <input type="checkbox" class="form-check-input" id="addUnlimited" name="unlimited">
+                                <label class="form-check-label" for="addUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="addSubmitButton">Add User</button>
+                        </form>
                     </div>
-                    <div class="form-group">
-                        <label for="addTrafficLimit">Traffic Limit (GB)</label>
-                        <input type="number" class="form-control" id="addTrafficLimit" name="traffic_limit" required>
+                    <div class="tab-pane fade" id="bulk-users" role="tabpanel" aria-labelledby="bulk-users-tab">
+                        <form id="addBulkUsersForm" class="mt-3">
+                            <div class="form-group">
+                                <label for="addBulkPrefix">Username Prefix</label>
+                                <input type="text" class="form-control" id="addBulkPrefix" name="prefix" required>
+                                <small class="form-text text-danger" id="addBulkPrefixError"></small>
+                            </div>
+                             <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label for="addBulkCount">Number of Users</label>
+                                    <input type="number" class="form-control" id="addBulkCount" name="count" value="10" required>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label for="addBulkStartNumber">Start Number</label>
+                                    <input type="number" class="form-control" id="addBulkStartNumber" name="start_number" value="1" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group col-md-6">
+                                    <label for="addBulkTrafficLimit">Traffic Limit (GB)</label>
+                                    <input type="number" class="form-control" id="addBulkTrafficLimit" name="traffic_gb" required>
+                                </div>
+                                <div class="form-group col-md-6">
+                                    <label for="addBulkExpirationDays">Expiration Days</label>
+                                    <input type="number" class="form-control" id="addBulkExpirationDays" name="expiration_days" required>
+                                </div>
+                            </div>
+                            <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
+                                <input type="checkbox" class="form-check-input" id="addBulkUnlimited" name="unlimited">
+                                <label class="form-check-label" for="addBulkUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="addBulkSubmitButton">Add Bulk Users</button>
+                        </form>
                     </div>
-                    <div class="form-group">
-                        <label for="addExpirationDays">Expiration Days</label>
-                        <input type="number" class="form-control" id="addExpirationDays" name="expiration_days"
-                            required>
-                    </div>
-                    <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
-                        <input type="checkbox" class="form-check-input" id="addUnlimited" name="unlimited">
-                        <label class="form-check-label" for="addUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
-                    </div>
-                    <button type="submit" class="btn btn-primary" id="addSubmitButton">Add User</button>
-                </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
 <!-- Edit User Modal -->
 <div class="modal fade" id="editUserModal" tabindex="-1" role="dialog" aria-labelledby="editUserModalLabel"
     aria-hidden="true">
@@ -277,14 +322,18 @@
 
         checkIpLimitServiceStatus();
 
-        const usernameRegex = /^[a-zA-Z0-9]+$/;
+        const usernameRegex = /^[a-zA-Z0-9_]+$/;
 
         function validateUsername(username, errorElementId) {
-            const isValid = usernameRegex.test(username);
             const errorElement = $("#" + errorElementId);
+            if (!username) {
+                errorElement.text("");
+                return false;
+            }
+            const isValid = usernameRegex.test(username);
 
             if (!isValid) {
-                errorElement.text("Usernames can only contain letters and numbers.");
+                errorElement.text("Usernames can only contain letters, numbers, and underscores.");
                 return false;
             } else {
                 errorElement.text("");
@@ -297,17 +346,21 @@
         $("#addUsername").on("input", function () {
             const username = $(this).val();
             const isValid = validateUsername(username, "addUsernameError");
-            $("#addUserForm button[type='submit']").prop("disabled", !isValid);
             $("#addSubmitButton").prop("disabled", !isValid);
+        });
+        
+        $("#addBulkPrefix").on("input", function () {
+            const prefix = $(this).val();
+            const isValid = validateUsername(prefix, "addBulkPrefixError");
+            $("#addBulkSubmitButton").prop("disabled", !isValid);
         });
 
         $("#editUsername").on("input", function () {
             const username = $(this).val();
             const isValid = validateUsername(username, "editUsernameError");
-            $("#editUserForm button[type='submit']").prop("disabled", !isValid);
             $("#editSubmitButton").prop("disabled", !isValid);
         });
-
+        
         $(".filter-button").on("click", function () {
             const filter = $(this).data("filter");
 
@@ -462,6 +515,54 @@
                         confirmButtonText: "OK",
                     });
                     $("#addSubmitButton").prop("disabled", false);
+                }
+            });
+        });
+        
+        $("#addBulkUsersForm").on("submit", function(e) {
+            e.preventDefault();
+            if (!validateUsername($("#addBulkPrefix").val(), "addBulkPrefixError")) {
+                $("#addBulkSubmitButton").prop("disabled", true);
+                return;
+            }
+            $("#addBulkSubmitButton").prop("disabled", true);
+        
+            const jsonData = {
+                prefix: $("#addBulkPrefix").val(),
+                count: parseInt($("#addBulkCount").val()),
+                start_number: parseInt($("#addBulkStartNumber").val()),
+                traffic_gb: parseFloat($("#addBulkTrafficLimit").val()),
+                expiration_days: parseInt($("#addBulkExpirationDays").val()),
+                unlimited: $("#addBulkUnlimited").is(":checked")
+            };
+        
+            $.ajax({
+                url: "{{ url_for('add_bulk_users_api') }}",
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify(jsonData),
+                success: function(response) {
+                    Swal.fire({
+                        title: "Success!",
+                        text: response.detail || "Bulk user creation started successfully!",
+                        icon: "success",
+                        confirmButtonText: "OK",
+                    }).then(() => {
+                        location.reload();
+                    });
+                },
+                error: function(jqXHR) {
+                    let errorMessage = "An error occurred during bulk user creation.";
+                    if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
+                        errorMessage = jqXHR.responseJSON.detail;
+                    }
+                    Swal.fire({
+                        title: "Error!",
+                        text: errorMessage,
+                        icon: "error",
+                        confirmButtonText: "OK",
+                    });
+                    $("#addBulkSubmitButton").prop("disabled", false);
                 }
             });
         });
@@ -795,10 +896,17 @@
 
         $('#addUserModal').on('show.bs.modal', function (event) {
             $('#addUserForm')[0].reset();
+            $('#addBulkUsersForm')[0].reset();
             $('#addUsernameError').text('');
+            $('#addBulkPrefixError').text('');
             $('#addTrafficLimit').val('30');
             $('#addExpirationDays').val('30');
+            $('#addBulkTrafficLimit').val('30');
+            $('#addBulkExpirationDays').val('30');
+            $('#addBulkStartNumber').val('1');
             $('#addSubmitButton').prop('disabled', true);
+            $('#addBulkSubmitButton').prop('disabled', true);
+            $('#addUserModal a[data-toggle="tab"]').first().tab('show');
         });
 
         $("#searchButton").on("click", filterUsers);
