@@ -138,6 +138,20 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
     except Exception as e:
         click.echo(f'{e}', err=True)
 
+@cli.command('bulk-user-add')
+@click.option('--traffic-gb', '-t', required=True, help='Traffic limit for each user in GB.', type=float)
+@click.option('--expiration-days', '-e', required=True, help='Expiration duration for each user in days.', type=int)
+@click.option('--count', '-c', required=True, help='Number of users to create.', type=int)
+@click.option('--prefix', '-p', required=True, help='Prefix for usernames.', type=str)
+@click.option('--start-number', '-s', default=1, help='Starting number for username suffix.', type=int)
+@click.option('--unlimited', is_flag=True, default=False, help='Flag to mark users as unlimited (exempt from IP limits).')
+def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: str, start_number: int, unlimited: bool):
+    """Adds multiple users in bulk."""
+    try:
+        cli_api.bulk_user_add(traffic_gb, expiration_days, count, prefix, start_number, unlimited)
+        click.echo(f"Successfully initiated the creation of {count} users with prefix '{prefix}'.")
+    except Exception as e:
+        click.echo(f'Error during bulk user addition: {e}', err=True)
 
 @cli.command('edit-user')
 @click.option('--username', '-u', required=True, help='Username for the user to edit', type=str)
