@@ -60,8 +60,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
             print("Invalid date. Please provide a valid date in YYYY-MM-DD format.")
             return 1
 
-    if not re.match(r"^[a-zA-Z0-9]+$", username):
-        print("Error: Username can only contain letters and numbers.")
+    if not re.match(r"^[a-zA-Z0-9_]+$", username):
+        print("Error: Username can only contain letters, numbers, and underscores.")
         return 1
 
     if not os.path.isfile(USERS_FILE):

@@ -5,6 +5,7 @@ import sys
 import os
 import subprocess
 import argparse
+import re
 from datetime import datetime
 from init_paths import *
 from paths import *
@@ -51,8 +52,8 @@ def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unl
                 username = f"{prefix}{start_number + i}"
                 username_lower = username.lower()
 
-                if not username_lower.isalnum():
-                    print(f"Error: Generated username '{username}' contains invalid characters. Please use an alphanumeric prefix.")
+                if not re.match(r"^[a-zA-Z0-9_]+$", username_lower):
+                    print(f"Error: Generated username '{username}' contains invalid characters. Use only letters, numbers, and underscores.")
                     continue
 
                 if username_lower in existing_users_lower or username_lower in new_users_to_add:
