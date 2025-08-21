@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, HTTPException
 
-from .schema.user import UserListResponse, UserInfoResponse, AddUserInputBody, EditUserInputBody, UserUriResponse
+from .schema.user import UserListResponse, UserInfoResponse, AddUserInputBody, EditUserInputBody, UserUriResponse, AddBulkUsersInputBody
 from .schema.response import DetailResponse
 import cli_api
 
@@ -55,6 +55,29 @@ async def add_user_api(body: AddUserInputBody):
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"An unexpected error occurred while adding user '{body.username}': {str(e)}")
+
+
+@router.post('/bulk/', response_model=DetailResponse, status_code=201)
+async def add_bulk_users_api(body: AddBulkUsersInputBody):
+    """
+    Add multiple users in bulk.
+    """
+    try:
+        cli_api.bulk_user_add(
+            traffic_gb=body.traffic_gb,
+            expiration_days=body.expiration_days,
+            count=body.count,
+            prefix=body.prefix,
+            start_number=body.start_number,
+            unlimited=body.unlimited
+        )
+        return DetailResponse(detail=f"Successfully started adding {body.count} users with prefix '{body.prefix}'.")
+    except cli_api.CommandExecutionError as e:
+        raise HTTPException(status_code=400,
+                            detail=f'Failed to add bulk users: {str(e)}')
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"An unexpected error occurred while adding bulk users: {str(e)}")
 
 
 @router.get('/{username}', response_model=UserInfoResponse)

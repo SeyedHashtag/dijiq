@@ -27,6 +27,7 @@ class Command(Enum):
     CHANGE_SNI_HYSTERIA2 = os.path.join(SCRIPT_DIR, 'hysteria2', 'change_sni.py')
     GET_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'get_user.py')
     ADD_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'add_user.py')
+    BULK_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'bulk_users.py')
     EDIT_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'edit_user.sh')
     RESET_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'reset_user.py')
     REMOVE_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'remove_user.py')
@@ -285,6 +286,24 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
         
     run_cmd(command)
 
+def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: str, start_number: int, unlimited: bool):
+    """
+    Executes the bulk user creation script with specified parameters.
+    """
+    command = [
+        'python3', 
+        Command.BULK_USER.value,
+        '--traffic-gb', str(traffic_gb),
+        '--expiration-days', str(expiration_days),
+        '--count', str(count),
+        '--prefix', prefix,
+        '--start-number', str(start_number)
+    ]
+
+    if unlimited:
+        command.append('--unlimited')
+        
+    run_cmd(command)
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     '''
