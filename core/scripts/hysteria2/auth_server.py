@@ -14,17 +14,15 @@ async def load_users(app):
     global users_data
     async with users_lock:
         if os.path.exists(USERS_FILE):
-            async with aiofiles.open(USERS_FILE, 'r') as f:
-                content = await f.read()
-                users_data = json.loads(content)
+            try:
+                async with aiofiles.open(USERS_FILE, 'r') as f:
+                    content = await f.read()
+                    users_data = json.loads(content)
+            except (IOError, json.JSONDecodeError):
+                users_data = {}
         else:
             users_data = {}
     app['users_data'] = users_data
-
-async def save_users():
-    async with users_lock:
-        async with aiofiles.open(USERS_FILE, 'w') as f:
-            await f.write(json.dumps(users_data, indent=4))
 
 async def authenticate(request):
     global users_data
@@ -50,7 +48,6 @@ async def authenticate(request):
         if user.get("password") != password:
             return web.json_response({"ok": False, "msg": "Invalid password"}, status=401)
         
-        should_save = False
         expiration_days = user.get("expiration_days", 0)
         if expiration_days > 0:
             creation_date_str = user.get("account_creation_date")
@@ -58,20 +55,14 @@ async def authenticate(request):
                 creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
                 expiration_date = creation_date + timedelta(days=expiration_days)
                 if datetime.now() >= expiration_date:
-                    user["blocked"] = True
-                    should_save = True
+                    return web.json_response({"ok": False, "msg": "Account expired"}, status=401)
 
         max_bytes = user.get("max_download_bytes", 0)
         if max_bytes > 0:
             current_up = user.get("upload_bytes", 0)
             current_down = user.get("download_bytes", 0)
             if (current_up + current_down) >= max_bytes:
-                user["blocked"] = True
-                should_save = True
-
-        if should_save:
-            await save_users()
-            return web.json_response({"ok": False, "msg": "User blocked due to limits"}, status=401)
+                return web.json_response({"ok": False, "msg": "Data limit exceeded"}, status=401)
 
     return web.json_response({"ok": True, "id": username})
 
