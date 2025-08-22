@@ -80,8 +80,19 @@ install_hysteria() {
         exit 1
     fi
     
-    chmod +x /etc/hysteria/core/scripts/hysteria2/user.sh
     chmod +x /etc/hysteria/core/scripts/hysteria2/kick.py
+
+    if ! check_auth_server_service; then
+        echo "Setting up Hysteria auth server..."
+        setup_hysteria_auth_server
+    fi
+
+    if systemctl is-active --quiet hysteria-auth.service; then
+        echo -e "${cyan}Hysteria auth server${NC} has been successfully started."
+    else
+        echo -e "${red}Error:${NC} hysteria-auth.service is not active."
+        exit 1
+    fi
 
     if ! check_scheduler_service; then
         setup_hysteria_scheduler
