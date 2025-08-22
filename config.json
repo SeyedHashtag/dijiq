@@ -13,8 +13,11 @@
     }
   },
   "auth": {
-    "type": "command",
-    "command": "/etc/hysteria/core/scripts/hysteria2/user.sh"
+    "type": "http",
+    "http": {
+    "url": "http://127.0.0.1:28262/auth",
+    "timeout": "5s"
+    }
   },
   "quic": {
     "initStreamReceiveWindow": 8388608,
