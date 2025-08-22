@@ -3,6 +3,7 @@
 declare -a services=(
     "hysteria-server.service"
     "hysteria-scheduler.service"
+    "hysteria-auth.service"
     "hysteria-webpanel.service"
     "hysteria-caddy.service"
     "hysteria-telegram-bot.service"
@@ -22,8 +23,6 @@ for service in "${services[@]}"; do
     fi
 done
 
-# Remove trailing comma and close JSON properly
 status_json="${status_json%,}}"
 
-# Format output as valid JSON
 echo "$status_json" | jq -M .
