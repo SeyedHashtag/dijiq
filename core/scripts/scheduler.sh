@@ -49,12 +49,13 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/etc/hysteria/core/scripts/hysteria2
+WorkingDirectory=/etc/hysteria
 ExecStart=/etc/hysteria/hysteria2_venv/bin/python3 /etc/hysteria/core/scripts/hysteria2/auth_server.py
 Restart=always
-RestartSec=3
-Environment="USERS_FILE=/etc/hysteria/users.json"
-Environment="CONFIG_FILE=/etc/hysteria/config.json"
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hysteria-Auth
 
 [Install]
 WantedBy=multi-user.target
