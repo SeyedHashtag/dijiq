@@ -39,20 +39,20 @@ check_scheduler_service() {
 }
 
 setup_hysteria_auth_server() {
-    chmod +x /etc/hysteria/core/scripts/hysteria2/auth_server.py
+    chmod +x /etc/hysteria/core/scripts/auth/user_auth
 
     cat > /etc/systemd/system/hysteria-auth.service << 'EOF'
 [Unit]
-Description=Hysteria aiohttp Auth Server
+Description=Hysteria Auth Server
 After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/etc/hysteria
-ExecStart=/etc/hysteria/hysteria2_venv/bin/python3 /etc/hysteria/core/scripts/hysteria2/auth_server.py
+User=hysteria
+Group=hysteria
+ExecStart=/etc/hysteria/core/auth-server/auth_server
 Restart=always
-RestartSec=10
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hysteria-Auth

@@ -6,6 +6,7 @@ trap 'echo -e "\n❌ An error occurred. Aborting."; exit 1' ERR
 # ========== Variables ==========
 HYSTERIA_INSTALL_DIR="/etc/hysteria"
 HYSTERIA_VENV_DIR="$HYSTERIA_INSTALL_DIR/hysteria2_venv"
+AUTH_BINARY_DIR="$HYSTERIA_INSTALL_DIR/core/scripts/auth"
 REPO_URL="https://github.com/ReturnFI/Blitz"
 REPO_BRANCH="auth"
 GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
@@ -22,6 +23,38 @@ info() { echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - ${RESET} $1"; }
 success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1"; }
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
+
+# ========== New Function to Install Go and Compile Auth Binary ==========
+install_go_and_compile_auth() {
+    info "Checking for Go and compiling authentication binary..."
+    if ! command -v go &>/dev/null; then
+        warn "Go is not installed. Attempting to install..."
+        apt-get update -y >/dev/null
+        apt-get install -y golang-go >/dev/null
+        success "Go installed successfully."
+    else
+        success "Go is already installed."
+    fi
+
+    if [[ -f "$AUTH_BINARY_DIR/user_auth.go" ]]; then
+        info "Found auth binary source. Compiling..."
+        (
+            cd "$AUTH_BINARY_DIR"
+            go mod init hysteria_auth >/dev/null 2>&1
+            go mod tidy >/dev/null 2>&1
+            if go build -o user_auth .; then
+                chown hysteria:hysteria user_auth
+                chmod +x user_auth
+                success "Authentication binary compiled successfully."
+            else
+                error "Failed to compile the authentication binary."
+                exit 1
+            fi
+        )
+    else
+        warn "Authentication binary source not found. Skipping compilation."
+    fi
+}
 
 # ========== Backup Files ==========
 cd /root
@@ -81,7 +114,7 @@ info "Updating Hysteria configuration for HTTP authentication..."
 auth_block='{"type": "http", "http": {"url": "http://127.0.0.1:28262/auth", "timeout": "5s"}}'
 if [[ -f "$HYSTERIA_INSTALL_DIR/config.json" ]]; then
     jq --argjson auth_block "$auth_block" '.auth = $auth_block' "$HYSTERIA_INSTALL_DIR/config.json" > "$HYSTERIA_INSTALL_DIR/config.json.tmp" && mv "$HYSTERIA_INSTALL_DIR/config.json.tmp" "$HYSTERIA_INSTALL_DIR/config.json"
-    success "config.json updated to use aiohttp auth server."
+    success "config.json updated to use auth server."
 else
     warn "config.json not found after restore. Skipping auth update."
 fi
@@ -102,6 +135,9 @@ source "$HYSTERIA_VENV_DIR/bin/activate"
 pip install --upgrade pip >/dev/null
 pip install -r requirements.txt >/dev/null
 success "Python environment ready."
+
+# ========== Compile Go Binary ==========
+install_go_and_compile_auth
 
 # ========== Systemd Services ==========
 info "Ensuring systemd services are configured..."
