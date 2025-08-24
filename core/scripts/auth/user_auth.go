@@ -81,33 +81,28 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 	user, ok := userCache[username]
 	cacheMutex.RUnlock()
 
-	// 1. Check existence
 	if !ok {
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
 
-	// 2. Check if blocked
 	if user.Blocked {
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
 
-	// 3. Check password (constant time)
 	if subtle.ConstantTimeCompare([]byte(user.Password), []byte(password)) != 1 {
 		time.Sleep(5 * time.Second) // Slow down brute-force attacks
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
 
-	// 4. Check if unlimited (if so, grant access)
 	if user.UnlimitedUser {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: true, ID: username})
 		return
 	}
 
-	// 5. Check expiration
 	if user.ExpirationDays > 0 {
 		creationDate, err := time.Parse("2006-01-02", user.AccountCreationDate)
 		if err == nil && time.Now().After(creationDate.AddDate(0, 0, user.ExpirationDays)) {
@@ -116,19 +111,17 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 6. Check traffic limit
 	if user.MaxDownloadBytes > 0 && (user.DownloadBytes+user.UploadBytes) >= user.MaxDownloadBytes {
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
 
-	// All checks passed
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(httpAuthResponse{OK: true, ID: username})
 }
 
 func main() {
-	log.SetOutput(io.Discard) // Disable logging for max performance
+	log.SetOutput(io.Discard)
 	loadUsersToCache()
 
 	ticker := time.NewTicker(cacheTTL)
@@ -140,7 +133,6 @@ func main() {
 
 	http.HandleFunc("/auth", authHandler)
 	if err := http.ListenAndServe(listenAddr, nil); err != nil {
-		// If we can't start, log to stderr so systemd can see it
 		log.SetOutput(os.Stderr)
 		log.Fatalf("Failed to start server: %v", err)
 	}
