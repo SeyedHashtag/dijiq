@@ -39,7 +39,7 @@ check_scheduler_service() {
 }
 
 setup_hysteria_auth_server() {
-    chmod +x /etc/hysteria/core/scripts/auth/user_auth
+    # chmod +x /etc/hysteria/core/scripts/auth/user_auth
 
     cat > /etc/systemd/system/hysteria-auth.service << 'EOF'
 [Unit]
