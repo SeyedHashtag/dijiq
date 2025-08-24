@@ -15,7 +15,7 @@ import (
 const (
 	listenAddr = "127.0.0.1:28262"
 	usersFile  = "/etc/hysteria/users.json"
-	cacheTTL   = 15 * time.Second
+	cacheTTL   = 5 * time.Second
 )
 
 type User struct {

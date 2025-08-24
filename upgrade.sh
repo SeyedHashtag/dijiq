@@ -43,7 +43,6 @@ install_go_and_compile_auth() {
             go mod init hysteria_auth >/dev/null 2>&1
             go mod tidy >/dev/null 2>&1
             if go build -o user_auth .; then
-                chown hysteria:hysteria user_auth
                 chmod +x user_auth
                 success "Authentication binary compiled successfully."
             else
@@ -124,7 +123,6 @@ info "Setting ownership and permissions..."
 chown hysteria:hysteria "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
 chmod 640 "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
 chown -R hysteria:hysteria "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot"
-chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/hysteria2/auth_server.py"
 chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/hysteria2/kick.py"
 
 # ========== Virtual Environment ==========

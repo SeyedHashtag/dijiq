@@ -15,7 +15,6 @@ compile_auth_binary() {
             go mod init hysteria-auth >/dev/null 2>&1
             go mod tidy >/dev/null 2>&1
             if go build -o user_auth .; then
-                chown hysteria:hysteria user_auth
                 chmod +x user_auth
                 echo "Authentication binary compiled successfully."
             else

@@ -48,8 +48,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=hysteria
-Group=hysteria
+User=root
 ExecStart=/etc/hysteria/core/scripts/auth/user_auth
 Restart=always
 RestartSec=5
