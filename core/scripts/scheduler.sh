@@ -27,14 +27,46 @@ EOF
     systemctl daemon-reload
     systemctl enable hysteria-scheduler.service
     systemctl start hysteria-scheduler.service
-    # wait 2
     (crontab -l | grep -v "hysteria2_venv.*traffic-status" | grep -v "hysteria2_venv.*backup-hysteria") | crontab -
-
-    # return 0
 }
 
 check_scheduler_service() {
     if systemctl is-active --quiet hysteria-scheduler.service; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+setup_hysteria_auth_server() {
+    # chmod +x /etc/hysteria/core/scripts/auth/user_auth
+
+    cat > /etc/systemd/system/hysteria-auth.service << 'EOF'
+[Unit]
+Description=Hysteria Auth Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/etc/hysteria/core/scripts/auth/user_auth
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hysteria-Auth
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable hysteria-auth.service
+    systemctl start hysteria-auth.service
+}
+
+check_auth_server_service() {
+    if systemctl is-active --quiet hysteria-auth.service; then
         return 0
     else
         return 1

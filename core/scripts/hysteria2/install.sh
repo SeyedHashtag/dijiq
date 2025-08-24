@@ -5,6 +5,29 @@ source /etc/hysteria/core/scripts/utils.sh
 source /etc/hysteria/core/scripts/scheduler.sh
 define_colors
 
+compile_auth_binary() {
+    echo "Compiling authentication binary..."
+    local auth_dir="/etc/hysteria/core/scripts/auth"
+    
+    if [ -f "$auth_dir/user_auth.go" ]; then
+        (
+            cd "$auth_dir" || exit 1
+            go mod init hysteria-auth >/dev/null 2>&1
+            go mod tidy >/dev/null 2>&1
+            if go build -o user_auth .; then
+                chmod +x user_auth
+                echo "Authentication binary compiled successfully."
+            else
+                echo -e "${red}Error:${NC} Failed to compile the authentication binary."
+                exit 1
+            fi
+        )
+    else
+        echo -e "${red}Error:${NC} Go source file not found at $auth_dir/user_auth.go"
+        exit 1
+    fi
+}
+
 install_hysteria() {
     local port=$1
 
@@ -12,7 +35,9 @@ install_hysteria() {
     bash <(curl -fsSL https://get.hy2.sh/) >/dev/null 2>&1
     
     mkdir -p /etc/hysteria && cd /etc/hysteria/
-    
+
+    compile_auth_binary
+
     echo "Generating CA key and certificate..."
     openssl ecparam -genkey -name prime256v1 -out ca.key >/dev/null 2>&1
     openssl req -new -x509 -days 36500 -key ca.key -out ca.crt -subj "/CN=$sni" >/dev/null 2>&1
@@ -80,8 +105,19 @@ install_hysteria() {
         exit 1
     fi
     
-    chmod +x /etc/hysteria/core/scripts/hysteria2/user.sh
     chmod +x /etc/hysteria/core/scripts/hysteria2/kick.py
+
+    if ! check_auth_server_service; then
+        echo "Setting up Hysteria auth server..."
+        setup_hysteria_auth_server
+    fi
+
+    if systemctl is-active --quiet hysteria-auth.service; then
+        echo -e "${cyan}Hysteria auth server${NC} has been successfully started."
+    else
+        echo -e "${red}Error:${NC} hysteria-auth.service is not active."
+        exit 1
+    fi
 
     if ! check_scheduler_service; then
         setup_hysteria_scheduler

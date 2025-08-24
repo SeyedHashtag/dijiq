@@ -1,19 +1,18 @@
-# [1.16.0] - 2025-08-19
+# [1.17.0] - 2025-08-24
 
-#### ✨ New Features
 
-* 📊 **Dashboard Redesign**
+#### ⚡ Authentication
 
-  * Modernized UI with detailed server stats
-* 🖥️ **Server API Enhancements**
+* 🚀 **Implemented Go HTTP Auth Server** for **maximum performance**
+* ⚡ Removed old command-based auth system
 
-  * Added uptime and traffic-since-reboot metrics
-* ⚡ **System Monitor Optimization**
+#### 👥 User Management
 
-  * Improved performance with async I/O
-  * Accurate traffic tracking since reboot
+* ✨ **Bulk User Creation** added across:
 
-#### 🐛 Fixes
-
-* 🔧 Correctly count **actual device connections** instead of unique users
-* 🔥 Fixed subscription blocked page to display the right user data
+  * 🖥️ **Frontend UI**
+  * 📡 **API Endpoint**
+  * 💻 **CLI Command**
+  * 📜 **Automation Script**
+* 🔍 New **Online User Filter & Sort** on the Users page
+* 🐛 Fixed: underscores now supported in usernames
