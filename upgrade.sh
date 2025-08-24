@@ -110,7 +110,7 @@ done
 
 # ========== Update Configuration ==========
 info "Updating Hysteria configuration for HTTP authentication..."
-auth_block='{"type": "http", "http": {"url": "http://127.0.0.1:28262/auth", "timeout": "5s"}}'
+auth_block='{"type": "http", "http": {"url": "http://127.0.0.1:28262/auth"}}'
 if [[ -f "$HYSTERIA_INSTALL_DIR/config.json" ]]; then
     jq --argjson auth_block "$auth_block" '.auth = $auth_block' "$HYSTERIA_INSTALL_DIR/config.json" > "$HYSTERIA_INSTALL_DIR/config.json.tmp" && mv "$HYSTERIA_INSTALL_DIR/config.json.tmp" "$HYSTERIA_INSTALL_DIR/config.json"
     success "config.json updated to use auth server."

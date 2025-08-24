@@ -15,8 +15,7 @@
   "auth": {
     "type": "http",
     "http": {
-    "url": "http://127.0.0.1:28262/auth",
-    "timeout": "5s"
+    "url": "http://127.0.0.1:28262/auth"
     }
   },
   "quic": {
