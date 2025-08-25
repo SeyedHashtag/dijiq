@@ -98,6 +98,10 @@
                                 <i class="fas fa-circle text-success"></i> Online
                                 {% elif user['status'] == "Offline" %}
                                 <i class="fas fa-circle text-secondary"></i> Offline
+                                {% elif user['status'] == "On-hold" %}
+                                <i class="fas fa-circle text-warning"></i> On-hold
+                                {% elif user['status'] == "Conflict" %}
+                                <i class="fas fa-circle text-danger"></i> Conflict
                                 {% else %}
                                 <i class="fas fa-circle text-danger"></i> {{ user['status'] }}
                                 {% endif %}
@@ -575,7 +579,7 @@
             const blocked = row.find("td:eq(7) i").hasClass("text-danger");
             const unlimited_ip = row.find(".unlimited-ip-cell i").hasClass("text-primary");
         
-            const expiryDaysValue = (expiryDaysText.toLowerCase() === 'unlimited') ? 0 : parseInt(expiryDaysText, 10);
+            const expiryDaysValue = (expiryDaysText.toLowerCase() === 'unlimited' || expiryDaysText.toLowerCase() === 'on-hold') ? 0 : parseInt(expiryDaysText, 10);
             
             let trafficLimitValue = 0;
             if (!trafficUsageText.toLowerCase().includes('/unlimited')) {
