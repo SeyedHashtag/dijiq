@@ -30,7 +30,7 @@ install_go_and_compile_auth() {
     if ! command -v go &>/dev/null; then
         warn "Go is not installed. Attempting to install..."
         #apt-get update -qq >/dev/null
-        apt install -y golang-go >/dev/null
+        apt install golang-go -y
         success "Go installed successfully."
     else
         success "Go is already installed."
