@@ -29,8 +29,8 @@ install_go_and_compile_auth() {
     info "Checking for Go and compiling authentication binary..."
     if ! command -v go &>/dev/null; then
         warn "Go is not installed. Attempting to install..."
-        apt-get update -qq >/dev/null
-        apt-get install -y golang-go >/dev/null
+        #apt-get update -qq >/dev/null
+        apt install -y golang-go >/dev/null
         success "Go installed successfully."
     else
         success "Go is already installed."
