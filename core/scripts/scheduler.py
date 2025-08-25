@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-import os
-import sys
 import time
 import schedule
 import logging
 import subprocess
 import fcntl
-import datetime
-import json
 from pathlib import Path
 from paths import *
 
@@ -72,46 +68,7 @@ def check_traffic_status():
     try:
         success = run_command(f"python3 {CLI_PATH} traffic-status --no-gui", log_success=False)
         if not success:
-            logger.error("Failed to run traffic-status command. Aborting check.")
-            return
-
-        if not os.path.exists(USERS_FILE):
-            logger.warning(f"{USERS_FILE} not found. Skipping on-hold user check.")
-            return
-
-        try:
-            with open(USERS_FILE, 'r') as f:
-                users_data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error reading or parsing {USERS_FILE}: {e}")
-            return
-            
-        users_updated = False
-        today_date = datetime.datetime.now().strftime("%Y-%m-%d")
-
-        for username, user_data in users_data.items():
-            is_on_hold = not user_data.get("account_creation_date")
-
-            if is_on_hold:
-                is_online = user_data.get("status") == "Online"
-                
-                if is_online:
-                    logger.info(f"On-hold user '{username}' connected. Activating account with creation date {today_date}.")
-                    user_data["account_creation_date"] = today_date
-                    users_updated = True
-                else:
-                    if user_data.get("status") != "On-hold":
-                        user_data["status"] = "On-hold"
-                        users_updated = True
-
-        if users_updated:
-            try:
-                with open(USERS_FILE, 'w') as f:
-                    json.dump(users_data, f, indent=4)
-                logger.info("Successfully updated users.json for on-hold users.")
-            except IOError as e:
-                logger.error(f"Error writing updates to {USERS_FILE}: {e}")
-
+            pass
     finally:
         release_lock(lock_fd)
 
@@ -132,10 +89,8 @@ def main():
     schedule.every(1).minutes.do(check_traffic_status)
     schedule.every(6).hours.do(backup_hysteria)
     
-    # logger.info("Performing initial runs on startup...")
     check_traffic_status()
     backup_hysteria()
-    # logger.info("Initial runs complete. Entering main loop.")
     
     while True:
         try:

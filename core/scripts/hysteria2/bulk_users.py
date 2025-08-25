@@ -35,7 +35,7 @@ def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unl
 
             existing_users_lower = {u.lower() for u in users_data}
             new_users_to_add = {}
-            creation_date = datetime.now().strftime("%Y-%m-%d")
+            creation_date = None
 
             try:
                 password_process = subprocess.run(['pwgen', '-s', '32', str(count)], capture_output=True, text=True, check=True)
