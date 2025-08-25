@@ -20,30 +20,49 @@ class User(BaseModel):
 
     @staticmethod
     def __parse_user_data(user_data: dict) -> dict:
-        expiration_days = user_data.get('expiration_days', 0)
+        essential_keys = [
+            'password', 
+            'max_download_bytes', 
+            'expiration_days', 
+            'blocked',
+            'unlimited_user'
+        ]
 
-        if expiration_days > 0:
-            creation_date_str = user_data.get("account_creation_date")
-            display_expiry_days = str(expiration_days)
-            
-            if isinstance(creation_date_str, str):
-                try:
-                    creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
-                    expiry_dt_obj = creation_date + timedelta(days=expiration_days)
-                    display_expiry_date = expiry_dt_obj.strftime("%Y-%m-%d")
-                except ValueError:
-                    display_expiry_date = "Error"
-            else:
-                display_expiry_date = "Error"
-        else:
+        if not all(key in user_data for key in essential_keys):
+            return {
+                'username': user_data.get('username', 'Unknown'),
+                'status': 'Conflict',
+                'quota': 'N/A',
+                'traffic_used': 'N/A',
+                'expiry_date': 'N/A',
+                'expiry_days': 'N/A',
+                'enable': False,
+                'unlimited_ip': False
+            }
+
+        expiration_days = user_data.get('expiration_days', 0)
+        creation_date_str = user_data.get("account_creation_date")
+
+        if not creation_date_str:
+            display_expiry_days = "On-hold"
+            display_expiry_date = "On-hold"
+        elif expiration_days <= 0:
             display_expiry_days = "Unlimited"
             display_expiry_date = "Unlimited"
+        else:
+            display_expiry_days = str(expiration_days)
+            try:
+                creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
+                expiry_dt_obj = creation_date + timedelta(days=expiration_days)
+                display_expiry_date = expiry_dt_obj.strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                display_expiry_date = "Error"
 
         used_bytes = user_data.get("download_bytes", 0) + user_data.get("upload_bytes", 0)
         quota_bytes = user_data.get('max_download_bytes', 0)
         
         used_formatted = User.__format_traffic(used_bytes)
-        quota_formatted = "Unlimited" if quota_bytes == 0 else User.__format_traffic(quota_bytes)
+        quota_formatted = "Unlimited" if quota_bytes <= 0 else User.__format_traffic(quota_bytes)
         
         percentage = 0
         if quota_bytes > 0:
@@ -64,7 +83,7 @@ class User(BaseModel):
 
     @staticmethod
     def __format_traffic(traffic_bytes) -> str:
-        if traffic_bytes == 0:
+        if traffic_bytes <= 0:
             return "0 B"
         if traffic_bytes < 1024:
             return f'{traffic_bytes} B'
