@@ -1,5 +1,3 @@
-#show and edituser file
-
 import qrcode
 import io
 import json
@@ -7,6 +5,9 @@ from telebot import types
 from utils.command import *
 from utils.common import *
 
+
+def escape_markdown(text):
+    return str(text).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
 def handle_cancel_show_user(call):
@@ -33,7 +34,7 @@ def process_show_user(message):
         existing_users = {user.lower(): user for user in users.keys()}
 
         if username not in existing_users:
-            bot.reply_to(message, f"Username '{message.text.strip()}' does not exist. Please enter a valid username.")
+            bot.reply_to(message, f"Username '{escape_markdown(message.text.strip())}' does not exist. Please enter a valid username.")
             return
 
         actual_username = existing_users[username]
@@ -54,8 +55,8 @@ def process_show_user(message):
         if upload_bytes is None or download_bytes is None:
             traffic_message = "**Traffic Data:**\nUser not active or no traffic data available."
         else:
-            upload_gb = upload_bytes / (1024 ** 3)  # Convert bytes to GB
-            download_gb = download_bytes / (1024 ** 3)  # Convert bytes to GB
+            upload_gb = upload_bytes / (1024 ** 3)
+            download_gb = download_bytes / (1024 ** 3)
             totalusage = upload_gb + download_gb
             
             traffic_message = (
@@ -68,8 +69,10 @@ def process_show_user(message):
         bot.reply_to(message, "Failed to parse JSON data. The command output may be malformed.")
         return
 
+    display_username = escape_markdown(actual_username)
+
     formatted_details = (
-        f"\n🆔 Name: {actual_username}\n"
+        f"\n🆔 Name: {display_username}\n"
         f"📊 Traffic Limit: {user_details['max_download_bytes'] / (1024 ** 3):.2f} GB\n"
         f"📅 Days: {user_details['expiration_days']}\n"
         f"⏳ Creation: {user_details['account_creation_date']}\n"
@@ -87,15 +90,12 @@ def process_show_user(message):
     result_lines = combined_result.strip().split('\n')
     
     uri_v4 = ""
-    # singbox_sublink = ""
     normal_sub_sublink = ""
 
     for line in result_lines:
         line = line.strip()
         if line.startswith("hy2://"):
             uri_v4 = line
-        # elif line.startswith("Singbox Sublink:"):
-        #     singbox_sublink = result_lines[result_lines.index(line) + 1].strip()
         elif line.startswith("Normal-SUB Sublink:"):
             normal_sub_sublink = result_lines[result_lines.index(line) + 1].strip()
 
@@ -119,8 +119,6 @@ def process_show_user(message):
                types.InlineKeyboardButton("Block User", callback_data=f"block_user:{actual_username}"))
 
     caption = f"{formatted_details}\n\n**IPv4 URI:**\n\n`{uri_v4}`"
-    # if singbox_sublink:
-    #     caption += f"\n\n**SingBox SUB:**\n{singbox_sublink}"
     if normal_sub_sublink:
         caption += f"\n\n**Normal SUB:**\n{normal_sub_sublink}"
 
@@ -135,14 +133,16 @@ def process_show_user(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('edit_') or call.data.startswith('renew_') or call.data.startswith('block_') or call.data.startswith('reset_') or call.data.startswith('ipv6_'))
 def handle_edit_callback(call):
     action, username = call.data.split(':')
+    display_username = escape_markdown(username)
+
     if action == 'edit_username':
-        msg = bot.send_message(call.message.chat.id, f"Enter new username for {username}:")
+        msg = bot.send_message(call.message.chat.id, f"Enter new username for {display_username}:")
         bot.register_next_step_handler(msg, process_edit_username, username)
     elif action == 'edit_traffic':
-        msg = bot.send_message(call.message.chat.id, f"Enter new traffic limit (GB) for {username}:")
+        msg = bot.send_message(call.message.chat.id, f"Enter new traffic limit (GB) for {display_username}:")
         bot.register_next_step_handler(msg, process_edit_traffic, username)
     elif action == 'edit_expiration':
-        msg = bot.send_message(call.message.chat.id, f"Enter new expiration days for {username}:")
+        msg = bot.send_message(call.message.chat.id, f"Enter new expiration days for {display_username}:")
         bot.register_next_step_handler(msg, process_edit_expiration, username)
     elif action == 'renew_password':
         command = f"python3 {CLI_PATH} edit-user -u {username} -rp"
@@ -156,7 +156,7 @@ def handle_edit_callback(call):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("True", callback_data=f"confirm_block:{username}:true"),
                    types.InlineKeyboardButton("False", callback_data=f"confirm_block:{username}:false"))
-        bot.send_message(call.message.chat.id, f"Set block status for {username}:", reply_markup=markup)
+        bot.send_message(call.message.chat.id, f"Set block status for {display_username}:", reply_markup=markup)
     elif action == 'reset_user':
         command = f"python3 {CLI_PATH} reset-user -u {username}"
         result = run_cli_command(command)
@@ -177,7 +177,7 @@ def handle_edit_callback(call):
         bot.send_photo(
             call.message.chat.id,
             bio_v6,
-            caption=f"**IPv6 URI for {username}:**\n\n`{uri_v6}`",
+            caption=f"**IPv6 URI for {display_username}:**\n\n`{uri_v6}`",
             parse_mode="Markdown"
         )
 

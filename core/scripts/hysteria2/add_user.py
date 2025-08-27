@@ -18,7 +18,7 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
         traffic_gb (str): The traffic limit in GB.
         expiration_days (str): The number of days until the account expires.
         password (str, optional): The user's password. If None, a random one is generated.
-        creation_date (str, optional): The account creation date in YYYY-MM-DD format. If None, the current date is used.
+        creation_date (str, optional): The account creation date in YYYY-MM-DD format. Defaults to None.
         unlimited_user (bool, optional): If True, user is exempt from IP limits. Defaults to False.
 
     Returns:
@@ -48,9 +48,7 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
                 print("Error: Failed to generate password. Please install 'pwgen' or ensure /proc access.")
                 return 1
 
-    if not creation_date:
-        creation_date = datetime.now().strftime("%Y-%m-%d")
-    else:
+    if creation_date:
         if not re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", creation_date):
             print("Invalid date format. Expected YYYY-MM-DD.")
             return 1
@@ -59,6 +57,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
         except ValueError:
             print("Invalid date. Please provide a valid date in YYYY-MM-DD format.")
             return 1
+    else:
+        creation_date = None
 
     if not re.match(r"^[a-zA-Z0-9_]+$", username):
         print("Error: Username can only contain letters, numbers, and underscores.")

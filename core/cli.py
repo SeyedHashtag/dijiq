@@ -160,7 +160,7 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
 @click.option('--new-expiration-days', '-ne', required=False, help='Expiration days for the new user', type=int)
 @click.option('--renew-password', '-rp', is_flag=True, help='Renew password for the user')
 @click.option('--renew-creation-date', '-rc', is_flag=True, help='Renew creation date for the user')
-@click.option('--blocked/--unblocked', 'blocked', default=None, help='Block or unblock the user.')
+@click.option('--blocked/--unblocked', 'blocked', '-b', default=None, help='Block or unblock the user.')
 @click.option('--unlimited-ip/--limited-ip', 'unlimited_ip', default=None, help='Set user to be exempt from or subject to IP limits.')
 def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     try:

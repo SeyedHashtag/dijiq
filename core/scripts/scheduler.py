@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-import os
-import sys
 import time
 import schedule
 import logging
 import subprocess
 import fcntl
-import datetime
 from pathlib import Path
 from paths import *
 
@@ -23,7 +20,6 @@ logger = logging.getLogger("HysteriaScheduler")
 # Constants
 BASE_DIR = Path("/etc/hysteria")
 VENV_ACTIVATE = BASE_DIR / "hysteria2_venv/bin/activate"
-# CLI_PATH = BASE_DIR / "core/cli.py"
 LOCK_FILE = "/tmp/hysteria_scheduler.lock"
 
 def acquire_lock():
@@ -41,7 +37,6 @@ def release_lock(lock_fd):
         lock_fd.close()
 
 def run_command(command, log_success=False):
-
     activate_cmd = f"source {VENV_ACTIVATE}"
     full_cmd = f"{activate_cmd} && {command}"
     
@@ -94,6 +89,7 @@ def main():
     schedule.every(1).minutes.do(check_traffic_status)
     schedule.every(6).hours.do(backup_hysteria)
     
+    check_traffic_status()
     backup_hysteria()
     
     while True:

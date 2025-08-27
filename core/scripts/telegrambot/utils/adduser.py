@@ -1,10 +1,13 @@
 import qrcode
 import io
 import json
+import re
 from telebot import types
 from utils.command import *
 from utils.common import create_main_markup
 
+def escape_markdown(text):
+    return str(text).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`')
 
 def create_cancel_markup(back_step=None):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -15,7 +18,7 @@ def create_cancel_markup(back_step=None):
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == 'Add User')
 def add_user(message):
-    msg = bot.reply_to(message, "Enter username:", reply_markup=create_cancel_markup())
+    msg = bot.reply_to(message, "Enter username (only letters, numbers, and underscores are allowed):", reply_markup=create_cancel_markup())
     bot.register_next_step_handler(msg, process_add_user_step1)
 
 def process_add_user_step1(message):
@@ -24,6 +27,12 @@ def process_add_user_step1(message):
         return
 
     username = message.text.strip()
+    
+    if not re.match("^[a-zA-Z0-9_]*$", username):
+        bot.reply_to(message, "Invalid username. Only letters, numbers, and underscores are allowed. Please try again:", reply_markup=create_cancel_markup())
+        bot.register_next_step_handler(message, process_add_user_step1)
+        return
+
     if not username:
         bot.reply_to(message, "Username cannot be empty. Please enter a valid username:", reply_markup=create_cancel_markup())
         bot.register_next_step_handler(message, process_add_user_step1)
@@ -41,7 +50,7 @@ def process_add_user_step1(message):
         users_data = json.loads(result)
         existing_users = {user_key.lower() for user_key in users_data.keys()}
         if username.lower() in existing_users:
-            bot.reply_to(message, f"Username '{username}' already exists. Please choose a different username:", reply_markup=create_cancel_markup())
+            bot.reply_to(message, f"Username '{escape_markdown(username)}' already exists. Please choose a different username:", reply_markup=create_cancel_markup())
             bot.register_next_step_handler(message, process_add_user_step1)
             return
     except json.JSONDecodeError:
@@ -59,7 +68,7 @@ def process_add_user_step2(message, username):
         bot.reply_to(message, "Process canceled.", reply_markup=create_main_markup())
         return
     if message.text == "⬅️ Back":
-        msg = bot.reply_to(message, "Enter username:", reply_markup=create_cancel_markup())
+        msg = bot.reply_to(message, "Enter username (only letters, numbers, and underscores are allowed):", reply_markup=create_cancel_markup())
         bot.register_next_step_handler(msg, process_add_user_step1)
         return
 
@@ -96,8 +105,7 @@ def process_add_user_step3(message, username, traffic_limit):
 
         bot.send_chat_action(message.chat.id, 'typing')
         
-        lower_username = username.lower()
-        uri_info_command = f"python3 {CLI_PATH} show-user-uri -u \"{lower_username}\" -ip 4 -n"
+        uri_info_command = f"python3 {CLI_PATH} show-user-uri -u \"{username}\" -ip 4 -n"
         uri_info_output = run_cli_command(uri_info_command)
 
         direct_uri = None
@@ -121,18 +129,20 @@ def process_add_user_step3(message, username, traffic_limit):
             except (IndexError, AttributeError):
                 pass
         
-        caption_text = f"{add_user_feedback}\n"
+        display_username = escape_markdown(username)
+        escaped_feedback = escape_markdown(add_user_feedback)
+        caption_text = f"{escaped_feedback}\n"
         link_to_generate_qr_for = None
         link_type_for_caption = ""
 
         if normal_sub_link:
             link_to_generate_qr_for = normal_sub_link
             link_type_for_caption = "Normal Subscription Link"
-            caption_text += f"\n{link_type_for_caption} for `{username}`:\n`{normal_sub_link}`"
+            caption_text += f"\n{link_type_for_caption} for `{display_username}`:\n`{normal_sub_link}`"
         elif direct_uri:
             link_to_generate_qr_for = direct_uri
             link_type_for_caption = "Hysteria2 IPv4 URI"
-            caption_text += f"\n{link_type_for_caption} for `{username}`:\n`{direct_uri}`"
+            caption_text += f"\n{link_type_for_caption} for `{display_username}`:\n`{direct_uri}`"
         
         if link_to_generate_qr_for:
             qr_img = qrcode.make(link_to_generate_qr_for)
