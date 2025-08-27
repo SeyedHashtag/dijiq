@@ -24,8 +24,7 @@ class User(BaseModel):
             'password', 
             'max_download_bytes', 
             'expiration_days', 
-            'blocked',
-            'unlimited_user'
+            'blocked'
         ]
 
         if not all(key in user_data for key in essential_keys):
