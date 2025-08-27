@@ -11,7 +11,7 @@ def handle_inline_query(query):
         bot.answer_inline_query(query.id, results=[], switch_pm_text="Error retrieving users.", switch_pm_user_id=query.from_user.id)
         return
 
-    query_text = query.query.lower()
+    query_text = query.query.lower().replace('\\_', '_')
     results = []
 
     if query_text == "block":
