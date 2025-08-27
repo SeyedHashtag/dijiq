@@ -1,7 +1,15 @@
 import json
+from typing import List
 from fastapi import APIRouter, HTTPException
-
-from .schema.user import UserListResponse, UserInfoResponse, AddUserInputBody, EditUserInputBody, UserUriResponse, AddBulkUsersInputBody
+from .schema.user import (
+    UserListResponse, 
+    UserInfoResponse, 
+    AddUserInputBody, 
+    EditUserInputBody, 
+    UserUriResponse, 
+    AddBulkUsersInputBody, 
+    UsernamesRequest
+)
 from .schema.response import DetailResponse
 import cli_api
 
@@ -78,6 +86,29 @@ async def add_bulk_users_api(body: AddBulkUsersInputBody):
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"An unexpected error occurred while adding bulk users: {str(e)}")
+
+@router.post('/uri/bulk', response_model=List[UserUriResponse])
+async def show_multiple_user_uris_api(request: UsernamesRequest):
+    """
+    Get URI information for multiple users in a single request for efficiency.
+    """
+    if not request.usernames:
+        return []
+        
+    try:
+        uri_data_list = cli_api.show_user_uri_json(request.usernames)
+        if not uri_data_list:
+            raise HTTPException(status_code=404, detail='No URI data found for the provided users.')
+        
+        valid_responses = [data for data in uri_data_list if not data.get('error')]
+        
+        return valid_responses
+    except cli_api.ScriptNotFoundError as e:
+        raise HTTPException(status_code=500, detail=f'Server script error: {str(e)}')
+    except cli_api.CommandExecutionError as e:
+        raise HTTPException(status_code=400, detail=f'Error executing script: {str(e)}')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Unexpected error: {str(e)}')
 
 
 @router.get('/{username}', response_model=UserInfoResponse)

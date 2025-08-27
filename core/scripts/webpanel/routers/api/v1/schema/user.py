@@ -18,6 +18,8 @@ class UserInfoResponse(BaseModel):
 class UserListResponse(RootModel):
     root: dict[str, UserInfoResponse]
 
+class UsernamesRequest(BaseModel):
+    usernames: List[str]
 
 class AddUserInputBody(BaseModel):
     username: str

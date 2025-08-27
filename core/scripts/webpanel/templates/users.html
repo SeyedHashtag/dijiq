@@ -26,8 +26,8 @@
                         </button>
                     </div>
                     <div class="mr-2 mb-2">
-                        <button type="button" class="btn btn-sm btn-default filter-button" data-filter="not-active">
-                            <i class="fas fa-exclamation-triangle"></i> NA
+                        <button type="button" class="btn btn-sm btn-warning filter-button" data-filter="on-hold">
+                            <i class="fas fa-pause-circle"></i> Hold
                         </button>
                     </div>
                     <div class="mr-2 mb-2">
@@ -66,8 +66,8 @@
                 </div>
             </div>
             <div class="card-body table-responsive p-0">
-                {% if users|length == 0 %}
-                <div class="alert alert-warning" role="alert" style="margin: 20px;">
+                {% if not users %}
+                <div class="alert alert-warning m-3" role="alert">
                     No users found.
                 </div>
                 {% else %}
@@ -153,13 +153,6 @@
                     </tbody>
                 </table>
                 {% endif %}
-                <div class="row mt-3">
-                    <div class="col-sm-12 col-md-7">
-                        <div class="dataTables_paginate paging_simple_numbers" id="userTable_paginate">
-                            {# {{ pagination.links }} #}
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -203,7 +196,7 @@
                             </div>
                             <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                                 <input type="checkbox" class="form-check-input" id="addUnlimited" name="unlimited">
-                                <label class="form-check-label" for="addUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
+                                <label class="form-check-label" for="addUnlimited">Unlimited IP</label>
                             </div>
                             <button type="submit" class="btn btn-primary" id="addSubmitButton">Add User</button>
                         </form>
@@ -237,7 +230,7 @@
                             </div>
                             <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                                 <input type="checkbox" class="form-check-input" id="addBulkUnlimited" name="unlimited">
-                                <label class="form-check-label" for="addBulkUnlimited">Unlimited IP (Exempt from IP limit checks)</label>
+                                <label class="form-check-label" for="addBulkUnlimited">Unlimited IP</label>
                             </div>
                             <button type="submit" class="btn btn-primary" id="addBulkSubmitButton">Add Bulk Users</button>
                         </form>
@@ -249,8 +242,7 @@
 </div>
 
 <!-- Edit User Modal -->
-<div class="modal fade" id="editUserModal" tabindex="-1" role="dialog" aria-labelledby="editUserModalLabel"
-    aria-hidden="true">
+<div class="modal fade" id="editUserModal" tabindex="-1" role="dialog" aria-labelledby="editUserModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -280,7 +272,7 @@
                     </div>
                     <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                         <input type="checkbox" class="form-check-input" id="editUnlimitedIp" name="unlimited_ip">
-                        <label class="form-check-label" for="editUnlimitedIp">Unlimited IP (Exempt from IP limit checks)</label>
+                        <label class="form-check-label" for="editUnlimitedIp">Unlimited IP</label>
                     </div>
                     <input type="hidden" id="originalUsername" name="username">
                     <button type="submit" class="btn btn-primary" id="editSubmitButton">Save Changes</button>
@@ -290,8 +282,7 @@
     </div>
 </div>
 <!-- QR Code Modal -->
-<div class="modal fade" id="qrcodeModal" tabindex="-1" role="dialog" aria-labelledby="qrcodeModalLabel"
-    aria-hidden="true">
+<div class="modal fade" id="qrcodeModal" tabindex="-1" role="dialog" aria-labelledby="qrcodeModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -331,711 +322,240 @@
 {% endblock %}
 
 {% block javascripts %}
-<!-- Include qr-code-styling library -->
 <script src="https://cdn.jsdelivr.net/npm/qr-code-styling/lib/qr-code-styling.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
     $(function () {
-        
+        const usernameRegex = /^[a-zA-Z0-9_]+$/;
+
         function checkIpLimitServiceStatus() {
-            fetch('{{ url_for("server_services_status_api") }}')
-                .then(response => response.json())
-                .then(data => {
+            $.getJSON('{{ url_for("server_services_status_api") }}')
+                .done(data => {
                     if (data.hysteria_iplimit === true) {
                         $('.requires-iplimit-service').show();
                     }
                 })
-                .catch(error => console.error('Error fetching IP limit service status:', error));
+                .fail(() => console.error('Error fetching IP limit service status.'));
         }
 
-        checkIpLimitServiceStatus();
-
-        const usernameRegex = /^[a-zA-Z0-9_]+$/;
-
-        function validateUsername(username, errorElementId) {
-            const errorElement = $("#" + errorElementId);
-            if (!username) {
-                errorElement.text("");
-                return false;
-            }
+        function validateUsername(inputElement, errorElement) {
+            const username = $(inputElement).val();
             const isValid = usernameRegex.test(username);
-
-            if (!isValid) {
-                errorElement.text("Usernames can only contain letters, numbers, and underscores.");
-                return false;
-            } else {
-                errorElement.text("");
-                return true;
-            }
+            $(errorElement).text(isValid ? "" : "Usernames can only contain letters, numbers, and underscores.");
+            $(inputElement).closest('form').find('button[type="submit"]').prop('disabled', !isValid);
         }
 
-        $("#addSubmitButton").prop("disabled", true);
-
-        $("#addUsername").on("input", function () {
-            const username = $(this).val();
-            const isValid = validateUsername(username, "addUsernameError");
-            $("#addSubmitButton").prop("disabled", !isValid);
-        });
-        
-        $("#addBulkPrefix").on("input", function () {
-            const prefix = $(this).val();
-            const isValid = validateUsername(prefix, "addBulkPrefixError");
-            $("#addBulkSubmitButton").prop("disabled", !isValid);
+        $('#addUsername, #addBulkPrefix, #editUsername').on('input', function() {
+            validateUsername(this, `#${this.id}Error`);
         });
 
-        $("#editUsername").on("input", function () {
-            const username = $(this).val();
-            const isValid = validateUsername(username, "editUsernameError");
-            $("#editSubmitButton").prop("disabled", !isValid);
-        });
-        
         $(".filter-button").on("click", function () {
             const filter = $(this).data("filter");
-
             $("#selectAll").prop("checked", false);
-
             $("#userTable tbody tr").each(function () {
-                let showRow = true;
-                
+                let showRow;
                 switch (filter) {
-                    case "all":
-                        showRow = true;
-                        break;
-                    case "not-active":
-                        showRow = $(this).find("td:eq(2) i").hasClass("text-danger");
-                        break;
-                    case "online":
-                        showRow = $(this).find("td:eq(2) i").hasClass("text-success");
-                        break;
-                    case "enable":
-                        showRow = $(this).find("td:eq(7) i").hasClass("text-success");
-                        break;
-                    case "disable":
-                        showRow = $(this).find("td:eq(7) i").hasClass("text-danger");
-                        break;
+                    case "on-hold":    showRow = $(this).find("td:eq(2) i").hasClass("text-warning"); break;
+                    case "online":     showRow = $(this).find("td:eq(2) i").hasClass("text-success"); break;
+                    case "enable":     showRow = $(this).find("td:eq(7) i").hasClass("text-success"); break;
+                    case "disable":    showRow = $(this).find("td:eq(7) i").hasClass("text-danger"); break;
+                    default:           showRow = true;
                 }
-
-                if (showRow) {
-                    $(this).show();
-                } else {
-                    $(this).hide();
-                }
-                $(this).find(".user-checkbox").prop("checked", false);
+                $(this).toggle(showRow).find(".user-checkbox").prop("checked", false);
             });
         });
 
         $("#selectAll").on("change", function () {
-            $("#userTable tbody tr:visible .user-checkbox").prop("checked", $(this).prop("checked"));
+            $("#userTable tbody tr:visible .user-checkbox").prop("checked", this.checked);
         });
 
         $("#deleteSelected").on("click", function () {
-            const selectedUsers = $(".user-checkbox:checked").map(function () {
-                return $(this).val();
-            }).get();
-
+            const selectedUsers = $(".user-checkbox:checked").map((_, el) => $(el).val()).get();
             if (selectedUsers.length === 0) {
-                Swal.fire({
-                    title: "Warning!",
-                    text: "Please select at least one user to delete.",
-                    icon: "warning",
-                    confirmButtonText: "OK",
-                });
-                return;
+                return Swal.fire("Warning!", "Please select at least one user to delete.", "warning");
             }
-
             Swal.fire({
                 title: "Are you sure?",
-                html: `This will delete the selected users: <b>${selectedUsers.join(", ")}</b>.<br>This action cannot be undone!`,
+                html: `This will delete: <b>${selectedUsers.join(", ")}</b>.<br>This action cannot be undone!`,
                 icon: "warning",
                 showCancelButton: true,
-                confirmButtonColor: "#3085d6",
-                cancelButtonColor: "#d33",
+                confirmButtonColor: "#d33",
                 confirmButtonText: "Yes, delete them!",
             }).then((result) => {
-                if (result.isConfirmed) {
-                    Promise.all(selectedUsers.map(username => {
-                        const removeUserUrl = "{{ url_for('remove_user_api', username='USERNAME_PLACEHOLDER') }}";
-                        const url = removeUserUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
-                        return $.ajax({
-                            url: url,
-                            method: "DELETE",
-                            contentType: "application/json",
-                            data: JSON.stringify({ username: username }),
-                        });
-                    }))
-                        .then(responses => {
-                            const allSuccessful = responses.every(response => response.detail);
-                            if (allSuccessful) {
-                                Swal.fire({
-                                    title: "Success!",
-                                    text: "Selected users deleted successfully!",
-                                    icon: "success",
-                                    confirmButtonText: "OK",
-                                }).then(() => {
-                                    location.reload();
-                                });
-                            } else {
-                                Swal.fire({
-                                    title: "Error!",
-                                    text: "Failed to delete some users.",
-                                    icon: "error",
-                                    confirmButtonText: "OK",
-                                });
-                            }
-                        })
-                        .catch(error => {
-                            console.error("Error deleting users:", error);
-                            Swal.fire({
-                                title: "Error!",
-                                text: "An error occurred while deleting users.",
-                                icon: "error",
-                                confirmButtonText: "OK",
-                            });
-                        });
-                }
+                if (!result.isConfirmed) return;
+                const urlTemplate = "{{ url_for('remove_user_api', username='U') }}";
+                const promises = selectedUsers.map(user => $.ajax({ url: urlTemplate.replace('U', user), method: "DELETE" }));
+                Promise.all(promises)
+                    .then(() => Swal.fire("Success!", "Selected users deleted.", "success").then(() => location.reload()))
+                    .catch(() => Swal.fire("Error!", "An error occurred while deleting users.", "error"));
             });
         });
 
-        $("#addUserForm").on("submit", function (e) {
+        $("#addUserForm, #addBulkUsersForm").on("submit", function (e) {
             e.preventDefault();
-            if (!validateUsername($("#addUsername").val(), "addUsernameError")) {
-                $("#addSubmitButton").prop("disabled", true);
-                return;
-            }
-            $("#addSubmitButton").prop("disabled", true);
-
-            const jsonData = {
-                username: $("#addUsername").val(),
-                traffic_limit: $("#addTrafficLimit").val(),
-                expiration_days: $("#addExpirationDays").val(),
-                unlimited: $("#addUnlimited").is(":checked")
-            };
-
-            $.ajax({
-                url: " {{ url_for('add_user_api') }} ",
-                method: "POST",
-                contentType: "application/json",
-                data: JSON.stringify(jsonData),
-                success: function (response) {
-                    Swal.fire({
-                        title: "Success!",
-                        text: response.detail || "User added successfully!",
-                        icon: "success",
-                        confirmButtonText: "OK",
-                    }).then(() => {
-                        location.reload();
-                    });
-                },
-                error: function (jqXHR, textStatus, errorThrown) {
-                    let errorMessage = "An error occurred while adding user.";
-                    if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
-                        errorMessage = jqXHR.responseJSON.detail;
-                    } else if (jqXHR.status === 409) {
-                        errorMessage = "User '" + jsonData.username + "' already exists.";
-                         $("#addUsernameError").text(errorMessage);
-                    } else if (jqXHR.status === 422) {
-                        errorMessage = jqXHR.responseJSON.detail || "Invalid input provided.";
-                    }
-                    Swal.fire({
-                        title: "Error!",
-                        text: errorMessage,
-                        icon: "error",
-                        confirmButtonText: "OK",
-                    });
-                    $("#addSubmitButton").prop("disabled", false);
-                }
-            });
-        });
-        
-        $("#addBulkUsersForm").on("submit", function(e) {
-            e.preventDefault();
-            if (!validateUsername($("#addBulkPrefix").val(), "addBulkPrefixError")) {
-                $("#addBulkSubmitButton").prop("disabled", true);
-                return;
-            }
-            $("#addBulkSubmitButton").prop("disabled", true);
-        
-            const jsonData = {
-                prefix: $("#addBulkPrefix").val(),
-                count: parseInt($("#addBulkCount").val()),
-                start_number: parseInt($("#addBulkStartNumber").val()),
-                traffic_gb: parseFloat($("#addBulkTrafficLimit").val()),
-                expiration_days: parseInt($("#addBulkExpirationDays").val()),
-                unlimited: $("#addBulkUnlimited").is(":checked")
-            };
-        
-            $.ajax({
-                url: "{{ url_for('add_bulk_users_api') }}",
-                method: "POST",
-                contentType: "application/json",
-                data: JSON.stringify(jsonData),
-                success: function(response) {
-                    Swal.fire({
-                        title: "Success!",
-                        text: response.detail || "Bulk user creation started successfully!",
-                        icon: "success",
-                        confirmButtonText: "OK",
-                    }).then(() => {
-                        location.reload();
-                    });
-                },
-                error: function(jqXHR) {
-                    let errorMessage = "An error occurred during bulk user creation.";
-                    if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
-                        errorMessage = jqXHR.responseJSON.detail;
-                    }
-                    Swal.fire({
-                        title: "Error!",
-                        text: errorMessage,
-                        icon: "error",
-                        confirmButtonText: "OK",
-                    });
-                    $("#addBulkSubmitButton").prop("disabled", false);
-                }
-            });
-        });
-
-        $(document).on("click", ".edit-user", function () {
-            const username = $(this).data("user");
-            const row = $(this).closest("tr");
-            const trafficUsageText = row.find("td:eq(4)").text().trim();
-            const expiryDaysText = row.find("td:eq(6)").text().trim();
-            const blocked = row.find("td:eq(7) i").hasClass("text-danger");
-            const unlimited_ip = row.find(".unlimited-ip-cell i").hasClass("text-primary");
-        
-            const expiryDaysValue = (expiryDaysText.toLowerCase() === 'unlimited' || expiryDaysText.toLowerCase() === 'on-hold') ? 0 : parseInt(expiryDaysText, 10);
+            const form = $(this);
+            const isBulk = form.attr('id') === 'addBulkUsersForm';
+            const url = isBulk ? "{{ url_for('add_bulk_users_api') }}" : "{{ url_for('add_user_api') }}";
+            const button = form.find('button[type="submit"]').prop('disabled', true);
             
-            let trafficLimitValue = 0;
-            if (!trafficUsageText.toLowerCase().includes('/unlimited')) {
-                const parts = trafficUsageText.split('/');
-                if (parts.length > 1) {
-                    const limitPart = parts[1].trim();
-                    const match = limitPart.match(/^[\d.]+/);
-                    if (match) {
-                        trafficLimitValue = parseFloat(match[0]);
-                    }
-                }
-            }
-        
-            $("#originalUsername").val(username);
-            $("#editUsername").val(username);
-            $("#editTrafficLimit").val(trafficLimitValue);
-            $("#editExpirationDays").val(expiryDaysValue);
-            $("#editBlocked").prop("checked", blocked);
-            $("#editUnlimitedIp").prop("checked", unlimited_ip);
-        
-            const isValid = validateUsername(username, "editUsernameError");
-            $("#editUserForm button[type='submit']").prop("disabled", !isValid);
+            const formData = new FormData(this);
+            const jsonData = Object.fromEntries(formData.entries());
+
+            jsonData.unlimited = jsonData.unlimited === 'on';
+
+            $.ajax({
+                url: url,
+                method: "POST",
+                contentType: "application/json",
+                data: JSON.stringify(jsonData),
+            })
+            .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+            .fail(err => Swal.fire("Error!", err.responseJSON?.detail || "An error occurred.", "error"))
+            .always(() => button.prop('disabled', false));
         });
 
+        $("#editUserModal").on("show.bs.modal", function (event) {
+            const user = $(event.relatedTarget).data("user");
+            const row = $(event.relatedTarget).closest("tr");
+            const trafficText = row.find("td:eq(4)").text();
+            const expiryText = row.find("td:eq(6)").text();
+            
+            $("#originalUsername").val(user);
+            $("#editUsername").val(user);
+            $("#editTrafficLimit").val(parseFloat(trafficText.split('/')[1]) || 0);
+            $("#editExpirationDays").val(parseInt(expiryText) || 0);
+            $("#editBlocked").prop("checked", !row.find("td:eq(7) i").hasClass("text-success"));
+            $("#editUnlimitedIp").prop("checked", row.find(".unlimited-ip-cell i").hasClass("text-primary"));
+            validateUsername('#editUsername', '#editUsernameError');
+        });
+        
         $("#editUserForm").on("submit", function (e) {
             e.preventDefault();
-            if (!validateUsername($("#editUsername").val(), "editUsernameError")) {
-                return;
-            }
-            $("#editSubmitButton").prop("disabled", true);
-            
-            const jsonData = {
-                new_username: $("#editUsername").val(),
-                new_traffic_limit: $("#editTrafficLimit").val() || null,
-                new_expiration_days: $("#editExpirationDays").val() || null,
-                blocked: $("#editBlocked").is(":checked"),
-                unlimited_ip: $("#editUnlimitedIp").is(":checked")
-            };
+            const button = $("#editSubmitButton").prop("disabled", true);
+            const originalUsername = $("#originalUsername").val();
+            const url = "{{ url_for('edit_user_api', username='U') }}".replace('U', originalUsername);
 
-            if (jsonData.new_username === $("#originalUsername").val()) {
-                delete jsonData.new_username;
-            }
-
-            const editUserUrl = "{{ url_for('edit_user_api', username='USERNAME_PLACEHOLDER') }}";
-            const url = editUserUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent($("#originalUsername").val()));
+            const formData = new FormData(this);
+            const jsonData = Object.fromEntries(formData.entries());
+            jsonData.blocked = jsonData.blocked === 'on';
+            jsonData.unlimited_ip = jsonData.unlimited_ip === 'on';
+            if (jsonData.new_username === originalUsername) delete jsonData.new_username;
 
             $.ajax({
                 url: url,
                 method: "PATCH",
                 contentType: "application/json",
                 data: JSON.stringify(jsonData),
-                success: function (response) {
-                    if (response && response.detail) {
-                        $("#editUserModal").modal("hide");
-                        Swal.fire({
-                            title: "Success!",
-                            text: response.detail,
-                            icon: "success",
-                            confirmButtonText: "OK",
-                        }).then(() => {
-                            location.reload();
-                        });
-                    } else {
-                        $("#editUserModal").modal("hide");
-                        Swal.fire({
-                            title: "Error!",
-                            text: (response && response.error) || "An unknown error occurred.",
-                            icon: "error",
-                            confirmButtonText: "OK",
-                        });
-                        $("#editSubmitButton").prop("disabled", false);
-                    }
-                },
-                error: function (jqXHR) {
-                    let errorMessage = "An error occurred while updating user.";
-                    if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
-                        errorMessage = jqXHR.responseJSON.detail;
-                    }
-                    Swal.fire({
-                        title: "Error!",
-                        text: errorMessage,
-                        icon: "error",
-                        confirmButtonText: "OK",
-                    });
-                    $("#editSubmitButton").prop("disabled", false);
-                }
-            });
+            })
+            .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+            .fail(err => Swal.fire("Error!", err.responseJSON?.detail, "error"))
+            .always(() => button.prop('disabled', false));
         });
 
-        // Reset User Button Click
-        $("#userTable").on("click", ".reset-user", function () {
-            const username = $(this).data("user");
+        $("#userTable").on("click", ".reset-user, .delete-user", function () {
+            const button = $(this);
+            const username = button.data("user");
+            const isDelete = button.hasClass("delete-user");
+            const action = isDelete ? "delete" : "reset";
+            const urlTemplate = isDelete ? "{{ url_for('remove_user_api', username='U') }}" : "{{ url_for('reset_user_api', username='U') }}";
 
             Swal.fire({
-                title: "Are you sure?",
-                html: `This will reset <b>${username}</b>'s data.<br>This action cannot be undone!`,
+                title: `Are you sure you want to ${action}?`,
+                html: `This will ${action} user <b>${username}</b>.`,
                 icon: "warning",
                 showCancelButton: true,
-                confirmButtonColor: "#3085d6",
-                cancelButtonColor: "#d33",
-                confirmButtonText: "Yes, reset it!",
+                confirmButtonColor: "#d33",
+                confirmButtonText: `Yes, ${action} it!`,
             }).then((result) => {
-                if (result.isConfirmed) {
-                    const resetUserUrl = "{{ url_for('reset_user_api', username='USERNAME_PLACEHOLDER') }}";
-                    const url = resetUserUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
-                    $.ajax({
-                        url: url,
-                        method: "GET",
-                        contentType: "application/json",
-                        data: JSON.stringify({ username: username }),
-                        success: function (response) {
-                            if (response.detail) {
-                                Swal.fire({
-                                    title: "Success!",
-                                    text: response.detail,
-                                    icon: "success",
-                                    confirmButtonText: "OK",
-                                }).then(() => {
-                                    location.reload();
-                                });
-                            } else {
-                                Swal.fire({
-                                    title: "Error!",
-                                    text: response.error || "Failed to reset user",
-                                    icon: "error",
-                                    confirmButtonText: "OK",
-                                });
-                            }
-                        },
-                        error: function () {
-                            Swal.fire({
-                                title: "Error!",
-                                text: "An error occurred while resetting user",
-                                icon: "error",
-                                confirmButtonText: "OK",
-                            });
-                        }
-                    });
-                }
+                if (!result.isConfirmed) return;
+                $.ajax({
+                    url: urlTemplate.replace("U", encodeURIComponent(username)),
+                    method: isDelete ? "DELETE" : "GET",
+                })
+                .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+                .fail(() => Swal.fire("Error!", `Failed to ${action} user.`, "error"));
             });
         });
 
-        // Delete User Button Click
-        $("#userTable").on("click", ".delete-user", function () {
-            const username = $(this).data("user");
-
-            Swal.fire({
-                title: "Are you sure?",
-                html: `This will delete the user <b>${username}</b>.<br>This action cannot be undone!`,
-                icon: "warning",
-                showCancelButton: true,
-                confirmButtonColor: "#3085d6",
-                cancelButtonColor: "#d33",
-                confirmButtonText: "Yes, delete it!",
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    const removeUserUrl = "{{ url_for('remove_user_api', username='USERNAME_PLACEHOLDER') }}";
-                    const url = removeUserUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
-                    $.ajax({
-                        url: url,
-                        method: "DELETE",
-                        contentType: "application/json",
-                        data: JSON.stringify({ username: username }),
-                        success: function (response) {
-                            if (response.detail) {
-                                Swal.fire({
-                                    title: "Success!",
-                                    text: response.detail,
-                                    icon: "success",
-                                    confirmButtonText: "OK",
-                                }).then(() => {
-                                    location.reload();
-                                });
-                            } else {
-                                Swal.fire({
-                                    title: "Error!",
-                                    text: response.error || "Failed to delete user",
-                                    icon: "error",
-                                    confirmButtonText: "OK",
-                            });
-                            }
-                        },
-                        error: function () {
-                            Swal.fire({
-                                title: "Error!",
-                                text: "An error occurred while deleting user",
-                                icon: "error",
-                                confirmButtonText: "OK",
-                            });
-                        }
-                    });
-                }
-            });
-        });
-
-        // QR Code Modal
         $("#qrcodeModal").on("show.bs.modal", function (event) {
-            const button = $(event.relatedTarget);
-            const username = button.data("username");
-            const qrcodesContainer = $("#qrcodesContainer");
-            qrcodesContainer.empty();
-
-            const userUriApiUrl = "{{ url_for('show_user_uri_api', username='USERNAME_PLACEHOLDER') }}";
-            const url = userUriApiUrl.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
-
-            $.ajax({
-                url: url,
-                method: "GET",
-                dataType: 'json',
-                success: function (response) {
-                    const configs = [
-                        { type: "IPv4", link: response.ipv4 },
-                        { type: "IPv6", link: response.ipv6 },
-                        { type: "Normal-SUB", link: response.normal_sub }
-                    ];
-
-                    configs.forEach(config => {
-                        if (config.link) {
-                            const displayType = config.type;
-                            const configLink = config.link;
-                            const qrCodeId = `qrcode-${displayType}-${Math.random().toString(36).substring(2, 10)}`;
-
-                            const card = $(`
-                                <div class="card d-inline-block my-2">
-                                    <div class="card-body">
-                                        <div id="${qrCodeId}" class="mx-auto cursor-pointer"></div>
-                                        <br>
-                                        <div class="config-type-text mt-2 text-center">${displayType}</div>
-                                    </div>
-                                </div>
-                            `);
-                            qrcodesContainer.append(card);
-
-                            const qrCodeStyling = new QRCodeStyling({
-                                width: 180,
-                                height: 180,
-                                data: configLink,
-                                margin: 5,
-                                dotsOptions: {
-                                    color: "#212121",
-                                    type: "square"
-                                },
-                                cornersSquareOptions: {
-                                    color: "#212121",
-                                    type: "square"
-                                },
-                                backgroundOptions: {
-                                    color: "#FAFAFA",
-                                },
-                                imageOptions: {
-                                    hideBackgroundDots: true,
-                                }
-                            });
-                            qrCodeStyling.append(document.getElementById(qrCodeId));
-
-                            card.on("click", function () {
-                                navigator.clipboard.writeText(configLink)
-                                    .then(() => {
-                                        Swal.fire({
-                                            icon: "success",
-                                            title: displayType + " link copied!",
-                                            showConfirmButton: false,
-                                            timer: 1500,
-                                        });
-                                    })
-                                    .catch(err => {
-                                        console.error("Failed to copy link: ", err);
-                                        Swal.fire({
-                                            icon: "error",
-                                            title: "Failed to copy link",
-                                            text: "Please copy manually.",
-                                        });
-                                    });
-                            });
-                        }
-                    });
-
-
-                },
-                error: function (error) {
-                    console.error("Error fetching user URI:", error);
-                    Swal.fire({
-                        title: "Error!",
-                        text: "Failed to fetch user configuration URIs.",
-                        icon: "error",
-                        confirmButtonText: "OK",
-                    });
-                }
-            });
-
-
-        });
-
-        $("#qrcodeModal .modal-content").on("click", function (e) {
-            e.stopPropagation();
-        });
-
-        $("#qrcodeModal").on("hidden.bs.modal", function () {
-            $("#qrcodesContainer").empty();
-        });
-
-        $("#qrcodeModal .close").on("click", function () {
-            $("#qrcodeModal").modal("hide");
+            const username = $(event.relatedTarget).data("username");
+            const qrcodesContainer = $("#qrcodesContainer").empty();
+            const url = "{{ url_for('show_user_uri_api', username='U') }}".replace("U", encodeURIComponent(username));
+            $.getJSON(url, response => {
+                [
+                    { type: "IPv4", link: response.ipv4 },
+                    { type: "IPv6", link: response.ipv6 },
+                    { type: "Normal-SUB", link: response.normal_sub }
+                ].forEach(config => {
+                    if (!config.link) return;
+                    const qrId = `qrcode-${config.type}`;
+                    const card = $(`<div class="card d-inline-block m-2"><div class="card-body"><div id="${qrId}" class="mx-auto" style="cursor: pointer;"></div><div class="mt-2 text-center small text-body font-weight-bold">${config.type}</div></div></div>`);
+                    qrcodesContainer.append(card);
+                    new QRCodeStyling({ width: 200, height: 200, data: config.link, margin: 2 }).append(document.getElementById(qrId));
+                    card.on("click", () => navigator.clipboard.writeText(config.link).then(() => Swal.fire({ icon: "success", title: `${config.type} link copied!`, showConfirmButton: false, timer: 1200 })));
+                });
+            }).fail(() => Swal.fire("Error!", "Failed to fetch user configuration.", "error"));
         });
         
         $("#showSelectedLinks").on("click", function () {
-            const selectedUsers = $(".user-checkbox:checked").map(function () {
-                return $(this).val();
-            }).get();
-        
+            const selectedUsers = $(".user-checkbox:checked").map((_, el) => $(el).val()).get();
             if (selectedUsers.length === 0) {
-                Swal.fire({
-                    title: "Warning!",
-                    text: "Please select at least one user.",
-                    icon: "warning",
-                    confirmButtonText: "OK",
-                });
-                return;
+                return Swal.fire("Warning!", "Please select at least one user.", "warning");
             }
-        
-            Swal.fire({
-                title: 'Fetching links...',
-                text: 'Please wait.',
-                allowOutsideClick: false,
-                didOpen: () => {
-                    Swal.showLoading();
+
+            Swal.fire({ title: 'Fetching links...', text: 'Please wait.', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            const bulkUriApiUrl = "{{ url_for('show_multiple_user_uris_api') }}";
+
+            $.ajax({
+                url: bulkUriApiUrl,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ usernames: selectedUsers }),
+            }).done(results => {
+                Swal.close();
+                const allLinks = results.map(res => res.normal_sub).filter(Boolean);
+                const failedCount = selectedUsers.length - allLinks.length;
+                if (failedCount > 0) {
+                   Swal.fire('Warning', `Could not fetch links for ${failedCount} user(s), but others were successful.`, 'warning');
                 }
-            });
-        
-            const userUriApiUrlTemplate = "{{ url_for('show_user_uri_api', username='USERNAME_PLACEHOLDER') }}";
-        
-            const fetchPromises = selectedUsers.map(username => {
-                const url = userUriApiUrlTemplate.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
-                return fetch(url).then(response => {
-                    if (!response.ok) {
-                        return { username: username, error: `HTTP error! status: ${response.status}` };
-                    }
-                    return response.json();
-                }).catch(error => {
-                    return { username: username, error: error.message };
-                });
-            });
-        
-            Promise.all(fetchPromises)
-                .then(results => {
-                    Swal.close();
-        
-                    const successfulLinks = results
-                        .filter(res => res && res.normal_sub)
-                        .map(res => res.normal_sub);
-        
-                    const failedUsers = results
-                        .filter(res => !res || !res.normal_sub)
-                        .map(res => res.username);
-        
-                    if (failedUsers.length > 0) {
-                        console.error("Failed to fetch links for:", failedUsers);
-                        Swal.fire({
-                            icon: 'warning',
-                            title: 'Partial Success',
-                            text: `Could not fetch links for the following users: ${failedUsers.join(', ')}`,
-                        });
-                    }
-        
-                    if (successfulLinks.length > 0) {
-                        $("#linksTextarea").val(successfulLinks.join('\n'));
-                        $("#showLinksModal").modal("show");
-                    } else if (failedUsers.length === selectedUsers.length) {
-                         Swal.fire({
-                            icon: 'error',
-                            title: 'Operation Failed',
-                            text: 'Could not fetch links for any of the selected users.',
-                        });
-                    }
-                });
+                if (allLinks.length > 0) {
+                    $("#linksTextarea").val(allLinks.join('\n'));
+                    $("#showLinksModal").modal("show");
+                } else {
+                   Swal.fire('Error', `Could not fetch links for any of the selected users.`, 'error');
+                }
+            }).fail(() => Swal.fire('Error!', 'An error occurred while fetching the links.', 'error'));
         });
         
-        $("#copyLinksButton").on("click", function () {
-            const links = $("#linksTextarea").val();
-            if (links) {
-                navigator.clipboard.writeText(links)
-                    .then(() => {
-                        Swal.fire({
-                            icon: "success",
-                            title: "All links copied!",
-                            showConfirmButton: false,
-                            timer: 1500,
-                        });
-                    })
-                    .catch(err => {
-                        console.error("Failed to copy links: ", err);
-                        Swal.fire({
-                            icon: "error",
-                            title: "Failed to copy links",
-                            text: "Please copy manually.",
-                        });
-                    });
-            }
+        $("#copyLinksButton").on("click", () => {
+            navigator.clipboard.writeText($("#linksTextarea").val())
+                .then(() => Swal.fire({ icon: "success", title: "All links copied!", showConfirmButton: false, timer: 1200 }));
         });
 
         function filterUsers() {
             const searchText = $("#searchInput").val().toLowerCase();
-
             $("#userTable tbody tr").each(function () {
                 const username = $(this).find("td:eq(3)").text().toLowerCase();
-                if (username.includes(searchText)) {
-                    $(this).show();
-                } else {
-                    $(this).hide();
-                }
+                $(this).toggle(username.includes(searchText));
             });
         }
-
-        $('#addUserModal').on('show.bs.modal', function (event) {
-            $('#addUserForm')[0].reset();
-            $('#addBulkUsersForm')[0].reset();
-            $('#addUsernameError').text('');
-            $('#addBulkPrefixError').text('');
-            $('#addTrafficLimit').val('30');
-            $('#addExpirationDays').val('30');
-            $('#addBulkTrafficLimit').val('30');
-            $('#addBulkExpirationDays').val('30');
-            $('#addBulkStartNumber').val('1');
-            $('#addSubmitButton').prop('disabled', true);
-            $('#addBulkSubmitButton').prop('disabled', true);
+        
+        $('#addUserModal').on('show.bs.modal', function () {
+            $('#addUserForm, #addBulkUsersForm').trigger('reset');
+            $('#addUsernameError, #addBulkPrefixError').text('');
+            Object.assign(document.getElementById('addTrafficLimit'), {value: 30});
+            Object.assign(document.getElementById('addExpirationDays'), {value: 30});
+            Object.assign(document.getElementById('addBulkTrafficLimit'), {value: 30});
+            Object.assign(document.getElementById('addBulkExpirationDays'), {value: 30});
+            $('#addSubmitButton, #addBulkSubmitButton').prop('disabled', true);
             $('#addUserModal a[data-toggle="tab"]').first().tab('show');
         });
 
-        $("#searchButton").on("click", filterUsers);
-        $("#searchInput").on("keyup", filterUsers);
-
+        $("#searchButton, #searchInput").on("click keyup", filterUsers);
+        
+        checkIpLimitServiceStatus();
     });
 </script>
 {% endblock %}
