@@ -1,18 +1,22 @@
-# [1.17.0] - 2025-08-24
+# [1.18.0] - 2025-08-27
 
+#### ⚡ Performance
 
-#### ⚡ Authentication
+* ⚡ **Optimized bulk user URI fetching**:
 
-* 🚀 **Implemented Go HTTP Auth Server** for **maximum performance**
-* ⚡ Removed old command-based auth system
+  * New API endpoint `/api/v1/users/uri/bulk` to fetch multiple user links in a single call
+  * Eliminates N separate script executions → **huge speedup** 🚀
+* ⚡ Refactored `wrapper_uri.py` for faster bulk processing & maintainability
 
-#### 👥 User Management
+#### ✨ Features
 
-* ✨ **Bulk User Creation** added across:
+* 📤 **Bulk user link export** directly from the **Users Page**
+* 🎨 Distinct **color coding** for user statuses in Web Panel
+* ⏸️ **On-Hold User Activation** logic introduced in `traffic.py` (with `creation_date=None` default)
 
-  * 🖥️ **Frontend UI**
-  * 📡 **API Endpoint**
-  * 💻 **CLI Command**
-  * 📜 **Automation Script**
-* 🔍 New **Online User Filter & Sort** on the Users page
-* 🐛 Fixed: underscores now supported in usernames
+#### 🐛 Fixes & Refactors
+
+* 🤖 **Bot**: Properly handle escaped underscores in usernames
+* 🛠️ **Webpanel**: Improved handling of malformed user data & more accurate status for on-hold users
+* 🐛 Show Go installation correctly
+* 🔄 Refactored on-hold user logic into `traffic.py` for central management
