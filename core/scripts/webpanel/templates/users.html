@@ -57,6 +57,9 @@
                     <button type="button" class="btn btn-sm btn-primary ml-2" data-toggle="modal" data-target="#addUserModal">
                         <i class="fas fa-plus"></i>
                     </button>
+                    <button type="button" class="btn btn-sm btn-info ml-2" id="showSelectedLinks">
+                        <i class="fas fa-link"></i>
+                    </button>
                     <button type="button" class="btn btn-sm btn-danger ml-2" id="deleteSelected">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -299,6 +302,28 @@
             </div>
             <div class="modal-body text-center">
                 <div id="qrcodesContainer" class="mx-auto"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Show Links Modal -->
+<div class="modal fade" id="showLinksModal" tabindex="-1" role="dialog" aria-labelledby="showLinksModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="showLinksModalLabel">Selected User Links</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Here are the Normal-SUB links for the selected users:</p>
+                <textarea id="linksTextarea" class="form-control" rows="10" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="copyLinksButton">Copy All</button>
             </div>
         </div>
     </div>
@@ -883,6 +908,101 @@
 
         $("#qrcodeModal .close").on("click", function () {
             $("#qrcodeModal").modal("hide");
+        });
+        
+        $("#showSelectedLinks").on("click", function () {
+            const selectedUsers = $(".user-checkbox:checked").map(function () {
+                return $(this).val();
+            }).get();
+        
+            if (selectedUsers.length === 0) {
+                Swal.fire({
+                    title: "Warning!",
+                    text: "Please select at least one user.",
+                    icon: "warning",
+                    confirmButtonText: "OK",
+                });
+                return;
+            }
+        
+            Swal.fire({
+                title: 'Fetching links...',
+                text: 'Please wait.',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+        
+            const userUriApiUrlTemplate = "{{ url_for('show_user_uri_api', username='USERNAME_PLACEHOLDER') }}";
+        
+            const fetchPromises = selectedUsers.map(username => {
+                const url = userUriApiUrlTemplate.replace("USERNAME_PLACEHOLDER", encodeURIComponent(username));
+                return fetch(url).then(response => {
+                    if (!response.ok) {
+                        return { username: username, error: `HTTP error! status: ${response.status}` };
+                    }
+                    return response.json();
+                }).catch(error => {
+                    return { username: username, error: error.message };
+                });
+            });
+        
+            Promise.all(fetchPromises)
+                .then(results => {
+                    Swal.close();
+        
+                    const successfulLinks = results
+                        .filter(res => res && res.normal_sub)
+                        .map(res => res.normal_sub);
+        
+                    const failedUsers = results
+                        .filter(res => !res || !res.normal_sub)
+                        .map(res => res.username);
+        
+                    if (failedUsers.length > 0) {
+                        console.error("Failed to fetch links for:", failedUsers);
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Partial Success',
+                            text: `Could not fetch links for the following users: ${failedUsers.join(', ')}`,
+                        });
+                    }
+        
+                    if (successfulLinks.length > 0) {
+                        $("#linksTextarea").val(successfulLinks.join('\n'));
+                        $("#showLinksModal").modal("show");
+                    } else if (failedUsers.length === selectedUsers.length) {
+                         Swal.fire({
+                            icon: 'error',
+                            title: 'Operation Failed',
+                            text: 'Could not fetch links for any of the selected users.',
+                        });
+                    }
+                });
+        });
+        
+        $("#copyLinksButton").on("click", function () {
+            const links = $("#linksTextarea").val();
+            if (links) {
+                navigator.clipboard.writeText(links)
+                    .then(() => {
+                        Swal.fire({
+                            icon: "success",
+                            title: "All links copied!",
+                            showConfirmButton: false,
+                            timer: 1500,
+                        });
+                    })
+                    .catch(err => {
+                        console.error("Failed to copy links: ", err);
+                        Swal.fire({
+                            icon: "error",
+                            title: "Failed to copy links",
+                            text: "Please copy manually.",
+                        });
+                    });
+            }
         });
 
         function filterUsers() {
