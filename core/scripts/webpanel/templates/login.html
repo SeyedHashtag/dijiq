@@ -27,6 +27,7 @@
             justify-content: center;
             position: relative;
             overflow: hidden;
+            padding: 16px;
         }
 
         body::before {
@@ -80,6 +81,20 @@
             animation: slideUp 0.8s ease-out;
         }
 
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 32px 24px;
+                border-radius: 16px;
+                margin: 0 16px;
+            }
+        }
+
+        @media (max-width: 320px) {
+            .login-container {
+                padding: 24px 20px;
+            }
+        }
+
         @keyframes slideUp {
             from {
                 opacity: 0;
@@ -109,6 +124,20 @@
             font-weight: 400;
         }
 
+        @media (max-width: 480px) {
+            .logo {
+                margin-bottom: 24px;
+            }
+            
+            .logo h1 {
+                font-size: 28px;
+            }
+            
+            .logo p {
+                font-size: 14px;
+            }
+        }
+
         .error-message {
             background: #fef2f2;
             border: 1px solid #fecaca;
@@ -121,6 +150,12 @@
 
         .form-group {
             margin-bottom: 24px;
+        }
+
+        @media (max-width: 480px) {
+            .form-group {
+                margin-bottom: 20px;
+            }
         }
 
         .form-input:focus {
@@ -140,6 +175,13 @@
             background: #ffffff;
         }
 
+        @media (max-width: 480px) {
+            .form-input {
+                padding: 14px;
+                font-size: 16px;
+            }
+        }
+
         .form-input::placeholder {
             color: #9ca3af;
         }
@@ -157,6 +199,23 @@
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+        }
+
+        @media (max-width: 480px) {
+            .submit-btn {
+                padding: 14px;
+            }
+        }
+
+        @media (hover: hover) {
+            .submit-btn:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 15px 30px rgba(30, 60, 114, 0.4);
+            }
+            
+            .submit-btn:hover::before {
+                left: 100%;
+            }
         }
 
         .submit-btn::before {
@@ -190,6 +249,13 @@
             color: #6b7280;
         }
 
+        @media (max-width: 480px) {
+            .footer {
+                margin-top: 24px;
+                font-size: 13px;
+            }
+        }
+
         .footer a {
             color: #1e3c72;
             text-decoration: none;
@@ -200,9 +266,17 @@
             margin-top: 8px;
         }
 
-        .footer a:hover {
-            color: #2a5298;
-            transform: scale(1.1);
+        @media (hover: hover) {
+            .footer a:hover {
+                color: #2a5298;
+                transform: scale(1.1);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .footer a {
+                font-size: 18px;
+            }
         }
     </style>
 </head>
