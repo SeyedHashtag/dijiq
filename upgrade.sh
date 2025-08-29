@@ -65,6 +65,7 @@ FILES=(
     "$HYSTERIA_INSTALL_DIR/config.json"
     "$HYSTERIA_INSTALL_DIR/.configs.env"
     "$HYSTERIA_INSTALL_DIR/nodes.json"
+    "$HYSTERIA_INSTALL_DIR/extra.json"
     "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot/.env"
     "$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/.env"
     "$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/Caddyfile.normalsub"
