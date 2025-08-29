@@ -58,7 +58,7 @@ check_os_version() {
 
     if ! command -v bc &> /dev/null; then
         log_info "Installing bc package..."
-        apt update -qq &> /dev/null && apt install -y -qq bc &> /dev/null
+        apt update -qq && apt install -y -qq bc
         if [ $? -ne 0 ]; then
             log_error "Failed to install bc package."
             exit 1
@@ -91,12 +91,12 @@ install_packages() {
 
     if [ ${#MISSING_PACKAGES[@]} -ne 0 ]; then
         log_info "Installing missing packages: ${MISSING_PACKAGES[*]}"
-        apt update -qq &> /dev/null || { log_error "Failed to update apt repositories"; exit 1; }
-        apt upgrade -y -qq &> /dev/null || { log_warning "Failed to upgrade packages, continuing..."; }
+        apt update -qq || { log_error "Failed to update apt repositories"; exit 1; }
+        apt upgrade -y -qq || { log_warning "Failed to upgrade packages, continuing..."; }
         
         for package in "${MISSING_PACKAGES[@]}"; do
             log_info "Installing $package..."
-            if apt install -y -qq "$package" &> /dev/null; then
+            if apt install -y -qq "$package"; then
                 log_success "Installed $package"
             else
                 log_error "Failed to install $package"
