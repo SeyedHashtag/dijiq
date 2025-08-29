@@ -70,7 +70,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return exception_handler(exc)
 
     def __redirect_to_login(self, request: Request):
-        next_url = quote(str(request.url))
-        redirect_url = str(request.url_for('login')) + f'?next_url={next_url}'
-
+        redirect_url = str(request.url_for('login'))
         return RedirectResponse(url=redirect_url, status_code=302)
