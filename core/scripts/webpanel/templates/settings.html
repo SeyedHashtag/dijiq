@@ -31,20 +31,9 @@
                                     aria-controls='telegram' aria-selected='true'><i class="fab fa-telegram"></i>
                                     Telegram Bot</a>
                             </li>
-                            <li class='nav-item'>
-                                <a class='nav-link' id='port-tab' data-toggle='pill' href='#port' role='tab'
-                                    aria-controls='port' aria-selected='false'><i class="fas fa-server"></i> Change
-                                    Port</a>
-                            </li>
-                            <li class='nav-item'>
-                                <a class='nav-link' id='sni-tab' data-toggle='pill' href='#sni' role='tab'
-                                    aria-controls='sni' aria-selected='false'><i class="fas fa-shield-alt"></i> Change
-                                    SNI</a>
-                            </li>
                              <li class='nav-item'>
-                                <a class='nav-link' id='obfs-tab' data-toggle='pill' href='#obfs' role='tab'
-                                    aria-controls='obfs' aria-selected='false'><i class="fas fa-user-secret"></i>
-                                    OBFS</a>
+                                <a class='nav-link' id='hysteria-settings-tab' data-toggle='pill' href='#hysteria-settings' role='tab'
+                                    aria-controls='hysteria-settings' aria-selected='false'><i class="fas fa-cogs"></i> Hysteria Settings</a>
                             </li>
                             <li class='nav-item'>
                                 <a class='nav-link' id='ip-tab' data-toggle='pill' href='#change_ip' role='tab'
@@ -165,54 +154,93 @@
                                 </form>
                             </div>
 
-                            <!-- Port Tab -->
-                            <div class='tab-pane fade' id='port' role='tabpanel' aria-labelledby='port-tab'>
-                                <form id="port_form">
-                                    <div class='form-group'>
-                                        <label for='hysteria_port'>Port:</label>
-                                        <input type='text' class='form-control' id='hysteria_port'
-                                            placeholder='Enter Port'>
-                                        <div class="invalid-feedback">
-                                            Please enter a valid port number.
+                            <!-- Hysteria Settings Tab -->
+                            <div class='tab-pane fade' id='hysteria-settings' role='tabpanel' aria-labelledby='hysteria-settings-tab'>
+                                <div class="row">
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card card-outline card-primary h-100">
+                                            <div class="card-header"><h3 class="card-title"><i class="fas fa-server"></i> Change Port</h3></div>
+                                            <div class="card-body">
+                                                <form id="port_form">
+                                                    <div class='form-group'>
+                                                        <label for='hysteria_port'>Port:</label>
+                                                        <input type='text' class='form-control' id='hysteria_port'
+                                                            placeholder='Enter Port'>
+                                                        <div class="invalid-feedback">
+                                                            Please enter a valid port number.
+                                                        </div>
+                                                    </div>
+                                                    <button id="port_change" type='button' class='btn btn-primary'>Save</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
-                                    <button id="port_change" type='button' class='btn btn-primary'>Save</button>
-                                </form>
-                            </div>
-
-                            <!-- SNI Tab -->
-                            <div class='tab-pane fade' id='sni' role='tabpanel' aria-labelledby='sni-tab'>
-                                <form id="sni_form">
-                                    <div class='form-group'>
-                                        <label for='sni_domain'>Domain:</label>
-                                        <input type='text' class='form-control' id='sni_domain'
-                                            placeholder='Enter Domain'>
-                                        <div class="invalid-feedback">
-                                            Please enter a valid domain (without http:// or https://).
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card card-outline card-primary h-100">
+                                            <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-alt"></i> Change SNI</h3></div>
+                                            <div class="card-body">
+                                                 <form id="sni_form">
+                                                    <div class='form-group'>
+                                                        <label for='sni_domain'>Domain:</label>
+                                                        <input type='text' class='form-control' id='sni_domain'
+                                                            placeholder='Enter Domain'>
+                                                        <div class="invalid-feedback">
+                                                            Please enter a valid domain (without http:// or https://).
+                                                        </div>
+                                                    </div>
+                                                    <button id="sni_change" type='button' class='btn btn-primary'>Save</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
-                                    <button id="sni_change" type='button' class='btn btn-primary'>Save</button>
-                                </form>
-                            </div>
-
-                             <!-- OBFS Tab -->
-                            <div class='tab-pane fade' id='obfs' role='tabpanel' aria-labelledby='obfs-tab'>
-                                <div class="mb-3">
-                                    <h5>OBFS Status</h5>
-                                    <div id="obfs_status_container" class="p-3 border rounded">
-                                        <span id="obfs_status_message">Loading OBFS status...</span>
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card card-outline card-secondary h-100">
+                                            <div class="card-header"><h3 class="card-title"><i class="fas fa-user-secret"></i> OBFS</h3></div>
+                                            <div class="card-body">
+                                                <div class="mb-3">
+                                                    <h5>OBFS Status</h5>
+                                                    <div id="obfs_status_container" class="p-3 border rounded">
+                                                        <span id="obfs_status_message">Loading OBFS status...</span>
+                                                    </div>
+                                                </div>
+                                                <button id="obfs_enable_btn" type='button' class='btn btn-success' style="display: none;">
+                                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                    Enable OBFS
+                                                </button>
+                                                <button id="obfs_disable_btn" type='button' class='btn btn-danger' style="display: none;">
+                                                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                    Disable OBFS
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card card-outline card-info h-100">
+                                            <div class="card-header">
+                                                <h3 class="card-title"><i class="fas fa-globe-americas"></i> Update GeoIP & GeoSite Files</h3>
+                                            </div>
+                                            <div class="card-body">
+                                                <p>Update GeoIP and GeoSite database files for specific countries. This is useful for routing rules.</p>
+                                                <div class="d-flex flex-column">
+                                                    <button id="geo_update_iran" type='button' class='btn btn-secondary mb-2'>
+                                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                        Update for Iran
+                                                    </button>
+                                                     <button id="geo_update_china" type='button' class='btn btn-secondary mb-2'>
+                                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                        Update for China
+                                                    </button>
+                                                    <button id="geo_update_russia" type='button' class='btn btn-secondary'>
+                                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                                        Update for Russia
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <button id="obfs_enable_btn" type='button' class='btn btn-success' style="display: none;">
-                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
-                                    Enable OBFS
-                                </button>
-                                <button id="obfs_disable_btn" type='button' class='btn btn-danger' style="display: none;">
-                                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
-                                    Disable OBFS
-                                </button>
                             </div>
-
+                            
                             <!-- IP Management Tab -->
                             <div class='tab-pane fade' id='change_ip' role='tabpanel' aria-labelledby='ip-tab'>
                                 <div class="card card-outline card-primary">
@@ -1433,6 +1461,25 @@
             });
         }
 
+        function updateGeo(country) {
+            const countryName = country.charAt(0).toUpperCase() + country.slice(1);
+            const buttonId = `#geo_update_${country}`;
+            const baseUrl = "{{ url_for('update_geo', country='COUNTRY_PLACEHOLDER') }}";
+            const url = baseUrl.replace('COUNTRY_PLACEHOLDER', country);
+        
+            confirmAction(`update the Geo files for ${countryName}`, function () {
+                sendRequest(
+                    url,
+                    "GET",
+                    null,
+                    `Geo files for ${countryName} updated successfully!`,
+                    buttonId,
+                    false,
+                    null
+                );
+            });
+        }
+
         $("#warp_start_btn").on("click", function() {
             confirmAction("install and start WARP", function () {
                 sendRequest(
@@ -1506,6 +1553,9 @@
             const configName = $(this).data("name");
             deleteExtraConfig(configName);
         });
+        $("#geo_update_iran").on("click", function() { updateGeo('iran'); });
+        $("#geo_update_china").on("click", function() { updateGeo('china'); });
+        $("#geo_update_russia").on("click", function() { updateGeo('russia'); });
 
         $('#normal_domain, #sni_domain, #decoy_domain').on('input', function () {
             if (isValidDomain($(this).val())) {
