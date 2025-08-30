@@ -1,22 +1,31 @@
-# [1.18.0] - 2025-08-27
+### 🛡️ **\[1.18.1] – Security Patch & Hysteria Settings Tab**
 
-#### ⚡ Performance
+*Released: 2025-08-30*
 
-* ⚡ **Optimized bulk user URI fetching**:
+#### 🔒 Security
 
-  * New API endpoint `/api/v1/users/uri/bulk` to fetch multiple user links in a single call
-  * Eliminates N separate script executions → **huge speedup** 🚀
-* ⚡ Refactored `wrapper_uri.py` for faster bulk processing & maintainability
+* 🛡️ **Open Redirect Fix**:
+  Removed `next_url` parameter from login flow to prevent **open redirect vulnerability**.
+  
+  Special thanks to [**@HEXER365**](https://github.com/HEXER365) for responsible disclosure 🙏
 
 #### ✨ Features
 
-* 📤 **Bulk user link export** directly from the **Users Page**
-* 🎨 Distinct **color coding** for user statuses in Web Panel
-* ⏸️ **On-Hold User Activation** logic introduced in `traffic.py` (with `creation_date=None` default)
+* ⚙️ **New Hysteria Settings tab** in Web Panel (with **geo update support**)
+* 🎨 Redesigned **Login Page** for better UI/UX
 
-#### 🐛 Fixes & Refactors
+#### 🛠️ Fixes
 
-* 🤖 **Bot**: Properly handle escaped underscores in usernames
-* 🛠️ **Webpanel**: Improved handling of malformed user data & more accurate status for on-hold users
-* 🐛 Show Go installation correctly
-* 🔄 Refactored on-hold user logic into `traffic.py` for central management
+* 📦 Backup `extra.json` during upgrades
+* 📱 Improved responsive design across web panel
+* 🧩 Relaxed conflict check in user viewmodel
+* 🧹 Removed `/dev/null` redirects for cleaner logging
+
+#### 📦 Chore & Dependencies
+
+* ⬆️ Updated dependencies:
+
+  * `typing-extensions` → 4.15.0
+  * `starlette` → 0.47.3
+  * `requests` → 2.32.5
+* 🧹 Removed **deprecated `user.sh`** script (legacy auth)
