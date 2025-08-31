@@ -47,6 +47,9 @@ validate_date() {
     if [ -z "$date_str" ]; then
         return 0
     fi
+    if [ "$date_str" == "null" ]; then
+        return 0
+    fi
     if ! [[ "$date_str" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         echo "Invalid date format. Expected YYYY-MM-DD."
         return 1
@@ -155,12 +158,17 @@ update_user_info() {
         .password = ($password // .password) |
         .max_download_bytes = ($max_download_bytes // .max_download_bytes) |
         .expiration_days = ($expiration_days // .expiration_days) |
-        .account_creation_date = ($account_creation_date // .account_creation_date) |
+        .account_creation_date = (if $account_creation_date == "null" then null else $account_creation_date end) |
         .blocked = $blocked |
         .unlimited_user = $unlimited |
-        .upload_bytes = $upload_bytes |
-        .download_bytes = $download_bytes |
         .status = $status
+      ) |
+      (if .[$new_username].status != "On-hold" then
+         .[$new_username] |= (
+            .upload_bytes = $upload_bytes |
+            .download_bytes = $download_bytes
+         )
+       else . end
       )
     '  "$USERS_FILE" > tmp.$$.json && mv tmp.$$.json "$USERS_FILE"
 
