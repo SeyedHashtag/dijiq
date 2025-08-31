@@ -24,6 +24,29 @@ success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1";
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
 
+# ========== Capture Active Services ==========
+declare -a ACTIVE_SERVICES_BEFORE_UPGRADE=()
+ALL_SERVICES=(
+    hysteria-caddy.service
+    hysteria-server.service
+    hysteria-auth.service
+    hysteria-scheduler.service
+    hysteria-telegram-bot.service
+    hysteria-normal-sub.service
+    hysteria-caddy-normalsub.service
+    hysteria-webpanel.service
+    hysteria-ip-limit.service
+)
+
+info "Checking for active services before upgrade..."
+for SERVICE in "${ALL_SERVICES[@]}"; do
+    if systemctl is-active --quiet "$SERVICE"; then
+        ACTIVE_SERVICES_BEFORE_UPGRADE+=("$SERVICE")
+        info "Service '$SERVICE' is active and will be restarted."
+    fi
+done
+
+
 # ========== New Function to Install Go and Compile Auth Binary ==========
 install_go_and_compile_auth() {
     info "Checking for Go and compiling authentication binary..."
@@ -157,26 +180,18 @@ else
 fi
 
 # ========== Restart Services ==========
-SERVICES=(
-    hysteria-caddy.service
-    hysteria-server.service
-    hysteria-auth.service
-    hysteria-scheduler.service
-    hysteria-telegram-bot.service
-    hysteria-normal-sub.service
-    hysteria-caddy-normalsub.service
-    hysteria-webpanel.service
-    hysteria-ip-limit.service
-)
+info "Reloading systemd daemon..."
+systemctl daemon-reload
 
-info "Restarting available services..."
-for SERVICE in "${SERVICES[@]}"; do
-    if systemctl status "$SERVICE" &>/dev/null; then
+info "Restarting services that were active before the upgrade..."
+if [ ${#ACTIVE_SERVICES_BEFORE_UPGRADE[@]} -eq 0 ]; then
+    warn "No relevant services were active before the upgrade. Skipping restart."
+else
+    for SERVICE in "${ACTIVE_SERVICES_BEFORE_UPGRADE[@]}"; do
         systemctl restart "$SERVICE" && success "$SERVICE restarted." || warn "$SERVICE failed to restart."
-    else
-        warn "$SERVICE not found. Skipping..."
-    fi
-done
+    done
+fi
+
 
 # ========== Final Check ==========
 if systemctl is-active --quiet hysteria-server.service; then
