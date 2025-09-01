@@ -111,38 +111,25 @@ def process_add_user_step3(message, username, traffic_limit):
         direct_uri = None
         normal_sub_link = None
 
-        if "IPv4:" in uri_info_output:
-            try:
-                parts_after_ipv4 = uri_info_output.split("IPv4:\n", 1)[1]
-                potential_direct_uri = parts_after_ipv4.split('\n', 1)[0].strip()
-                if potential_direct_uri.startswith("hy2://"):
-                    direct_uri = potential_direct_uri
-            except (IndexError, AttributeError):
-                pass 
+        lines = uri_info_output.strip().split('\n')
+        for i, line in enumerate(lines):
+            if line.strip() == "IPv4:":
+                if i + 1 < len(lines) and lines[i+1].strip().startswith("hy2://"):
+                    direct_uri = lines[i+1].strip()
+            elif line.strip() == "Normal-SUB Sublink:":
+                if i + 1 < len(lines) and (lines[i+1].strip().startswith("http://") or lines[i+1].strip().startswith("https://")):
+                    normal_sub_link = lines[i+1].strip()
 
-        if "Normal-SUB Sublink:" in uri_info_output:
-            try:
-                parts_after_sublink_label = uri_info_output.split("Normal-SUB Sublink:\n", 1)[1]
-                potential_sub_link = parts_after_sublink_label.split('\n', 1)[0].strip()
-                if potential_sub_link.startswith("http://") or potential_sub_link.startswith("https://"):
-                    normal_sub_link = potential_sub_link
-            except (IndexError, AttributeError):
-                pass
-        
-        display_username = escape_markdown(username)
         escaped_feedback = escape_markdown(add_user_feedback)
         caption_text = f"{escaped_feedback}\n"
         link_to_generate_qr_for = None
-        link_type_for_caption = ""
 
         if normal_sub_link:
             link_to_generate_qr_for = normal_sub_link
-            link_type_for_caption = "Normal Subscription Link"
-            caption_text += f"\n{link_type_for_caption} for `{display_username}`:\n`{normal_sub_link}`"
+            caption_text += f"\n*Normal Subscription Link*:\n`{normal_sub_link}`"
         elif direct_uri:
             link_to_generate_qr_for = direct_uri
-            link_type_for_caption = "Hysteria2 IPv4 URI"
-            caption_text += f"\n{link_type_for_caption} for `{display_username}`:\n`{direct_uri}`"
+            caption_text += f"\n*Hysteria2 IPv4 URI*:\n`{direct_uri}`"
         
         if link_to_generate_qr_for:
             qr_img = qrcode.make(link_to_generate_qr_for)
@@ -151,7 +138,7 @@ def process_add_user_step3(message, username, traffic_limit):
             bio.seek(0)
             bot.send_photo(message.chat.id, photo=bio, caption=caption_text, parse_mode="Markdown", reply_markup=create_main_markup())
         else:
-            caption_text += "\nCould not retrieve specific Hysteria2 URI or Subscription link details."
+            caption_text += "\nCould not retrieve Hysteria2 URI or Subscription link."
             bot.send_message(message.chat.id, caption_text, parse_mode="Markdown", reply_markup=create_main_markup())
 
     except ValueError:
