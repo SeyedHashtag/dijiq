@@ -93,35 +93,38 @@
                         {% for user in users|sort(attribute='username', case_sensitive=false) %}
                         <tr>
                             <td>
-                                <input type="checkbox" class="user-checkbox" value="{{ user['username'] }}">
+                                <input type="checkbox" class="user-checkbox" value="{{ user.username }}">
                             </td>
                             <td>{{ loop.index }}</td>
                             <td>
-                                {% if user['status'] == "Online" %}
-                                <i class="fas fa-circle text-success"></i> Online
-                                {% elif user['status'] == "Offline" %}
-                                <i class="fas fa-circle text-secondary"></i> Offline
-                                {% elif user['status'] == "On-hold" %}
-                                <i class="fas fa-circle text-warning"></i> On-hold
-                                {% elif user['status'] == "Conflict" %}
-                                <i class="fas fa-circle text-danger"></i> Conflict
+                                {% if user.status == "Online" %}
+                                    <i class="fas fa-circle text-success"></i> Online
+                                    {% if user.online_count and user.online_count > 0 %}
+                                        ({{ user.online_count }})
+                                    {% endif %}
+                                {% elif user.status == "Offline" %}
+                                    <i class="fas fa-circle text-secondary"></i> Offline
+                                {% elif user.status == "On-hold" %}
+                                    <i class="fas fa-circle text-warning"></i> On-hold
+                                {% elif user.status == "Conflict" %}
+                                    <i class="fas fa-circle text-danger"></i> Conflict
                                 {% else %}
-                                <i class="fas fa-circle text-danger"></i> {{ user['status'] }}
+                                    <i class="fas fa-circle text-danger"></i> {{ user.status }}
                                 {% endif %}
                             </td>
-                            <td data-username="{{ user['username'] }}">{{ user['username'] }}</td>
-                            <td>{{ user['traffic_used'] }}</td>
-                            <td>{{ user['expiry_date'] }}</td>
-                            <td>{{ user['expiry_days'] }}</td>
+                            <td data-username="{{ user.username }}">{{ user.username }}</td>
+                            <td>{{ user.traffic_used }}</td>
+                            <td>{{ user.expiry_date }}</td>
+                            <td>{{ user.expiry_days }}</td>
                             <td>
-                                {% if user['enable'] %}
+                                {% if user.enable %}
                                 <i class="fas fa-check-circle text-success"></i>
                                 {% else %}
                                 <i class="fas fa-times-circle text-danger"></i>
                                 {% endif %}
                             </td>
                             <td class="unlimited-ip-cell requires-iplimit-service" style="display: none;">
-                                {% if user['unlimited_ip'] %}
+                                {% if user.unlimited_ip %}
                                 <i class="fas fa-shield-alt text-primary"></i>
                                 {% else %}
                                 <i class="fas fa-times-circle text-muted"></i>
@@ -129,22 +132,22 @@
                             </td>
                             <td class="text-nowrap">
                                 <a href="#" class="config-link" data-toggle="modal" data-target="#qrcodeModal"
-                                    data-username="{{ user['username'] }}">
+                                    data-username="{{ user.username }}">
                                     <i class="fas fa-qrcode"></i>
                                 </a>
                             </td>
                             <td class="text-nowrap">
                                 <button type="button" class="btn btn-sm btn-info edit-user"
-                                    data-user="{{ user['username'] }}" data-toggle="modal"
+                                    data-user="{{ user.username }}" data-toggle="modal"
                                     data-target="#editUserModal">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <button type="button" class="btn btn-sm btn-warning reset-user"
-                                    data-user="{{ user['username'] }}">
+                                    data-user="{{ user.username }}">
                                     <i class="fas fa-undo"></i>
                                 </button>
                                 <button type="button" class="btn btn-sm btn-danger delete-user"
-                                    data-user="{{ user['username'] }}">
+                                    data-user="{{ user.username }}">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </td>
@@ -303,18 +306,37 @@
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="showLinksModalLabel">Selected User Links</h5>
+                <h5 class="modal-title" id="showLinksModalLabel">Extract User Links</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
-                <p>Here are the Normal-SUB links for the selected users:</p>
-                <textarea id="linksTextarea" class="form-control" rows="10" readonly></textarea>
+                <p>Select the link types you want to extract for the selected users:</p>
+                <div class="form-group">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="extractIPv4" value="ipv4">
+                        <label class="form-check-label" for="extractIPv4">IPv4</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="extractIPv6" value="ipv6">
+                        <label class="form-check-label" for="extractIPv6">IPv6</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="extractNormalSub" value="normal_sub" checked>
+                        <label class="form-check-label" for="extractNormalSub">Normal SUB</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="extractNodes" value="nodes">
+                        <label class="form-check-label" for="extractNodes">Nodes</label>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary mb-3" id="extractLinksButton">Extract Links</button>
+                <textarea id="linksTextarea" class="form-control" rows="10" readonly placeholder="Extracted links will appear here..."></textarea>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="copyLinksButton">Copy All</button>
+                <button type="button" class="btn btn-success" id="copyExtractedLinksButton">Copy</button>
             </div>
         </div>
     </div>
@@ -328,6 +350,7 @@
 <script>
     $(function () {
         const usernameRegex = /^[a-zA-Z0-9_]+$/;
+        let cachedUserData = [];
 
         function checkIpLimitServiceStatus() {
             $.getJSON('{{ url_for("server_services_status_api") }}')
@@ -515,23 +538,72 @@
                 data: JSON.stringify({ usernames: selectedUsers }),
             }).done(results => {
                 Swal.close();
-                const allLinks = results.map(res => res.normal_sub).filter(Boolean);
-                const failedCount = selectedUsers.length - allLinks.length;
+                cachedUserData = results;
+                
+                const fetchedCount = results.length;
+                const failedCount = selectedUsers.length - fetchedCount;
+                
                 if (failedCount > 0) {
-                   Swal.fire('Warning', `Could not fetch links for ${failedCount} user(s), but others were successful.`, 'warning');
+                   Swal.fire('Warning', `Could not fetch info for ${failedCount} user(s), but others were successful.`, 'warning');
                 }
-                if (allLinks.length > 0) {
-                    $("#linksTextarea").val(allLinks.join('\n'));
+                
+                if (fetchedCount > 0) {
+                    const hasIPv4 = cachedUserData.some(user => user.ipv4);
+                    const hasIPv6 = cachedUserData.some(user => user.ipv6);
+                    const hasNormalSub = cachedUserData.some(user => user.normal_sub);
+                    const hasNodes = cachedUserData.some(user => user.nodes && user.nodes.length > 0);
+
+                    $("#extractIPv4").closest('.form-check-inline').toggle(hasIPv4);
+                    $("#extractIPv6").closest('.form-check-inline').toggle(hasIPv6);
+                    $("#extractNormalSub").closest('.form-check-inline').toggle(hasNormalSub);
+                    $("#extractNodes").closest('.form-check-inline').toggle(hasNodes);
+
+                    $("#linksTextarea").val('');
                     $("#showLinksModal").modal("show");
                 } else {
-                   Swal.fire('Error', `Could not fetch links for any of the selected users.`, 'error');
+                   Swal.fire('Error', `Could not fetch info for any of the selected users.`, 'error');
                 }
             }).fail(() => Swal.fire('Error!', 'An error occurred while fetching the links.', 'error'));
         });
+
+        $("#extractLinksButton").on("click", function () {
+            const allLinks = [];
+            const linkTypes = {
+                ipv4: $("#extractIPv4").is(":checked"),
+                ipv6: $("#extractIPv6").is(":checked"),
+                normal_sub: $("#extractNormalSub").is(":checked"),
+                nodes: $("#extractNodes").is(":checked")
+            };
+
+            cachedUserData.forEach(user => {
+                if (linkTypes.ipv4 && user.ipv4) {
+                    allLinks.push(user.ipv4);
+                }
+                if (linkTypes.ipv6 && user.ipv6) {
+                    allLinks.push(user.ipv6);
+                }
+                if (linkTypes.normal_sub && user.normal_sub) {
+                    allLinks.push(user.normal_sub);
+                }
+                if (linkTypes.nodes && user.nodes && user.nodes.length > 0) {
+                    user.nodes.forEach(node => {
+                        if (node.uri) {
+                            allLinks.push(node.uri);
+                        }
+                    });
+                }
+            });
+
+            $("#linksTextarea").val(allLinks.join('\n'));
+        });
         
-        $("#copyLinksButton").on("click", () => {
-            navigator.clipboard.writeText($("#linksTextarea").val())
-                .then(() => Swal.fire({ icon: "success", title: "All links copied!", showConfirmButton: false, timer: 1200 }));
+        $("#copyExtractedLinksButton").on("click", () => {
+            const links = $("#linksTextarea").val();
+            if (!links) {
+                return Swal.fire({ icon: "info", title: "Nothing to copy!", text: "Please extract some links first.", showConfirmButton: false, timer: 1500 });
+            }
+            navigator.clipboard.writeText(links)
+                .then(() => Swal.fire({ icon: "success", title: "Links copied!", showConfirmButton: false, timer: 1200 }));
         });
 
         function filterUsers() {

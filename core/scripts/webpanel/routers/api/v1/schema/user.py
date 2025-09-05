@@ -4,19 +4,21 @@ from pydantic import BaseModel, RootModel, Field, field_validator
 
 
 class UserInfoResponse(BaseModel):
+    username: str
     password: str
     max_download_bytes: int
     expiration_days: int
-    account_creation_date: str
+    account_creation_date: Optional[str] = None
     blocked: bool
     unlimited_ip: bool = Field(False, alias='unlimited_user')
     status: Optional[str] = None
     upload_bytes: Optional[int] = None
     download_bytes: Optional[int] = None
+    online_count: int = 0
 
 
 class UserListResponse(RootModel):
-    root: dict[str, UserInfoResponse]
+    root: List[UserInfoResponse]
 
 class UsernamesRequest(BaseModel):
     usernames: List[str]
