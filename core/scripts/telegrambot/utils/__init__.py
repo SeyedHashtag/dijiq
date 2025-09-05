@@ -8,3 +8,4 @@ from .search import *
 from .serverinfo import *
 from .cpu import *
 from .check_version import *
+from .reseller import *
