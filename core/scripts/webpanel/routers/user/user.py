@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.templating import Jinja2Templates
 
@@ -13,10 +12,8 @@ router = APIRouter()
 @router.get('/')
 async def users(request: Request, templates: Jinja2Templates = Depends(get_templates)):
     try:
-        dict_users = cli_api.list_users()  # type: ignore
-        users: list[User] = []
-        if dict_users:
-            users: list[User] = [User.from_dict(key, value) for key, value in dict_users.items()]  # type: ignore
+        users_list = cli_api.list_users() or []
+        users: list[User] = [User.from_dict(user_data.get('username', ''), user_data) for user_data in users_list]
 
         return templates.TemplateResponse('users.html', {'users': users, 'request': request})
     except Exception as e:

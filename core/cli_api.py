@@ -40,7 +40,7 @@ class Command(Enum):
     EXTRA_CONFIG_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'extra_config.py')
     TRAFFIC_STATUS = 'traffic.py'  # won't be called directly (it's a python module)
     UPDATE_GEO = os.path.join(SCRIPT_DIR, 'hysteria2', 'update_geo.py')
-    LIST_USERS = os.path.join(SCRIPT_DIR, 'hysteria2', 'list_users.sh')
+    LIST_USERS = os.path.join(SCRIPT_DIR, 'hysteria2', 'list_users.py')
     SERVER_INFO = os.path.join(SCRIPT_DIR, 'hysteria2', 'server_info.py')
     BACKUP_HYSTERIA2 = os.path.join(SCRIPT_DIR, 'hysteria2', 'backup.py')
     RESTORE_HYSTERIA2 = os.path.join(SCRIPT_DIR, 'hysteria2', 'restore.py')
@@ -256,7 +256,7 @@ def list_users() -> dict[str, dict[str, Any]] | None:
     '''
     Lists all users.
     '''
-    if res := run_cmd(['bash', Command.LIST_USERS.value]):
+    if res := run_cmd(['python3', Command.LIST_USERS.value]):
         return json.loads(res)
 
 
