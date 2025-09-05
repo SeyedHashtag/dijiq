@@ -11,6 +11,7 @@ class User(BaseModel):
     expiry_days: str
     enable: bool
     unlimited_ip: bool
+    online_count: int = 0
 
     @staticmethod
     def from_dict(username: str, user_data: dict):
@@ -36,7 +37,8 @@ class User(BaseModel):
                 'expiry_date': 'N/A',
                 'expiry_days': 'N/A',
                 'enable': False,
-                'unlimited_ip': False
+                'unlimited_ip': False,
+                'online_count': 0
             }
 
         expiration_days = user_data.get('expiration_days', 0)
@@ -77,7 +79,8 @@ class User(BaseModel):
             'expiry_date': display_expiry_date,
             'expiry_days': display_expiry_days,
             'enable': not user_data.get('blocked', False),
-            'unlimited_ip': user_data.get('unlimited_user', False)
+            'unlimited_ip': user_data.get('unlimited_user', False),
+            'online_count': user_data.get('online_count', 0)
         }
 
     @staticmethod
