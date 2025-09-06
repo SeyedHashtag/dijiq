@@ -379,10 +379,11 @@ class SubscriptionManager:
         processed_uris = []
         for uri in all_uris:
             if "v2ray" in user_agent and "ng" in user_agent:
-                match = re.search(r'pinSHA256=([^&]+)', uri)
+                match = re.search(r'pinSHA256=sha256/([^&]+)', uri)
                 if match:
-                    formatted = ":".join("{:02X}".format(byte) for byte in base64.b64decode(match.group(1)))
-                    uri = uri.replace(f'pinSHA256={match.group(1)}', f'pinSHA256={formatted}')
+                    decoded = base64.b64decode(match.group(1))
+                    formatted = ":".join("{:02X}".format(byte) for byte in decoded)
+                    uri = uri.replace(f'pinSHA256=sha256/{match.group(1)}', f'pinSHA256={formatted}')
             processed_uris.append(uri)
         
         extra_uris = self._get_extra_configs()
