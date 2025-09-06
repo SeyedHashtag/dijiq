@@ -9,13 +9,11 @@ import tempfile
 import subprocess
 from pathlib import Path
 
-# --- Configuration ---
 DB_NAME = "blitz_panel"
 HYSTERIA_CONFIG_DIR = Path("/etc/hysteria")
 CLI_PATH = Path("/etc/hysteria/core/cli.py")
 
 def run_command(command, check=False):
-    """Run a shell command."""
     try:
         return subprocess.run(
             command,
@@ -63,7 +61,7 @@ def main():
                 return 1
             
             print("Restoring MongoDB database... (This will drop the current user data)")
-            run_command(f"mongorestore --db={DB_NAME} --drop --dir='{temp_dir}'", check=True)
+            run_command(f"mongorestore --db={DB_NAME} --drop --dir='{dump_dir}'", check=True)
             print("Database restored successfully.")
 
             files_to_copy = ["config.json", ".configs.env", "ca.key", "ca.crt"]
@@ -75,6 +73,7 @@ def main():
                     print(f" - Restored {filename}")
 
             adjust_config_file()
+
             print("Setting permissions...")
             run_command(f"chown hysteria:hysteria {HYSTERIA_CONFIG_DIR / 'ca.key'} {HYSTERIA_CONFIG_DIR / 'ca.crt'}")
             run_command(f"chmod 640 {HYSTERIA_CONFIG_DIR / 'ca.key'} {HYSTERIA_CONFIG_DIR / 'ca.crt'}")
@@ -93,7 +92,6 @@ def main():
         return 1
 
 def adjust_config_file():
-    """Performs system-specific adjustments to the restored config.json."""
     config_file = HYSTERIA_CONFIG_DIR / "config.json"
     if not config_file.exists():
         return
