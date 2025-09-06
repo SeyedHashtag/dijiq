@@ -5,7 +5,8 @@ import re
 import time
 import shlex
 import base64
-from typing import Dict, List, Optional, Tuple, Any, Union
+import sys
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from io import BytesIO
 
@@ -15,6 +16,9 @@ from urllib.parse import unquote, parse_qs, urlparse, urljoin
 from dotenv import load_dotenv
 import qrcode
 from jinja2 import Environment, FileSystemLoader
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from db.database import db
 
 load_dotenv()
 
@@ -28,7 +32,6 @@ class AppConfig:
     sni_file: str
     singbox_template_path: str
     hysteria_cli_path: str
-    users_json_path: str
     nodes_json_path: str
     extra_config_path: str
     rate_limit: int
@@ -172,9 +175,8 @@ class Utils:
 
 
 class HysteriaCLI:
-    def __init__(self, cli_path: str, users_json_path: str):
+    def __init__(self, cli_path: str):
         self.cli_path = cli_path
-        self.users_json_path = users_json_path
 
     def _run_command(self, args: List[str]) -> str:
         try:
@@ -192,61 +194,29 @@ class HysteriaCLI:
             print(f"Hysteria CLI error: {e}")
             raise
 
-    def get_user_details_from_json(self, username: str) -> Optional[Dict[str, Any]]:
-        try:
-            with open(self.users_json_path, 'r') as f:
-                users_data = json.load(f)
-            return users_data.get(username)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"Error reading user details from {self.users_json_path}: {e}")
-            return None
-        except Exception as e:
-            print(f"An unexpected error occurred while reading users file: {e}")
-            return None
-
     def get_username_by_password(self, password_token: str) -> Optional[str]:
-        try:
-            with open(self.users_json_path, 'r') as f:
-                users_data = json.load(f)
-            for username, details in users_data.items():
-                if details.get('password') == password_token:
-                    return username
+        if not db:
             return None
-        except FileNotFoundError:
-            print(f"Error: Users file not found at {self.users_json_path}")
-            return None
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {self.users_json_path}")
-            return None
-        except Exception as e:
-            print(f"An unexpected error occurred while reading users file: {e}")
-            return None
+        user_doc = db.collection.find_one({"password": password_token}, {"_id": 1})
+        return user_doc['_id'] if user_doc else None
 
     def get_user_info(self, username: str) -> Optional[UserInfo]:
-        raw_info_str = self._run_command(['get-user', '-u', username])
-        if raw_info_str is None:
+        if not db:
             return None
-
-        user_details = self.get_user_details_from_json(username)
-        if not user_details or 'password' not in user_details:
-            print(f"Warning: Password for user '{username}' could not be fetched from {self.users_json_path}. Cannot create UserInfo.")
+        user_doc = db.get_user(username)
+        if not user_doc:
             return None
-
-        try:
-            raw_info = json.loads(raw_info_str)
-            return UserInfo(
-                username=username,
-                password=user_details['password'],
-                upload_bytes=raw_info.get('upload_bytes', 0),
-                download_bytes=raw_info.get('download_bytes', 0),
-                max_download_bytes=raw_info.get('max_download_bytes', 0),
-                account_creation_date=raw_info.get('account_creation_date', ''),
-                expiration_days=raw_info.get('expiration_days', 0),
-                blocked=user_details.get('blocked', False)
-            )
-        except json.JSONDecodeError as e:
-            print(f"JSONDecodeError: {e}, Raw output: {raw_info_str}")
-            return None
+        
+        return UserInfo(
+            username=user_doc.get('_id'),
+            password=user_doc.get('password'),
+            upload_bytes=user_doc.get('upload_bytes', 0),
+            download_bytes=user_doc.get('download_bytes', 0),
+            max_download_bytes=user_doc.get('max_download_bytes', 0),
+            account_creation_date=user_doc.get('account_creation_date', ''),
+            expiration_days=user_doc.get('expiration_days', 0),
+            blocked=user_doc.get('blocked', False)
+        )
 
     def get_all_uris(self, username: str) -> List[str]:
         output = self._run_command(['show-user-uri', '-u', username, '-a'])
@@ -409,11 +379,10 @@ class SubscriptionManager:
         processed_uris = []
         for uri in all_uris:
             if "v2ray" in user_agent and "ng" in user_agent:
-                match = re.search(r'pinSHA256=sha256/([^&]+)', uri)
+                match = re.search(r'pinSHA256=([^&]+)', uri)
                 if match:
-                    decoded = base64.b64decode(match.group(1))
-                    formatted = ":".join("{:02X}".format(byte) for byte in decoded)
-                    uri = uri.replace(f'pinSHA256=sha256/{match.group(1)}', f'pinSHA256={formatted}')
+                    formatted = ":".join("{:02X}".format(byte) for byte in base64.b64decode(match.group(1)))
+                    uri = uri.replace(f'pinSHA256={match.group(1)}', f'pinSHA256={formatted}')
             processed_uris.append(uri)
         
         extra_uris = self._get_extra_configs()
@@ -446,7 +415,7 @@ class HysteriaServer:
     def __init__(self):
         self.config = self._load_config()
         self.rate_limiter = RateLimiter(self.config.rate_limit, self.config.rate_limit_window)
-        self.hysteria_cli = HysteriaCLI(self.config.hysteria_cli_path, self.config.users_json_path)
+        self.hysteria_cli = HysteriaCLI(self.config.hysteria_cli_path)
         self.singbox_generator = SingboxConfigGenerator(self.hysteria_cli, self.config.sni)
         self.singbox_generator.set_template_path(self.config.singbox_template_path)
         self.subscription_manager = SubscriptionManager(self.hysteria_cli, self.config)
@@ -478,7 +447,6 @@ class HysteriaServer:
         sni_file = '/etc/hysteria/.configs.env'
         singbox_template_path = '/etc/hysteria/core/scripts/normalsub/singbox.json'
         hysteria_cli_path = '/etc/hysteria/core/cli.py'
-        users_json_path = os.getenv('HYSTERIA_USERS_JSON_PATH', '/etc/hysteria/users.json')
         nodes_json_path = '/etc/hysteria/nodes.json'
         extra_config_path = '/etc/hysteria/extra.json'
         rate_limit = 100
@@ -492,7 +460,6 @@ class HysteriaServer:
                          sni_file=sni_file,
                          singbox_template_path=singbox_template_path,
                          hysteria_cli_path=hysteria_cli_path,
-                         users_json_path=users_json_path,
                          nodes_json_path=nodes_json_path,
                          extra_config_path=extra_config_path,
                          rate_limit=rate_limit, rate_limit_window=rate_limit_window,
