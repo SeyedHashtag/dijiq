@@ -28,7 +28,7 @@ class Command(Enum):
     GET_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'get_user.py')
     ADD_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'add_user.py')
     BULK_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'bulk_users.py')
-    EDIT_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'edit_user.sh')
+    EDIT_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'edit_user.py')
     RESET_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'reset_user.py')
     REMOVE_USER = os.path.join(SCRIPT_DIR, 'hysteria2', 'remove_user.py')
     SHOW_USER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'show_user_uri.py')
@@ -307,43 +307,40 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
 
 def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     '''
-    Edits an existing user's details.
+    Edits an existing user's details by calling the new edit_user.py script with named flags.
     '''
     if not username:
         raise InvalidInputError('Error: username is required')
 
-    if new_traffic_limit is not None and new_traffic_limit < 0:
-        raise InvalidInputError('Error: traffic limit must be a non-negative number.')
-    if new_expiration_days is not None and new_expiration_days < 0:
-        raise InvalidInputError('Error: expiration days must be a non-negative number.')
+    command_args = ['python3', Command.EDIT_USER.value, username]
 
-    password = generate_password() if renew_password else ''
-    creation_date = datetime.now().strftime('%Y-%m-%d') if renew_creation_date else ''
+    if new_username:
+        command_args.extend(['--new-username', new_username])
 
-    blocked_str = ''
-    if blocked is True:
-        blocked_str = 'true'
-    elif blocked is False:
-        blocked_str = 'false'
+    if new_traffic_limit is not None:
+        if new_traffic_limit < 0:
+            raise InvalidInputError('Error: traffic limit must be a non-negative number.')
+        command_args.extend(['--traffic-gb', str(new_traffic_limit)])
 
-    unlimited_str = ''
-    if unlimited_ip is True:
-        unlimited_str = 'true'
-    elif unlimited_ip is False:
-        unlimited_str = 'false'
+    if new_expiration_days is not None:
+        if new_expiration_days < 0:
+            raise InvalidInputError('Error: expiration days must be a non-negative number.')
+        command_args.extend(['--expiration-days', str(new_expiration_days)])
+        
+    if renew_password:
+        password = generate_password()
+        command_args.extend(['--password', password])
+        
+    if renew_creation_date:
+        creation_date = datetime.now().strftime('%Y-%m-%d')
+        command_args.extend(['--creation-date', creation_date])
+        
+    if blocked is not None:
+        command_args.extend(['--blocked', 'true' if blocked else 'false'])
+        
+    if unlimited_ip is not None:
+        command_args.extend(['--unlimited', 'true' if unlimited_ip else 'false'])
 
-    command_args = [
-        'bash',
-        Command.EDIT_USER.value,
-        username,
-        new_username or '',
-        str(new_traffic_limit) if new_traffic_limit is not None else '',
-        str(new_expiration_days) if new_expiration_days is not None else '',
-        password,
-        creation_date,
-        blocked_str,
-        unlimited_str
-    ]
     run_cmd(command_args)
 
 

@@ -7,8 +7,9 @@ try:
 except ImportError:
     sys.exit("Error: hysteria2_api library not found. Please install it.")
 
-sys.path.append(str(Path(__file__).parent.parent))
-from paths import USERS_FILE, CONFIG_FILE, API_BASE_URL
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from db.database import db
+from paths import CONFIG_FILE, API_BASE_URL
 
 def get_secret() -> str | None:
     if not CONFIG_FILE.exists():
@@ -20,34 +21,45 @@ def get_secret() -> str | None:
     except (json.JSONDecodeError, IOError):
         return None
 
-def get_users() -> dict:
-    if not USERS_FILE.exists():
-        return {}
+def get_users_from_db() -> list:
+    if db is None:
+        print("Error: Database connection failed.", file=sys.stderr)
+        return []
     try:
-        with USERS_FILE.open('r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+        users = db.get_all_users()
+        for user in users:
+            user['username'] = user.pop('_id')
+        return users
+    except Exception as e:
+        print(f"Error retrieving users from database: {e}", file=sys.stderr)
+        return []
 
 def main():
-    users_dict = get_users()
+    users_list = get_users_from_db()
+    if not users_list:
+        print(json.dumps([], indent=2))
+        return
+
     secret = get_secret()
 
-    if secret and users_dict:
+    if secret:
         try:
             client = Hysteria2Client(base_url=API_BASE_URL, secret=secret)
             online_clients = client.get_online_clients()
-            
+
+            users_dict = {user['username']: user for user in users_list}
             for username, status in online_clients.items():
                 if status.is_online and username in users_dict:
                     users_dict[username]['online_count'] = status.connections
-        except Exception:
+
+            users_list = list(users_dict.values())
+
+        except Exception as e:
+            print(f"Warning: Could not connect to Hysteria2 API to get online status. {e}", file=sys.stderr)
             pass
 
-    users_list = [
-        {**user_data, 'username': username, 'online_count': user_data.get('online_count', 0)}
-        for username, user_data in users_dict.items()
-    ]
+    for user in users_list:
+        user.setdefault('online_count', 0)
 
     print(json.dumps(users_list, indent=2))
 

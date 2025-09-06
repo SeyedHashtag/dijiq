@@ -1,31 +1,20 @@
 #!/usr/bin/env python3
 
-import json
 import sys
 import os
 import subprocess
 import re
 from datetime import datetime
-from init_paths import *
-from paths import *
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from db.database import db
 
 def add_user(username, traffic_gb, expiration_days, password=None, creation_date=None, unlimited_user=False):
-    """
-    Adds a new user to the USERS_FILE.
-
-    Args:
-        username (str): The username to add.
-        traffic_gb (str): The traffic limit in GB.
-        expiration_days (str): The number of days until the account expires.
-        password (str, optional): The user's password. If None, a random one is generated.
-        creation_date (str, optional): The account creation date in YYYY-MM-DD format. Defaults to None.
-        unlimited_user (bool, optional): If True, user is exempt from IP limits. Defaults to False.
-
-    Returns:
-        int: 0 on success, 1 on failure.
-    """
     if not username or not traffic_gb or not expiration_days:
         print(f"Usage: {sys.argv[0]} <username> <traffic_limit_GB> <expiration_days> [password] [creation_date] [unlimited_user (true/false)]")
+        return 1
+
+    if db is None:
+        print("Error: Database connection failed. Please ensure MongoDB is running and configured.")
         return 1
 
     try:
@@ -48,61 +37,45 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
                 print("Error: Failed to generate password. Please install 'pwgen' or ensure /proc access.")
                 return 1
 
-    if creation_date:
-        if not re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", creation_date):
-            print("Invalid date format. Expected YYYY-MM-DD.")
-            return 1
-        try:
-            datetime.strptime(creation_date, "%Y-%m-%d")
-        except ValueError:
-            print("Invalid date. Please provide a valid date in YYYY-MM-DD format.")
-            return 1
-    else:
-        creation_date = None
-
     if not re.match(r"^[a-zA-Z0-9_]+$", username):
         print("Error: Username can only contain letters, numbers, and underscores.")
         return 1
 
-    if not os.path.isfile(USERS_FILE):
-        try:
-            with open(USERS_FILE, 'w') as f:
-                json.dump({}, f)
-        except IOError:
-            print(f"Error: Could not create {USERS_FILE}.")
+    try:
+        if db.get_user(username_lower):
+            print("User already exists.")
             return 1
 
-    try:
-        with open(USERS_FILE, 'r+') as f:
+        user_data = {
+            "username": username_lower,
+            "password": password,
+            "max_download_bytes": traffic_bytes,
+            "expiration_days": expiration_days,
+            "blocked": False,
+            "unlimited_user": unlimited_user
+        }
+        
+        if creation_date:
+            if not re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", creation_date):
+                print("Invalid date format. Expected YYYY-MM-DD.")
+                return 1
             try:
-                users_data = json.load(f)
-            except json.JSONDecodeError:
-                print(f"Error: {USERS_FILE} contains invalid JSON.")
+                datetime.strptime(creation_date, "%Y-%m-%d")
+                user_data["account_creation_date"] = creation_date
+            except ValueError:
+                print("Invalid date. Please provide a valid date in YYYY-MM-DD format.")
                 return 1
 
-            for existing_username in users_data:
-                if existing_username.lower() == username_lower:
-                    print("User already exists.")
-                    return 1
+        result = db.add_user(user_data)
+        if result:
+            print(f"User {username} added successfully.")
+            return 0
+        else:
+            print(f"Error: Failed to add user {username}.")
+            return 1
 
-            users_data[username_lower] = {
-                "password": password,
-                "max_download_bytes": traffic_bytes,
-                "expiration_days": expiration_days,
-                "account_creation_date": creation_date,
-                "blocked": False,
-                "unlimited_user": unlimited_user
-            }
-
-            f.seek(0)
-            json.dump(users_data, f, indent=4)
-            f.truncate()
-
-        print(f"User {username} added successfully.")
-        return 0
-
-    except IOError:
-        print(f"Error: Could not write to {USERS_FILE}.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
         return 1
 
 if __name__ == "__main__":

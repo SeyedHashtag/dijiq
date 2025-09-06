@@ -7,7 +7,8 @@ import argparse
 from functools import lru_cache
 from typing import Dict, List, Any
 
-from init_paths import *
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from db.database import db
 from paths import *
 
 @lru_cache(maxsize=None)
@@ -42,10 +43,12 @@ def generate_uri(username: str, auth_password: str, ip: str, port: str,
 
 def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
     config = load_json_file(CONFIG_FILE)
-    all_users = load_json_file(USERS_FILE)
-    
-    if not config or not all_users:
-        print("Error: Could not load Hysteria2 configuration or user files.", file=sys.stderr)
+    if not config:
+        print("Error: Could not load Hysteria2 configuration file.", file=sys.stderr)
+        sys.exit(1)
+        
+    if db is None:
+        print("Error: Database connection failed.", file=sys.stderr)
         sys.exit(1)
 
     nodes = load_json_file(NODES_JSON_PATH) or []
@@ -73,7 +76,7 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
 
     results = []
     for username in target_usernames:
-        user_data = all_users.get(username)
+        user_data = db.get_user(username)
         if not user_data or "password" not in user_data:
             results.append({"username": username, "error": "User not found or password not set"})
             continue
@@ -104,17 +107,20 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
 def main():
     parser = argparse.ArgumentParser(description="Efficiently generate Hysteria2 URIs for multiple users.")
     parser.add_argument('usernames', nargs='*', help="A list of usernames to process.")
-    parser.add_argument('--all', action='store_true', help="Process all users from users.json.")
+    parser.add_argument('--all', action='store_true', help="Process all users from the database.")
     
     args = parser.parse_args()
     target_usernames = args.usernames
     
     if args.all:
-        all_users = load_json_file(USERS_FILE)
-        if all_users:
-            target_usernames = list(all_users.keys())
-        else:
-            print("Error: Could not load users.json to process all users.", file=sys.stderr)
+        if db is None:
+            print("Error: Database connection failed.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            all_users_docs = db.get_all_users()
+            target_usernames = [user['_id'] for user in all_users_docs]
+        except Exception as e:
+            print(f"Error retrieving all users from database: {e}", file=sys.stderr)
             sys.exit(1)
             
     if not target_usernames:
