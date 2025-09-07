@@ -47,15 +47,36 @@ for SERVICE in "${ALL_SERVICES[@]}"; do
     fi
 done
 
-# ========== New Function to Install MongoDB ==========
+# ========== Install MongoDB ==========
 install_mongodb() {
     info "Checking for MongoDB..."
     if ! command -v mongod &>/dev/null; then
-        warn "MongoDB not found. Attempting to install from official repository..."
+        warn "MongoDB not found. Installing from official repository..."
+        
+        local os_name os_version
+        os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        
         apt-get update -qq >/dev/null
-        apt-get install -y gnupg curl >/dev/null
-        curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" > /etc/apt/sources.list.d/mongodb-org-7.0.list
+        apt-get install -y gnupg curl lsb-release >/dev/null
+        
+        curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+        
+        if [[ "$os_name" == "ubuntu" ]]; then
+            if [[ "$os_version" == "24.04" ]]; then
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            elif [[ "$os_version" == "22.04" ]]; then
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            else
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            fi
+        elif [[ "$os_name" == "debian" && "$os_version" == "12" ]]; then
+            echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+        else
+            error "Unsupported OS for MongoDB installation: $os_name $os_version"
+            exit 1
+        fi
+        
         apt-get update -qq >/dev/null
         apt-get install -y mongodb-org >/dev/null
         systemctl start mongod
@@ -66,7 +87,7 @@ install_mongodb() {
     fi
 }
 
-# ========== New Function to Migrate users.json to MongoDB ==========
+# ========== Migrate users.json to MongoDB ==========
 migrate_users_to_mongodb() {
     info "Checking for user data to migrate..."
     if [ ! -f "$USERS_FILE" ]; then
@@ -126,7 +147,6 @@ EOF
     mv "$USERS_FILE" "${USERS_FILE}.migrated"
     success "users.json has been migrated and renamed to users.json.migrated."
 }
-
 
 # ========== Install Go and Compile Auth Binary ==========
 install_go_and_compile_auth() {
@@ -273,7 +293,6 @@ else
         systemctl restart "$SERVICE" && success "$SERVICE restarted." || warn "$SERVICE failed to restart."
     done
 fi
-
 
 # ========== Final Check ==========
 if systemctl is-active --quiet hysteria-server.service; then
