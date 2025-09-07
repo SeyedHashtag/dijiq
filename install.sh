@@ -83,17 +83,25 @@ install_mongodb() {
         return 0
     fi
     
-    local os_name
-    os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2)
+    local os_name os_version
+    os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
     
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+    curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
     
     if [[ "$os_name" == "ubuntu" ]]; then
-        local ubuntu_codename
-        ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
-        echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] https://repo.mongodb.org/apt/ubuntu ${ubuntu_codename}/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
-    elif [[ "$os_name" == "debian" ]]; then
-        echo "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
+        if [[ "$os_version" == "24.04" ]]; then
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+        elif [[ "$os_version" == "22.04" ]]; then
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+        else
+            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+        fi
+    elif [[ "$os_name" == "debian" && "$os_version" == "12" ]]; then
+        echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
+    else
+        log_error "Unsupported OS for MongoDB installation: $os_name $os_version"
+        exit 1
     fi
     
     apt update -qq
