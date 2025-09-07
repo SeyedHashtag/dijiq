@@ -11,7 +11,7 @@ REPO_URL="https://github.com/ReturnFI/Blitz"
 REPO_BRANCH="beta"
 GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
 GEOIP_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat"
-USERS_FILE="$HYSTERIA_INSTALL_DIR/users.json"
+MIGRATE_SCRIPT_PATH="$HYSTERIA_INSTALL_DIR/core/scripts/db/migrate_users.py"
 
 # ========== Color Setup ==========
 GREEN=$(tput setaf 2)
@@ -24,28 +24,6 @@ info() { echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - ${RESET} $1"; }
 success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1"; }
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
-
-# ========== Capture Active Services ==========
-declare -a ACTIVE_SERVICES_BEFORE_UPGRADE=()
-ALL_SERVICES=(
-    hysteria-caddy.service
-    hysteria-server.service
-    hysteria-auth.service
-    hysteria-scheduler.service
-    hysteria-telegram-bot.service
-    hysteria-normal-sub.service
-    hysteria-caddy-normalsub.service
-    hysteria-webpanel.service
-    hysteria-ip-limit.service
-)
-
-info "Checking for active services before upgrade..."
-for SERVICE in "${ALL_SERVICES[@]}"; do
-    if systemctl is-active --quiet "$SERVICE"; then
-        ACTIVE_SERVICES_BEFORE_UPGRADE+=("$SERVICE")
-        info "Service '$SERVICE' is active and will be restarted."
-    fi
-done
 
 # ========== Install MongoDB ==========
 install_mongodb() {
@@ -77,8 +55,8 @@ install_mongodb() {
             exit 1
         fi
         
-        apt-get update -qq >/dev/null
-        apt-get install -y mongodb-org >/dev/null
+        apt-get update -qq
+        apt-get install -y mongodb-org
         systemctl start mongod
         systemctl enable mongod
         success "MongoDB installed and started successfully."
@@ -87,73 +65,53 @@ install_mongodb() {
     fi
 }
 
-# ========== Migrate users.json to MongoDB ==========
-migrate_users_to_mongodb() {
-    info "Checking for user data to migrate..."
-    if [ ! -f "$USERS_FILE" ]; then
-        warn "users.json not found. No data to migrate."
-        return
+# ========== New Function to Migrate Data ==========
+migrate_json_to_mongo() {
+    info "Checking for user data migration..."
+    if [[ -f "$HYSTERIA_INSTALL_DIR/users.json" ]]; then
+        info "Found users.json. Proceeding with migration to MongoDB."
+        if python3 "$MIGRATE_SCRIPT_PATH"; then
+            success "Data migration completed successfully."
+        else
+            error "Data migration script failed. Please check the output above."
+            exit 1
+        fi
+    else
+        info "No users.json found. Skipping migration."
     fi
-    
-    info "Starting user data migration from users.json to MongoDB..."
-    python3 - <<EOF
-import json
-import os
-import pymongo
-
-users_json_path = "$USERS_FILE"
-db_name = "blitz_panel"
-collection_name = "users"
-
-try:
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
-    db = client[db_name]
-    collection = db[collection_name]
-    client.server_info()
-except Exception as e:
-    print(f"Error connecting to MongoDB: {e}")
-    exit(1)
-
-with open(users_json_path, 'r') as f:
-    users_data = json.load(f)
-
-migrated_count = 0
-for username, data in users_data.items():
-    user_doc = {
-        "password": data.get("password"),
-        "max_download_bytes": data.get("max_download_bytes", 0),
-        "expiration_days": data.get("expiration_days", 0),
-        "account_creation_date": data.get("account_creation_date"),
-        "blocked": data.get("blocked", False),
-        "unlimited_user": data.get("unlimited_user", False),
-        "status": data.get("status", "Offline"),
-        "upload_bytes": data.get("upload_bytes", 0),
-        "download_bytes": data.get("download_bytes", 0)
-    }
-    
-    user_doc = {k: v for k, v in user_doc.items() if v is not None}
-    
-    collection.update_one(
-        {"_id": username.lower()},
-        {"$set": user_doc},
-        upsert=True
-    )
-    migrated_count += 1
-
-print(f"Successfully migrated {migrated_count} users to MongoDB.")
-
-EOF
-    
-    mv "$USERS_FILE" "${USERS_FILE}.migrated"
-    success "users.json has been migrated and renamed to users.json.migrated."
 }
+
+# ========== Capture Active Services ==========
+declare -a ACTIVE_SERVICES_BEFORE_UPGRADE=()
+ALL_SERVICES=(
+    hysteria-caddy.service
+    hysteria-server.service
+    hysteria-auth.service
+    hysteria-scheduler.service
+    hysteria-telegram-bot.service
+    hysteria-normal-sub.service
+    hysteria-caddy-normalsub.service
+    hysteria-webpanel.service
+    hysteria-ip-limit.service
+)
+
+info "Checking for active services before upgrade..."
+for SERVICE in "${ALL_SERVICES[@]}"; do
+    if systemctl is-active --quiet "$SERVICE"; then
+        ACTIVE_SERVICES_BEFORE_UPGRADE+=("$SERVICE")
+        info "Service '$SERVICE' is active and will be restarted."
+    fi
+done
+
+# ========== Install MongoDB Prerequisite ==========
+install_mongodb
 
 # ========== Install Go and Compile Auth Binary ==========
 install_go_and_compile_auth() {
     info "Checking for Go and compiling authentication binary..."
     if ! command -v go &>/dev/null; then
         warn "Go is not installed. Attempting to install..."
-        apt-get install golang-go -y >/dev/null
+        apt-get install -y golang-go
         success "Go installed successfully."
     else
         success "Go is already installed."
@@ -249,8 +207,7 @@ chmod 640 "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
 chown -R hysteria:hysteria "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot"
 chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/hysteria2/kick.py"
 
-# ========== Install Dependencies ==========
-install_mongodb
+# ========== Virtual Environment ==========
 info "Setting up virtual environment and installing dependencies..."
 cd "$HYSTERIA_INSTALL_DIR"
 python3 -m venv "$HYSTERIA_VENV_DIR"
@@ -259,8 +216,10 @@ pip install --upgrade pip >/dev/null
 pip install -r requirements.txt >/dev/null
 success "Python environment ready."
 
-# ========== Migrate Data and Compile Go Binary ==========
-migrate_users_to_mongodb
+# ========== Data Migration ==========
+migrate_json_to_mongo
+
+# ========== Compile Go Binary ==========
 install_go_and_compile_auth
 
 # ========== Systemd Services ==========
