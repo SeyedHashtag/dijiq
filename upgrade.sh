@@ -11,6 +11,7 @@ REPO_URL="https://github.com/ReturnFI/Blitz"
 REPO_BRANCH="main"
 GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
 GEOIP_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat"
+USERS_FILE="$HYSTERIA_INSTALL_DIR/users.json"
 
 # ========== Color Setup ==========
 GREEN=$(tput setaf 2)
@@ -46,14 +47,93 @@ for SERVICE in "${ALL_SERVICES[@]}"; do
     fi
 done
 
+# ========== New Function to Install MongoDB ==========
+install_mongodb() {
+    info "Checking for MongoDB..."
+    if ! command -v mongod &>/dev/null; then
+        warn "MongoDB not found. Attempting to install from official repository..."
+        apt-get update -qq >/dev/null
+        apt-get install -y gnupg curl >/dev/null
+        curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" > /etc/apt/sources.list.d/mongodb-org-7.0.list
+        apt-get update -qq >/dev/null
+        apt-get install -y mongodb-org >/dev/null
+        systemctl start mongod
+        systemctl enable mongod
+        success "MongoDB installed and started successfully."
+    else
+        success "MongoDB is already installed."
+    fi
+}
 
-# ========== New Function to Install Go and Compile Auth Binary ==========
+# ========== New Function to Migrate users.json to MongoDB ==========
+migrate_users_to_mongodb() {
+    info "Checking for user data to migrate..."
+    if [ ! -f "$USERS_FILE" ]; then
+        warn "users.json not found. No data to migrate."
+        return
+    fi
+    
+    info "Starting user data migration from users.json to MongoDB..."
+    python3 - <<EOF
+import json
+import os
+import pymongo
+
+users_json_path = "$USERS_FILE"
+db_name = "blitz_panel"
+collection_name = "users"
+
+try:
+    client = pymongo.MongoClient("mongodb://localhost:27017/")
+    db = client[db_name]
+    collection = db[collection_name]
+    client.server_info()
+except Exception as e:
+    print(f"Error connecting to MongoDB: {e}")
+    exit(1)
+
+with open(users_json_path, 'r') as f:
+    users_data = json.load(f)
+
+migrated_count = 0
+for username, data in users_data.items():
+    user_doc = {
+        "password": data.get("password"),
+        "max_download_bytes": data.get("max_download_bytes", 0),
+        "expiration_days": data.get("expiration_days", 0),
+        "account_creation_date": data.get("account_creation_date"),
+        "blocked": data.get("blocked", False),
+        "unlimited_user": data.get("unlimited_user", False),
+        "status": data.get("status", "Offline"),
+        "upload_bytes": data.get("upload_bytes", 0),
+        "download_bytes": data.get("download_bytes", 0)
+    }
+    
+    user_doc = {k: v for k, v in user_doc.items() if v is not None}
+    
+    collection.update_one(
+        {"_id": username.lower()},
+        {"$set": user_doc},
+        upsert=True
+    )
+    migrated_count += 1
+
+print(f"Successfully migrated {migrated_count} users to MongoDB.")
+
+EOF
+    
+    mv "$USERS_FILE" "${USERS_FILE}.migrated"
+    success "users.json has been migrated and renamed to users.json.migrated."
+}
+
+
+# ========== Install Go and Compile Auth Binary ==========
 install_go_and_compile_auth() {
     info "Checking for Go and compiling authentication binary..."
     if ! command -v go &>/dev/null; then
         warn "Go is not installed. Attempting to install..."
-        #apt-get update -qq >/dev/null
-        apt install golang-go -y
+        apt-get install golang-go -y >/dev/null
         success "Go installed successfully."
     else
         success "Go is already installed."
@@ -149,7 +229,8 @@ chmod 640 "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
 chown -R hysteria:hysteria "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot"
 chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/hysteria2/kick.py"
 
-# ========== Virtual Environment ==========
+# ========== Install Dependencies ==========
+install_mongodb
 info "Setting up virtual environment and installing dependencies..."
 cd "$HYSTERIA_INSTALL_DIR"
 python3 -m venv "$HYSTERIA_VENV_DIR"
@@ -158,7 +239,8 @@ pip install --upgrade pip >/dev/null
 pip install -r requirements.txt >/dev/null
 success "Python environment ready."
 
-# ========== Compile Go Binary ==========
+# ========== Migrate Data and Compile Go Binary ==========
+migrate_users_to_mongodb
 install_go_and_compile_auth
 
 # ========== Systemd Services ==========

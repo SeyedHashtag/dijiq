@@ -75,14 +75,49 @@ check_os_version() {
     fi
 }
 
+install_mongodb() {
+    log_info "Installing MongoDB..."
+    
+    if command -v mongod &> /dev/null; then
+        log_success "MongoDB is already installed"
+        return 0
+    fi
+    
+    local os_name
+    os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2)
+    
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+    
+    if [[ "$os_name" == "ubuntu" ]]; then
+        local ubuntu_codename
+        ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
+        echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] https://repo.mongodb.org/apt/ubuntu ${ubuntu_codename}/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
+    elif [[ "$os_name" == "debian" ]]; then
+        echo "deb [signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
+    fi
+    
+    apt update -qq
+    apt install -y -qq mongodb-org
+    
+    systemctl enable mongod
+    systemctl start mongod
+    
+    if systemctl is-active --quiet mongod; then
+        log_success "MongoDB installed and started successfully"
+    else
+        log_error "MongoDB installation failed or service not running"
+        exit 1
+    fi
+}
+
 install_packages() {
-    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "git" "bc" "zip" "cron" "lsof" "golang-go")
+    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "git" "bc" "zip" "cron" "lsof" "golang-go" "gnupg" "lsb-release")
     local MISSING_PACKAGES=()
     
     log_info "Checking required packages..."
     
     for package in "${REQUIRED_PACKAGES[@]}"; do
-        if ! command -v "$package" &> /dev/null; then
+        if ! command -v "$package" &> /dev/null && ! dpkg -l | grep -q "^ii.*$package "; then
             MISSING_PACKAGES+=("$package")
         else
             log_success "Package $package is already installed"
@@ -106,6 +141,8 @@ install_packages() {
     else
         log_success "All required packages are already installed."
     fi
+    
+    install_mongodb
 }
 
 clone_repository() {
