@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -8,25 +9,30 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
-	listenAddr = "127.0.0.1:28262"
-	usersFile  = "/etc/hysteria/users.json"
-	cacheTTL   = 5 * time.Second
+	listenAddr     = "127.0.0.1:28262"
+	mongoURI       = "mongodb://localhost:27017"
+	dbName         = "blitz_panel"
+	collectionName = "users"
 )
 
 type User struct {
-	Password            string `json:"password"`
-	MaxDownloadBytes    int64  `json:"max_download_bytes"`
-	ExpirationDays      int    `json:"expiration_days"`
-	AccountCreationDate string `json:"account_creation_date"`
-	Blocked             bool   `json:"blocked"`
-	UploadBytes         int64  `json:"upload_bytes"`
-	DownloadBytes       int64  `json:"download_bytes"`
-	UnlimitedUser       bool   `json:"unlimited_user"`
+	ID                  string `bson:"_id"`
+	Password            string `bson:"password"`
+	MaxDownloadBytes    int64  `bson:"max_download_bytes"`
+	ExpirationDays      int    `bson:"expiration_days"`
+	AccountCreationDate string `bson:"account_creation_date"`
+	Blocked             bool   `bson:"blocked"`
+	UploadBytes         int64  `bson:"upload_bytes"`
+	DownloadBytes       int64  `bson:"download_bytes"`
+	UnlimitedUser       bool   `bson:"unlimited_user"`
 }
 
 type httpAuthRequest struct {
@@ -40,24 +46,7 @@ type httpAuthResponse struct {
 	ID string `json:"id"`
 }
 
-var (
-	userCache  map[string]User
-	cacheMutex = &sync.RWMutex{}
-)
-
-func loadUsersToCache() {
-	data, err := os.ReadFile(usersFile)
-	if err != nil {
-		return
-	}
-	var users map[string]User
-	if err := json.Unmarshal(data, &users); err != nil {
-		return
-	}
-	cacheMutex.Lock()
-	userCache = users
-	cacheMutex.Unlock()
-}
+var userCollection *mongo.Collection
 
 func authHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -77,11 +66,12 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheMutex.RLock()
-	user, ok := userCache[username]
-	cacheMutex.RUnlock()
+	var user User
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	if !ok {
+	err := userCollection.FindOne(ctx, bson.M{"_id": username}).Decode(&user)
+	if err != nil {
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
@@ -92,7 +82,7 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if subtle.ConstantTimeCompare([]byte(user.Password), []byte(password)) != 1 {
-		time.Sleep(5 * time.Second) // Slow down brute-force attacks
+		time.Sleep(5 * time.Second)
 		json.NewEncoder(w).Encode(httpAuthResponse{OK: false})
 		return
 	}
@@ -122,18 +112,26 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	log.SetOutput(io.Discard)
-	loadUsersToCache()
 
-	ticker := time.NewTicker(cacheTTL)
-	go func() {
-		for range ticker.C {
-			loadUsersToCache()
-		}
-	}()
+	clientOptions := options.Client().ApplyURI(mongoURI)
+	client, err := mongo.Connect(context.TODO(), clientOptions)
+	if err != nil {
+		log.SetOutput(os.Stderr)
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
+	}
+
+	err = client.Ping(context.TODO(), nil)
+	if err != nil {
+		log.SetOutput(os.Stderr)
+		log.Fatalf("Failed to ping MongoDB: %v", err)
+	}
+
+	userCollection = client.Database(dbName).Collection(collectionName)
 
 	http.HandleFunc("/auth", authHandler)
+	log.SetOutput(os.Stderr)
+	log.Printf("Auth server starting on %s", listenAddr)
 	if err := http.ListenAndServe(listenAddr, nil); err != nil {
-		log.SetOutput(os.Stderr)
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
