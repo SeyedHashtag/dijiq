@@ -48,7 +48,7 @@ def process_add_user_step1(message):
 
     try:
         users_data = json.loads(result)
-        existing_users = {user_key.lower() for user_key in users_data.keys()}
+        existing_users = {user['username'].lower() for user in users_data}
         if username.lower() in existing_users:
             bot.reply_to(message, f"Username '{escape_markdown(username)}' already exists. Please choose a different username:", reply_markup=create_cancel_markup())
             bot.register_next_step_handler(message, process_add_user_step1)
@@ -105,7 +105,7 @@ def process_add_user_step3(message, username, traffic_limit):
 
         bot.send_chat_action(message.chat.id, 'typing')
         
-        uri_info_command = f"python3 {CLI_PATH} show-user-uri -u \"{username}\" -ip 4 -n"
+        uri_info_command = f"python3 {CLI_PATH} show-user-uri -u \"{username}\" -ip 4 -n -s"
         uri_info_output = run_cli_command(uri_info_command)
 
         direct_uri = None
