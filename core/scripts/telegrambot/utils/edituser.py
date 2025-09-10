@@ -24,25 +24,25 @@ def show_user(message):
     bot.register_next_step_handler(msg, process_show_user)
 
 def process_show_user(message):
-    username = message.text.strip().lower()
+    username_input = message.text.strip().lower()
     bot.send_chat_action(message.chat.id, 'typing')
     command = f"python3 {CLI_PATH} list-users"
     result = run_cli_command(command)
 
     try:
-        users = json.loads(result)
-        existing_users = {user.lower(): user for user in users.keys()}
+        users_list = json.loads(result)
+        existing_users = {user['username'].lower(): user['username'] for user in users_list}
 
-        if username not in existing_users:
+        if username_input not in existing_users:
             bot.reply_to(message, f"Username '{escape_markdown(message.text.strip())}' does not exist. Please enter a valid username.")
             return
 
-        actual_username = existing_users[username]
-    except json.JSONDecodeError:
-        bot.reply_to(message, "Error retrieving user list. Please try again later.")
+        actual_username = existing_users[username_input]
+    except (json.JSONDecodeError, KeyError):
+        bot.reply_to(message, "Error retrieving or parsing user list. Please try again later.")
         return
 
-    command = f"python3 {CLI_PATH} get-user -u {actual_username}"
+    command = f"python3 {CLI_PATH} get-user -u \"{actual_username}\""
     user_result = run_cli_command(command)
 
     try:
@@ -53,7 +53,7 @@ def process_show_user(message):
         status = user_details.get('status', 'Unknown')
 
         if upload_bytes is None or download_bytes is None:
-            traffic_message = "**Traffic Data:**\nUser not active or no traffic data available."
+            traffic_message = "*Traffic Data:*\nUser not active or no traffic data available."
         else:
             upload_gb = upload_bytes / (1024 ** 3)
             download_gb = download_bytes / (1024 ** 3)
@@ -66,48 +66,45 @@ def process_show_user(message):
                 f"🌐 Status: {status}"
             )
     except json.JSONDecodeError:
-        bot.reply_to(message, "Failed to parse JSON data. The command output may be malformed.")
+        bot.reply_to(message, "Failed to parse user details. The command output may be malformed.")
         return
 
     display_username = escape_markdown(actual_username)
 
     formatted_details = (
         f"\n🆔 Name: {display_username}\n"
-        f"📊 Traffic Limit: {user_details['max_download_bytes'] / (1024 ** 3):.2f} GB\n"
-        f"📅 Days: {user_details['expiration_days']}\n"
-        f"⏳ Creation: {user_details['account_creation_date']}\n"
-        f"💡 Blocked: {user_details['blocked']}\n\n"
+        f"📊 Traffic Limit: {user_details.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB\n"
+        f"📅 Days: {user_details.get('expiration_days', 'N/A')}\n"
+        f"⏳ Creation: {user_details.get('account_creation_date', 'N/A')}\n"
+        f"💡 Blocked: {user_details.get('blocked', 'N/A')}\n\n"
         f"{traffic_message}"
     )
 
-    combined_command = f"python3 {CLI_PATH} show-user-uri -u {actual_username} -ip 4 -s -n"
+    combined_command = f"python3 {CLI_PATH} show-user-uri -u \"{actual_username}\" -ip 4 -s -n"
     combined_result = run_cli_command(combined_command)
 
-    if "Error" in combined_result or "Invalid" in combined_result:
-        bot.reply_to(message, combined_result)
-        return
-
-    result_lines = combined_result.strip().split('\n')
-    
     uri_v4 = ""
-    normal_sub_sublink = ""
+    normal_sub_link = ""
 
-    for line in result_lines:
-        line = line.strip()
-        if line.startswith("hy2://"):
-            uri_v4 = line
-        elif line.startswith("Normal-SUB Sublink:"):
-            normal_sub_sublink = result_lines[result_lines.index(line) + 1].strip()
+    lines = combined_result.strip().split('\n')
+    for i, line in enumerate(lines):
+        if line.strip() == "IPv4:":
+            if i + 1 < len(lines) and lines[i+1].strip().startswith("hy2://"):
+                uri_v4 = lines[i+1].strip()
+        elif line.strip() == "Normal-SUB Sublink:":
+            if i + 1 < len(lines) and (lines[i+1].strip().startswith("http://") or lines[i+1].strip().startswith("https://")):
+                normal_sub_link = lines[i+1].strip()
 
-    if not uri_v4:
-        bot.reply_to(message, "No valid URI found.")
+    qr_link = normal_sub_link if normal_sub_link else uri_v4
+    if not qr_link:
+        bot.reply_to(message, "No valid URI or Subscription link found for this user.")
         return
-
-    qr_v4 = qrcode.make(uri_v4)
-    bio_v4 = io.BytesIO()
-    qr_v4.save(bio_v4, 'PNG')
-    bio_v4.seek(0)
-
+        
+    qr_img = qrcode.make(qr_link)
+    bio = io.BytesIO()
+    qr_img.save(bio, 'PNG')
+    bio.seek(0)
+    
     markup = types.InlineKeyboardMarkup(row_width=3)
     markup.add(types.InlineKeyboardButton("Reset User", callback_data=f"reset_user:{actual_username}"),
                types.InlineKeyboardButton("IPv6-URI", callback_data=f"ipv6_uri:{actual_username}"))
@@ -118,13 +115,15 @@ def process_show_user(message):
     markup.add(types.InlineKeyboardButton("Renew Creation Date", callback_data=f"renew_creation:{actual_username}"),
                types.InlineKeyboardButton("Block User", callback_data=f"block_user:{actual_username}"))
 
-    caption = f"{formatted_details}\n\n**IPv4 URI:**\n\n`{uri_v4}`"
-    if normal_sub_sublink:
-        caption += f"\n\n**Normal SUB:**\n{normal_sub_sublink}"
+    caption = formatted_details
+    if uri_v4:
+        caption += f"\n\n*IPv4 URI:*\n`{uri_v4}`"
+    if normal_sub_link:
+        caption += f"\n\n*Normal SUB:*\n`{normal_sub_link}`"
 
     bot.send_photo(
         message.chat.id,
-        bio_v4,
+        bio,
         caption=caption,
         reply_markup=markup,
         parse_mode="Markdown"
@@ -145,11 +144,11 @@ def handle_edit_callback(call):
         msg = bot.send_message(call.message.chat.id, f"Enter new expiration days for {display_username}:")
         bot.register_next_step_handler(msg, process_edit_expiration, username)
     elif action == 'renew_password':
-        command = f"python3 {CLI_PATH} edit-user -u {username} -rp"
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -rp"
         result = run_cli_command(command)
         bot.send_message(call.message.chat.id, result)
     elif action == 'renew_creation':
-        command = f"python3 {CLI_PATH} edit-user -u {username} -rc"
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -rc"
         result = run_cli_command(command)
         bot.send_message(call.message.chat.id, result)
     elif action == 'block_user':
@@ -158,11 +157,11 @@ def handle_edit_callback(call):
                    types.InlineKeyboardButton("False", callback_data=f"confirm_block:{username}:false"))
         bot.send_message(call.message.chat.id, f"Set block status for {display_username}:", reply_markup=markup)
     elif action == 'reset_user':
-        command = f"python3 {CLI_PATH} reset-user -u {username}"
+        command = f"python3 {CLI_PATH} reset-user -u \"{username}\""
         result = run_cli_command(command)
         bot.send_message(call.message.chat.id, result)
     elif action == 'ipv6_uri':
-        command = f"python3 {CLI_PATH} show-user-uri -u {username} -ip 6"
+        command = f"python3 {CLI_PATH} show-user-uri -u \"{username}\" -ip 6"
         result = run_cli_command(command)
         if "Error" in result or "Invalid" in result:
             bot.send_message(call.message.chat.id, result)
@@ -184,20 +183,21 @@ def handle_edit_callback(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_block:'))
 def handle_block_confirmation(call):
     _, username, block_status = call.data.split(':')
-    command = f"python3 {CLI_PATH} edit-user -u {username} {'-b' if block_status == 'true' else ''}"
+    flag = '-b' if block_status == 'true' else '--unblocked'
+    command = f"python3 {CLI_PATH} edit-user -u \"{username}\" {flag}"
     result = run_cli_command(command)
     bot.send_message(call.message.chat.id, result)
 
 def process_edit_username(message, username):
     new_username = message.text.strip()
-    command = f"python3 {CLI_PATH} edit-user -u {username} -nu {new_username}"
+    command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -nu \"{new_username}\""
     result = run_cli_command(command)
     bot.reply_to(message, result)
 
 def process_edit_traffic(message, username):
     try:
         new_traffic_limit = int(message.text.strip())
-        command = f"python3 {CLI_PATH} edit-user -u {username} -nt {new_traffic_limit}"
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -nt {new_traffic_limit}"
         result = run_cli_command(command)
         bot.reply_to(message, result)
     except ValueError:
@@ -206,7 +206,7 @@ def process_edit_traffic(message, username):
 def process_edit_expiration(message, username):
     try:
         new_expiration_days = int(message.text.strip())
-        command = f"python3 {CLI_PATH} edit-user -u {username} -ne {new_expiration_days}"
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -ne {new_expiration_days}"
         result = run_cli_command(command)
         bot.reply_to(message, result)
     except ValueError:

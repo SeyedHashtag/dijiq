@@ -1,97 +1,82 @@
 #!/usr/bin/env python3
 
-import json
+import init_paths
 import sys
 import os
 import subprocess
 import argparse
 import re
-from datetime import datetime
-from init_paths import *
-from paths import *
+from db.database import db
 
 def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unlimited_user):
+    if db is None:
+        print("Error: Database connection failed. Please ensure MongoDB is running.")
+        return 1
+        
     try:
         traffic_bytes = int(float(traffic_gb) * 1073741824)
     except ValueError:
         print("Error: Traffic limit must be a numeric value.")
         return 1
 
-    if not os.path.isfile(USERS_FILE):
-        try:
-            with open(USERS_FILE, 'w') as f:
-                json.dump({}, f)
-        except IOError:
-            print(f"Error: Could not create {USERS_FILE}.")
+    potential_usernames = []
+    for i in range(count):
+        username = f"{prefix}{start_number + i}"
+        if not re.match(r"^[a-zA-Z0-9_]+$", username):
+            print(f"Error: Generated username '{username}' contains invalid characters. Aborting.")
             return 1
+        potential_usernames.append(username.lower())
 
     try:
-        with open(USERS_FILE, 'r+') as f:
-            try:
-                users_data = json.load(f)
-            except json.JSONDecodeError:
-                print(f"Error: {USERS_FILE} contains invalid JSON.")
-                return 1
+        existing_docs = db.collection.find({"_id": {"$in": potential_usernames}}, {"_id": 1})
+        existing_users_set = {doc['_id'] for doc in existing_docs}
+    except Exception as e:
+        print(f"Error querying database for existing users: {e}")
+        return 1
+        
+    new_usernames = [u for u in potential_usernames if u not in existing_users_set]
+    new_users_count = len(new_usernames)
 
-            existing_users_lower = {u.lower() for u in users_data}
-            new_users_to_add = {}
-            creation_date = None
-
-            try:
-                password_process = subprocess.run(['pwgen', '-s', '32', str(count)], capture_output=True, text=True, check=True)
-                passwords = password_process.stdout.strip().split('\n')
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                print("Warning: 'pwgen' not found or failed. Falling back to UUID for password generation.")
-                passwords = [subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], text=True).strip() for _ in range(count)]
-
-            if len(passwords) < count:
-                print("Error: Could not generate enough passwords.")
-                return 1
-
-            for i in range(count):
-                username = f"{prefix}{start_number + i}"
-                username_lower = username.lower()
-
-                if not re.match(r"^[a-zA-Z0-9_]+$", username_lower):
-                    print(f"Error: Generated username '{username}' contains invalid characters. Use only letters, numbers, and underscores.")
-                    continue
-
-                if username_lower in existing_users_lower or username_lower in new_users_to_add:
-                    print(f"Warning: User '{username}' already exists. Skipping.")
-                    continue
-
-                new_users_to_add[username_lower] = {
-                    "password": passwords[i],
-                    "max_download_bytes": traffic_bytes,
-                    "expiration_days": expiration_days,
-                    "account_creation_date": creation_date,
-                    "blocked": False,
-                    "unlimited_user": unlimited_user
-                }
-                # print(f"Preparing to add user: {username}")
-
-            if not new_users_to_add:
-                print("No new users to add.")
-                return 0
-
-            users_data.update(new_users_to_add)
-            
-            f.seek(0)
-            json.dump(users_data, f, indent=4)
-            f.truncate()
-            
-        print(f"\nSuccessfully added {len(new_users_to_add)} users.")
+    if new_users_count == 0:
+        print("No new users to add. All generated usernames already exist.")
         return 0
 
-    except IOError:
-        print(f"Error: Could not read or write to {USERS_FILE}.")
+    if count > new_users_count:
+        print(f"Warning: {count - new_users_count} user(s) already exist. Skipping them.")
+
+    try:
+        password_process = subprocess.run(['pwgen', '-s', '32', str(new_users_count)], capture_output=True, text=True, check=True)
+        passwords = password_process.stdout.strip().split('\n')
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        print("Warning: 'pwgen' not found or failed. Falling back to UUID for password generation.")
+        passwords = [subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], text=True).strip() for _ in range(new_users_count)]
+
+    if len(passwords) < new_users_count:
+        print("Error: Could not generate enough passwords.")
         return 1
+
+    users_to_insert = []
+    for i, username in enumerate(new_usernames):
+        user_doc = {
+            "_id": username,
+            "password": passwords[i],
+            "max_download_bytes": traffic_bytes,
+            "expiration_days": expiration_days,
+            "blocked": False,
+            "unlimited_user": unlimited_user
+        }
+        users_to_insert.append(user_doc)
+
+    try:
+        db.collection.insert_many(users_to_insert, ordered=False)
+        print(f"\nSuccessfully added {len(users_to_insert)} new users.")
+        return 0
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"An unexpected error occurred during database insert: {e}")
         return 1
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Add bulk users to Hysteria2.")
+    parser = argparse.ArgumentParser(description="Add bulk users to Hysteria2 via database.")
     parser.add_argument("-t", "--traffic-gb", dest="traffic_gb", type=float, required=True, help="Traffic limit for each user in GB.")
     parser.add_argument("-e", "--expiration-days", dest="expiration_days", type=int, required=True, help="Expiration duration for each user in days.")
     parser.add_argument("-c", "--count", type=int, required=True, help="Number of users to create.")
