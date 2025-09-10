@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
+import init_paths
 import sys
 import os
 import argparse
 import re
 from datetime import datetime
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 
 def edit_user(username, new_username=None, new_password=None, traffic_gb=None, expiration_days=None, creation_date=None, blocked=None, unlimited_user=None):

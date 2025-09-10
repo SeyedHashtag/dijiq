@@ -1,13 +1,10 @@
+#!/usr/bin/env python3
+
+import init_paths
 import sys
 import json
 from pathlib import Path
-
-try:
-    from hysteria2_api import Hysteria2Client
-except ImportError:
-    sys.exit("Error: hysteria2_api library not found. Please install it.")
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+from hysteria2_api import Hysteria2Client
 from db.database import db
 from paths import CONFIG_FILE, API_BASE_URL
 

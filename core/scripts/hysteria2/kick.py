@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import init_paths
 import os
 import sys
 import json
@@ -7,8 +8,6 @@ import fcntl
 import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 from hysteria2_api import Hysteria2Client
 from paths import CONFIG_FILE

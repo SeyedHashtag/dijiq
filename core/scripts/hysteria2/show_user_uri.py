@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import init_paths
 import os
 import sys
 import json
@@ -9,7 +10,6 @@ import re
 import qrcode
 from io import StringIO
 from typing import Tuple, Optional, Dict, List, Any
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 from paths import *
 

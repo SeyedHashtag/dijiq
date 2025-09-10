@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
+import init_paths
 import os
 import sys
 import json
 import argparse
 from functools import lru_cache
 from typing import Dict, List, Any
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 from paths import *
 

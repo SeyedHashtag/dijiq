@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
+import init_paths
 import sys
 import os
 import subprocess
 import argparse
 import re
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 
 def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unlimited_user):

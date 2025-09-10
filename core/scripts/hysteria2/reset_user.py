@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
+import init_paths
 import sys
 import os
 from datetime import date
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 
 def reset_user(username):

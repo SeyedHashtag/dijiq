@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
+import init_paths
 import json
 import sys
 import os
 import getopt
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from db.database import db
 
 def get_user_info(username):
