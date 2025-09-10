@@ -35,8 +35,8 @@ install_mongodb() {
         os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
         os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
         
-        apt-get update -qq >/dev/null
-        apt-get install -y gnupg curl lsb-release >/dev/null
+        apt-get update 
+        apt-get install -y gnupg curl lsb-release
         
         curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
         
