@@ -15,38 +15,42 @@ def handle_inline_query(query):
     results = []
 
     if query_text == "block":
-        for username, details in users.items():
-            if details.get('blocked', False):
+        for user in users:
+            if user.get('blocked', False):
+                username = user['username']
                 title = f"{username} (Blocked)"
-                description = f"Traffic Limit: {details['max_download_bytes'] / (1024 ** 3):.2f} GB, Expiration Days: {details['expiration_days']}"
+                description = f"Traffic Limit: {user.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB, Expiration Days: {user.get('expiration_days', 'N/A')}"
+                message_content = (
+                    f"Name: {username}\n"
+                    f"Traffic limit: {user.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB\n"
+                    f"Days: {user.get('expiration_days', 'N/A')}\n"
+                    f"Account Creation: {user.get('account_creation_date', 'N/A')}\n"
+                    f"Blocked: {user.get('blocked', False)}"
+                )
                 results.append(types.InlineQueryResultArticle(
                     id=username,
                     title=title,
                     description=description,
-                    input_message_content=types.InputTextMessageContent(
-                        message_text=f"Name: {username}\n"
-                                     f"Traffic limit: {details['max_download_bytes'] / (1024 ** 3):.2f} GB\n"
-                                     f"Days: {details['expiration_days']}\n"
-                                     f"Account Creation: {details['account_creation_date']}\n"
-                                     f"Blocked: {details['blocked']}"
-                    )
+                    input_message_content=types.InputTextMessageContent(message_text=message_content)
                 ))
     else:
-        for username, details in users.items():
+        for user in users:
+            username = user['username']
             if query_text in username.lower():
                 title = f"{username}"
-                description = f"Traffic Limit: {details['max_download_bytes'] / (1024 ** 3):.2f} GB, Expiration Days: {details['expiration_days']}"
+                description = f"Traffic Limit: {user.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB, Expiration Days: {user.get('expiration_days', 'N/A')}"
+                message_content = (
+                    f"Name: {username}\n"
+                    f"Traffic limit: {user.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB\n"
+                    f"Days: {user.get('expiration_days', 'N/A')}\n"
+                    f"Account Creation: {user.get('account_creation_date', 'N/A')}\n"
+                    f"Blocked: {user.get('blocked', False)}"
+                )
                 results.append(types.InlineQueryResultArticle(
                     id=username,
                     title=title,
                     description=description,
-                    input_message_content=types.InputTextMessageContent(
-                        message_text=f"Name: {username}\n"
-                                     f"Traffic limit: {details['max_download_bytes'] / (1024 ** 3):.2f} GB\n"
-                                     f"Days: {details['expiration_days']}\n"
-                                     f"Account Creation: {details['account_creation_date']}\n"
-                                     f"Blocked: {details['blocked']}"
-                    )
+                    input_message_content=types.InputTextMessageContent(message_text=message_content)
                 ))
 
     bot.answer_inline_query(query.id, results, cache_time=0)

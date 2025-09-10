@@ -1,31 +1,12 @@
-### 🛡️ **\[1.18.1] – Security Patch & Hysteria Settings Tab**
+### 🚀 **\[2.0.0] – Major Release: MongoDB Migration**
 
-*Released: 2025-08-30*
+*Released: 2025-09-10*
 
-#### 🔒 Security
+#### 💾 Core Update
 
-* 🛡️ **Open Redirect Fix**:
-  Removed `next_url` parameter from login flow to prevent **open redirect vulnerability**.
-  
-  Special thanks to [**@HEXER365**](https://github.com/HEXER365) for responsible disclosure 🙏
+* 📦 **User management migrated from `users.json` → MongoDB**
+* ⚡ Improved **scalability, performance, and reliability** for large deployments
 
-#### ✨ Features
+#### ⚠️ Breaking Change
 
-* ⚙️ **New Hysteria Settings tab** in Web Panel (with **geo update support**)
-* 🎨 Redesigned **Login Page** for better UI/UX
-
-#### 🛠️ Fixes
-
-* 📦 Backup `extra.json` during upgrades
-* 📱 Improved responsive design across web panel
-* 🧩 Relaxed conflict check in user viewmodel
-* 🧹 Removed `/dev/null` redirects for cleaner logging
-
-#### 📦 Chore & Dependencies
-
-* ⬆️ Updated dependencies:
-
-  * `typing-extensions` → 4.15.0
-  * `starlette` → 0.47.3
-  * `requests` → 2.32.5
-* 🧹 Removed **deprecated `user.sh`** script (legacy auth)
+* Previous JSON-based `users.json` file is no longer used

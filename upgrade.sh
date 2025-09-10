@@ -11,6 +11,7 @@ REPO_URL="https://github.com/ReturnFI/Blitz"
 REPO_BRANCH="main"
 GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
 GEOIP_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat"
+MIGRATE_SCRIPT_PATH="$HYSTERIA_INSTALL_DIR/core/scripts/db/migrate_users.py"
 
 # ========== Color Setup ==========
 GREEN=$(tput setaf 2)
@@ -23,6 +24,62 @@ info() { echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] - ${RESET} $1"; }
 success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1"; }
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
+
+# ========== Install MongoDB ==========
+install_mongodb() {
+    info "Checking for MongoDB..."
+    if ! command -v mongod &>/dev/null; then
+        warn "MongoDB not found. Installing from official repository..."
+        
+        local os_name os_version
+        os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        
+        apt-get update 
+        apt-get install -y gnupg curl lsb-release
+        
+        curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
+        
+        if [[ "$os_name" == "ubuntu" ]]; then
+            if [[ "$os_version" == "24.04" ]]; then
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            elif [[ "$os_version" == "22.04" ]]; then
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            else
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+            fi
+        elif [[ "$os_name" == "debian" && "$os_version" == "12" ]]; then
+            echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" > /etc/apt/sources.list.d/mongodb-org-8.0.list
+        else
+            error "Unsupported OS for MongoDB installation: $os_name $os_version"
+            exit 1
+        fi
+        
+        apt-get update -qq
+        apt-get install -y mongodb-org
+        systemctl start mongod
+        systemctl enable mongod
+        success "MongoDB installed and started successfully."
+    else
+        success "MongoDB is already installed."
+    fi
+}
+
+# ========== New Function to Migrate Data ==========
+migrate_json_to_mongo() {
+    info "Checking for user data migration..."
+    if [[ -f "$HYSTERIA_INSTALL_DIR/users.json" ]]; then
+        info "Found users.json. Proceeding with migration to MongoDB."
+        if python3 "$MIGRATE_SCRIPT_PATH"; then
+            success "Data migration completed successfully."
+        else
+            error "Data migration script failed. Please check the output above."
+            exit 1
+        fi
+    else
+        info "No users.json found. Skipping migration."
+    fi
+}
 
 # ========== Capture Active Services ==========
 declare -a ACTIVE_SERVICES_BEFORE_UPGRADE=()
@@ -46,14 +103,15 @@ for SERVICE in "${ALL_SERVICES[@]}"; do
     fi
 done
 
+# ========== Install MongoDB Prerequisite ==========
+install_mongodb
 
-# ========== New Function to Install Go and Compile Auth Binary ==========
+# ========== Install Go and Compile Auth Binary ==========
 install_go_and_compile_auth() {
     info "Checking for Go and compiling authentication binary..."
     if ! command -v go &>/dev/null; then
         warn "Go is not installed. Attempting to install..."
-        #apt-get update -qq >/dev/null
-        apt install golang-go -y
+        apt-get install -y golang-go
         success "Go installed successfully."
     else
         success "Go is already installed."
@@ -158,6 +216,9 @@ pip install --upgrade pip >/dev/null
 pip install -r requirements.txt >/dev/null
 success "Python environment ready."
 
+# ========== Data Migration ==========
+migrate_json_to_mongo
+
 # ========== Compile Go Binary ==========
 install_go_and_compile_auth
 
@@ -191,7 +252,6 @@ else
         systemctl restart "$SERVICE" && success "$SERVICE restarted." || warn "$SERVICE failed to restart."
     done
 fi
-
 
 # ========== Final Check ==========
 if systemctl is-active --quiet hysteria-server.service; then

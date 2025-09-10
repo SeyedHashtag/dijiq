@@ -7,158 +7,120 @@ import shutil
 import zipfile
 import tempfile
 import subprocess
-import datetime
 from pathlib import Path
-from init_paths import *
-from paths import *
 
-def run_command(command, capture_output=True, check=False):
-    """Run a shell command and return its output"""
-    result = subprocess.run(
-        command,
-        shell=True,
-        capture_output=capture_output,
-        text=True,
-        check=check
-    )
-    if capture_output:
-        return result.returncode, result.stdout.strip()
-    return result.returncode, None
+DB_NAME = "blitz_panel"
+HYSTERIA_CONFIG_DIR = Path("/etc/hysteria")
+CLI_PATH = Path("/etc/hysteria/core/cli.py")
+
+def run_command(command, check=False):
+    try:
+        return subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=check
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: '{e.cmd}'", file=sys.stderr)
+        print(f"Stderr: {e.stderr}", file=sys.stderr)
+        raise
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Backup file path is required.")
+        print("Error: Backup file path is required.", file=sys.stderr)
         return 1
 
-    backup_zip_file = sys.argv[1]
+    backup_zip_file = Path(sys.argv[1])
 
-    if not os.path.isfile(backup_zip_file):
-        print(f"Error: Backup file not found: {backup_zip_file}")
+    if not backup_zip_file.is_file():
+        print(f"Error: Backup file not found: {backup_zip_file}", file=sys.stderr)
         return 1
 
-    if not backup_zip_file.lower().endswith('.zip'):
-        print("Error: Backup file must be a .zip file.")
+    if backup_zip_file.suffix.lower() != '.zip':
+        print("Error: Backup file must be a .zip file.", file=sys.stderr)
         return 1
-
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    restore_dir = f"/tmp/hysteria_restore_{timestamp}"
-    target_dir = "/etc/hysteria"
 
     try:
-        os.makedirs(restore_dir, exist_ok=True)
-        
-        try:
-            with zipfile.ZipFile(backup_zip_file) as zf:
-                zf.testzip()
-                zf.extractall(restore_dir)
-        except zipfile.BadZipFile:
-            print("Error: Invalid ZIP file.")
-            return 1
-        except Exception as e:
-            print(f"Error: Could not extract the ZIP file: {e}")
-            return 1
-            
-        expected_files = [
-            "ca.key",
-            "ca.crt",
-            "users.json",
-            "config.json",
-            ".configs.env"
-        ]
-        
-        for file in expected_files:
-            file_path = os.path.join(restore_dir, file)
-            if not os.path.isfile(file_path):
-                print(f"Error: Required file '{file}' is missing from the backup.")
-                return 1
-        
-        existing_backup_dir = f"/opt/hysbackup/restore_pre_backup_{timestamp}"
-        os.makedirs(existing_backup_dir, exist_ok=True)
-        
-        for file in expected_files:
-            source_file = os.path.join(target_dir, file)
-            dest_file = os.path.join(existing_backup_dir, file)
-            
-            if os.path.isfile(source_file):
-                try:
-                    shutil.copy2(source_file, dest_file)
-                except Exception as e:
-                    print(f"Error creating backup file before restore from '{source_file}': {e}")
-                    return 1
-        
-        for file in expected_files:
-            source_file = os.path.join(restore_dir, file)
-            dest_file = os.path.join(target_dir, file)
-            
+        with tempfile.TemporaryDirectory() as temp_dir_str:
+            temp_dir = Path(temp_dir_str)
+            print(f"Extracting backup to temporary directory: {temp_dir}")
+
             try:
-                shutil.copy2(source_file, dest_file)
-            except Exception as e:
-                print(f"Error: replace Configuration Files '{file}': {e}")
-                shutil.rmtree(existing_backup_dir, ignore_errors=True)
+                with zipfile.ZipFile(backup_zip_file) as zf:
+                    zf.extractall(temp_dir)
+            except zipfile.BadZipFile:
+                print("Error: Invalid or corrupt ZIP file.", file=sys.stderr)
                 return 1
-        
-        config_file = os.path.join(target_dir, "config.json")
-        
-        if os.path.isfile(config_file):
-            print("Checking and adjusting config.json based on system state...")
+
+            dump_dir = temp_dir / DB_NAME
+            if not dump_dir.is_dir():
+                print("Error: Backup is in an old format or is missing the database dump.", file=sys.stderr)
+                print("Please use a backup created with the new MongoDB-aware script.", file=sys.stderr)
+                return 1
             
-            ret_code, networkdef = run_command("ip route | grep '^default' | awk '{print $5}'")
-            networkdef = networkdef.strip()
-            
-            if networkdef:
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                
-                for outbound in config.get('outbounds', []):
-                    if outbound.get('name') == 'v4' and 'direct' in outbound:
-                        current_v4_device = outbound['direct'].get('bindDevice', '')
-                        
-                        if current_v4_device != networkdef:
-                            print(f"Updating v4 outbound bindDevice from '{current_v4_device}' to '{networkdef}'...")
-                            outbound['direct']['bindDevice'] = networkdef
-                            
-                            with open(config_file, 'w') as f:
-                                json.dump(config, f, indent=2)
-            
-            ret_code, _ = run_command("systemctl is-active --quiet wg-quick@wgcf.service", capture_output=False)
-            
-            if ret_code != 0:
-                print("wgcf service is NOT active. Removing warps outbound and any ACL rules...")
-                
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                
-                config['outbounds'] = [outbound for outbound in config.get('outbounds', []) 
-                                      if outbound.get('name') != 'warps']
-                
-                if 'acl' in config and 'inline' in config['acl']:
-                    config['acl']['inline'] = [rule for rule in config['acl']['inline'] 
-                                             if not rule.startswith('warps(')]
-                
-                with open(config_file, 'w') as f:
-                    json.dump(config, f, indent=2)
-        
-        run_command("chown hysteria:hysteria /etc/hysteria/ca.key /etc/hysteria/ca.crt", 
-                   capture_output=False)
-        run_command("chmod 640 /etc/hysteria/ca.key /etc/hysteria/ca.crt", 
-                   capture_output=False)
-        
-        ret_code, _ = run_command(f"python3 {CLI_PATH} restart-hysteria2", capture_output=False)
-        
-        if ret_code != 0:
-            print("Error: Restart service failed.")
-            return 1
-        
-        print("Hysteria configuration restored and updated successfully.")
-        return 0
-        
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+            print("Restoring MongoDB database... (This will drop the current user data)")
+            run_command(f"mongorestore --db={DB_NAME} --drop --dir='{dump_dir}'", check=True)
+            print("Database restored successfully.")
+
+            files_to_copy = ["config.json", ".configs.env", "ca.key", "ca.crt"]
+            print("Restoring configuration files...")
+            for filename in files_to_copy:
+                src = temp_dir / filename
+                if src.exists():
+                    shutil.copy2(src, HYSTERIA_CONFIG_DIR / filename)
+                    print(f" - Restored {filename}")
+
+            adjust_config_file()
+
+            print("Setting permissions...")
+            run_command(f"chown hysteria:hysteria {HYSTERIA_CONFIG_DIR / 'ca.key'} {HYSTERIA_CONFIG_DIR / 'ca.crt'}")
+            run_command(f"chmod 640 {HYSTERIA_CONFIG_DIR / 'ca.key'} {HYSTERIA_CONFIG_DIR / 'ca.crt'}")
+
+            print("Restarting Hysteria service...")
+            run_command(f"python3 {CLI_PATH} restart-hysteria2", check=True)
+
+            print("\nRestore completed successfully.")
+            return 0
+
+    except subprocess.CalledProcessError:
+        print("\nRestore failed due to a command execution error.", file=sys.stderr)
         return 1
-    finally:
-        shutil.rmtree(restore_dir, ignore_errors=True)
-        if 'existing_backup_dir' in locals():
-            shutil.rmtree(existing_backup_dir, ignore_errors=True)
+    except Exception as e:
+        print(f"\nAn unexpected error occurred during restore: {e}", file=sys.stderr)
+        return 1
+
+def adjust_config_file():
+    config_file = HYSTERIA_CONFIG_DIR / "config.json"
+    if not config_file.exists():
+        return
+
+    print("Adjusting config.json based on current system state...")
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+
+        result = run_command("ip route | grep '^default' | awk '{print $5}'")
+        network_device = result.stdout.strip()
+        if network_device:
+            for outbound in config.get('outbounds', []):
+                if outbound.get('name') == 'v4' and 'direct' in outbound:
+                    outbound['direct']['bindDevice'] = network_device
+        
+        result = run_command("systemctl is-active --quiet wg-quick@wgcf.service")
+        if result.returncode != 0:
+            print(" - WARP service is inactive, removing related configuration.")
+            config['outbounds'] = [o for o in config.get('outbounds', []) if o.get('name') != 'warps']
+            if 'acl' in config and 'inline' in config['acl']:
+                config['acl']['inline'] = [r for r in config['acl']['inline'] if not r.startswith('warps(')]
+        
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+    except Exception as e:
+        print(f"Warning: Could not adjust config.json. {e}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     sys.exit(main())
