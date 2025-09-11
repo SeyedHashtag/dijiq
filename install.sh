@@ -83,26 +83,26 @@ install_mongodb() {
         return 0
     fi
     
-    local os_name os_version
-    os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-    os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-    
     curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
     
-    if [[ "$os_name" == "ubuntu" ]]; then
-        if [[ "$os_version" == "24.04" ]]; then
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        elif [[ "$os_version" == "22.04" ]]; then
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        else
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        fi
-    elif [[ "$os_name" == "debian" && ( "$os_version" == "12" || "$os_version" == "13" ) ]]; then
-        echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-    else
-        log_error "Unsupported OS for MongoDB installation: $os_name $os_version"
-        exit 1
-    fi
+    local codename
+    codename=$(lsb_release -cs)
+    local repo_line=""
+
+    case "$codename" in
+        "noble" | "jammy")
+            repo_line="deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu $codename/mongodb-org/8.0 multiverse"
+            ;;
+        "bookworm" | "trixie")
+            repo_line="deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main"
+            ;;
+        *)
+            log_error "Unsupported OS codename for MongoDB installation: $codename"
+            exit 1
+            ;;
+    esac
+
+    echo "$repo_line" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
     
     apt update -qq
     apt install -y -qq mongodb-org
@@ -118,8 +118,9 @@ install_mongodb() {
     fi
 }
 
+
 install_packages() {
-    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "bc" "zip" "lsof" "gnupg" "lsb-release")
+    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "bc" "zip" "unzip" "lsof" "gnupg" "lsb-release")
     local MISSING_PACKAGES=()
     
     log_info "Checking required packages..."
