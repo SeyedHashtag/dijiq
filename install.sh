@@ -97,7 +97,7 @@ install_mongodb() {
         else
             echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
         fi
-    elif [[ "$os_name" == "debian" && "$os_version" == "12" ]]; then
+    elif [[ "$os_name" == "debian" && ( "$os_version" == "12" || "$os_version" == "13" ) ]]; then
         echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
     else
         log_error "Unsupported OS for MongoDB installation: $os_name $os_version"
