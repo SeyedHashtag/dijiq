@@ -6,9 +6,6 @@ trap 'echo -e "\n❌ An error occurred. Aborting."; exit 1' ERR
 # ========== Variables ==========
 HYSTERIA_INSTALL_DIR="/etc/hysteria"
 HYSTERIA_VENV_DIR="$HYSTERIA_INSTALL_DIR/hysteria2_venv"
-AUTH_BINARY_DIR="$HYSTERIA_INSTALL_DIR/core/scripts/auth"
-REPO_URL="https://github.com/ReturnFI/Blitz"
-REPO_BRANCH="main"
 GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
 GEOIP_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat"
 MIGRATE_SCRIPT_PATH="$HYSTERIA_INSTALL_DIR/core/scripts/db/migrate_users.py"
@@ -81,6 +78,44 @@ migrate_json_to_mongo() {
     fi
 }
 
+download_and_extract_latest_release() {
+    local arch
+    case $(uname -m) in
+        x86_64) arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        *)
+            error "Unsupported architecture: $(uname -m)"
+            exit 1
+            ;;
+    esac
+    info "Detected architecture: $arch"
+
+    local zip_name="Blitz-${arch}.zip"
+    local download_url="https://github.com/ReturnFI/Blitz/releases/latest/download/${zip_name}"
+    local temp_zip="/tmp/${zip_name}"
+
+    info "Downloading latest release from ${download_url}..."
+    if ! curl -sL -o "$temp_zip" "$download_url"; then
+        error "Failed to download the release asset. Please check the URL and your connection."
+        exit 1
+    fi
+    success "Download complete."
+
+    info "Removing old installation directory..."
+    rm -rf "$HYSTERIA_INSTALL_DIR"
+    mkdir -p "$HYSTERIA_INSTALL_DIR"
+    
+    info "Extracting to ${HYSTERIA_INSTALL_DIR}..."
+    if ! unzip -q "$temp_zip" -d "$HYSTERIA_INSTALL_DIR"; then
+        error "Failed to extract the archive."
+        exit 1
+    fi
+    success "Extracted successfully."
+    
+    rm "$temp_zip"
+    info "Cleaned up temporary file."
+}
+
 # ========== Capture Active Services ==========
 declare -a ACTIVE_SERVICES_BEFORE_UPGRADE=()
 ALL_SERVICES=(
@@ -105,36 +140,6 @@ done
 
 # ========== Install MongoDB Prerequisite ==========
 install_mongodb
-
-# ========== Install Go and Compile Auth Binary ==========
-install_go_and_compile_auth() {
-    info "Checking for Go and compiling authentication binary..."
-    if ! command -v go &>/dev/null; then
-        warn "Go is not installed. Attempting to install..."
-        apt-get install -y golang-go
-        success "Go installed successfully."
-    else
-        success "Go is already installed."
-    fi
-
-    if [[ -f "$AUTH_BINARY_DIR/user_auth.go" ]]; then
-        info "Found auth binary source. Compiling..."
-        (
-            cd "$AUTH_BINARY_DIR"
-            go mod init hysteria_auth >/dev/null 2>&1
-            go mod tidy >/dev/null 2>&1
-            if go build -o user_auth .; then
-                chmod +x user_auth
-                success "Authentication binary compiled successfully."
-            else
-                error "Failed to compile the authentication binary."
-                exit 1
-            fi
-        )
-    else
-        warn "Authentication binary source not found. Skipping compilation."
-    fi
-}
 
 # ========== Backup Files ==========
 cd /root
@@ -165,12 +170,8 @@ for FILE in "${FILES[@]}"; do
     fi
 done
 
-# ========== Replace Installation ==========
-info "Removing old hysteria directory..."
-rm -rf "$HYSTERIA_INSTALL_DIR"
-
-info "Cloning Blitz repository (branch: $REPO_BRANCH)..."
-git clone -q -b "$REPO_BRANCH" "$REPO_URL" "$HYSTERIA_INSTALL_DIR"
+# ========== Download and Replace Installation ==========
+download_and_extract_latest_release
 
 # ========== Download Geo Data ==========
 info "Downloading geosite.dat and geoip.dat..."
@@ -202,10 +203,14 @@ fi
 
 # ========== Permissions ==========
 info "Setting ownership and permissions..."
-chown hysteria:hysteria "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
-chmod 640 "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt"
-chown -R hysteria:hysteria "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot"
+if id -u hysteria >/dev/null 2>&1; then
+    chown hysteria:hysteria "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt" 2>/dev/null || true
+    chmod 640 "$HYSTERIA_INSTALL_DIR/ca.key" "$HYSTERIA_INSTALL_DIR/ca.crt" 2>/dev/null || true
+    chown -R hysteria:hysteria "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot" 2>/dev/null || true
+fi
 chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/hysteria2/kick.py"
+chmod +x "$HYSTERIA_INSTALL_DIR/core/scripts/auth/user_auth"
+success "Permissions updated."
 
 # ========== Virtual Environment ==========
 info "Setting up virtual environment and installing dependencies..."
@@ -218,9 +223,6 @@ success "Python environment ready."
 
 # ========== Data Migration ==========
 migrate_json_to_mongo
-
-# ========== Compile Go Binary ==========
-install_go_and_compile_auth
 
 # ========== Systemd Services ==========
 info "Ensuring systemd services are configured..."
@@ -261,6 +263,7 @@ else
 fi
 
 # ========== Launch Menu ==========
-sleep 10
+info "Upgrade process finished. Launching menu..."
+cd "$HYSTERIA_INSTALL_DIR"
 chmod +x menu.sh
 ./menu.sh
