@@ -261,6 +261,6 @@ else
 fi
 
 # ========== Launch Menu ==========
-sleep 10
+# sleep 10
 chmod +x menu.sh
 ./menu.sh
