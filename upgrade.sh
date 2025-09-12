@@ -22,6 +22,22 @@ success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1";
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
 
+# ========== Check AVX Support ==========
+check_avx_support() {
+    info "Checking CPU for AVX support (required for MongoDB)..."
+    if grep -q -m1 -o -E 'avx|avx2|avx512' /proc/cpuinfo; then
+        success "CPU supports AVX instruction set."
+    else
+        error "CPU does not support the required AVX instruction set for MongoDB."
+        info "Your system is not compatible with this version."
+        info "Please use the 'nodb' upgrade script instead:"
+        echo -e "${YELLOW}bash <(curl -sL https://raw.githubusercontent.com/ReturnFI/Blitz/nodb/upgrade.sh)${RESET}"
+        error "Upgrade aborted."
+        exit 1
+    fi
+}
+
+
 # ========== Install MongoDB ==========
 install_mongodb() {
     info "Checking for MongoDB..."
@@ -137,6 +153,9 @@ for SERVICE in "${ALL_SERVICES[@]}"; do
         info "Service '$SERVICE' is active and will be restarted."
     fi
 done
+
+# ========== Check AVX Support Prerequisite ==========
+check_avx_support
 
 # ========== Install MongoDB Prerequisite ==========
 install_mongodb
