@@ -270,7 +270,17 @@ if [ ${#ACTIVE_SERVICES_BEFORE_UPGRADE[@]} -eq 0 ]; then
     warn "No relevant services were active before the upgrade. Skipping restart."
 else
     for SERVICE in "${ACTIVE_SERVICES_BEFORE_UPGRADE[@]}"; do
-        systemctl restart "$SERVICE" && success "$SERVICE restarted." || warn "$SERVICE failed to restart."
+        info "Attempting to restart $SERVICE..."
+        systemctl enable "$SERVICE" &>/dev/null || warn "Could not enable $SERVICE. It might not exist."
+        systemctl restart "$SERVICE"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE"; then
+            success "$SERVICE restarted successfully and is active."
+        else
+            warn "$SERVICE failed to restart or is not active."
+            warn "Showing last 5 log entries for $SERVICE:"
+            journalctl -u "$SERVICE" -n 5 --no-pager
+        fi
     done
 fi
 
