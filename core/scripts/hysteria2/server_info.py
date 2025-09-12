@@ -8,8 +8,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from hysteria2_api import Hysteria2Client
-from init_paths import *
-from paths import *
+import init_paths
+from paths import CONFIG_FILE, API_BASE_URL
+from db.database import db
 
 
 @lru_cache(maxsize=1)
@@ -207,30 +208,24 @@ async def get_online_user_count(secret: str) -> int:
         return await loop.run_in_executor(executor, get_online_user_count_sync, secret)
 
 
-def parse_total_traffic(content: str) -> tuple[int, int]:
-    if not content:
+def get_user_traffic_sync() -> tuple[int, int]:
+    if db is None:
+        print("Error: Database connection failed.", file=sys.stderr)
         return 0, 0
-    
     try:
-        users = json.loads(content)
-        total_upload = sum(int(user_data.get("upload_bytes", 0) or 0) for user_data in users.values())
-        total_download = sum(int(user_data.get("download_bytes", 0) or 0) for user_data in users.values())
+        users = db.get_all_users()
+        total_upload = sum(int(user.get("upload_bytes", 0) or 0) for user in users)
+        total_download = sum(int(user.get("download_bytes", 0) or 0) for user in users)
         return total_upload, total_download
-    except (json.JSONDecodeError, ValueError, AttributeError):
+    except Exception as e:
+        print(f"Error retrieving user traffic from database: {e}", file=sys.stderr)
         return 0, 0
 
 
 async def get_user_traffic() -> tuple[int, int]:
-    if not USERS_FILE.exists():
-        return 0, 0
-    
-    try:
-        async with aiofiles.open(USERS_FILE, 'r') as f:
-            content = await f.read()
-        return parse_total_traffic(content)
-    except Exception as e:
-        print(f"Error parsing traffic data: {e}", file=sys.stderr)
-        return 0, 0
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as executor:
+        return await loop.run_in_executor(executor, get_user_traffic_sync)
 
 
 async def main():
