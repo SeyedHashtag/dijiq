@@ -1,13 +1,11 @@
-### 🚀 **\[2.1.0] – Streamlined Installation & CI Improvements**
+### ⚡ **\[2.1.1] – Server Info Refactor & Cleanup**
 
 *Released: 2025-09-11*
 
-#### ⚙️ CI/CD
+#### 🧹 Fixes
 
-* 🛠️ Added **build step** to release workflow
-* 🧹 Removed unnecessary **auth binary compilation** from core install script
+* 🛠️ **Webpanel(API)**: Removed duplicate `traffic_status` check
 
-#### 📦 Installation & Upgrade
+#### 🗄️ Refactor
 
-* 🔄 **Refactored install script** to use release artifacts instead of `git clone`
-* ⬆️ **Refactored upgrade script** to pull release artifacts for faster, more reliable updates
+* 🔄 **Core**: `server_info.py` now fetches **traffic stats from MongoDB** instead of deprecated `users.json`

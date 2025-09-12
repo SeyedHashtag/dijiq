@@ -68,12 +68,24 @@ check_os_version() {
     if [[ "$os_name" == "ubuntu" && $(echo "$os_version >= 22" | bc) -eq 1 ]] ||
        [[ "$os_name" == "debian" && $(echo "$os_version >= 12" | bc) -eq 1 ]]; then
         log_success "OS check passed: $os_name $os_version"
-        return 0
     else
         log_error "This script is only supported on Ubuntu 22+ or Debian 12+."
         exit 1
     fi
+    
+    log_info "Checking CPU for AVX support (required for MongoDB)..."
+    if grep -q -m1 -o -E 'avx|avx2|avx512' /proc/cpuinfo; then
+        log_success "CPU supports AVX instruction set."
+    else
+        log_error "CPU does not support the required AVX instruction set for MongoDB."
+        log_info "For systems without AVX support, you can use the 'nodb' version of the panel."
+        log_info "To install it, please run the following command:"
+        echo -e "${YELLOW}bash <(curl -sL https://raw.githubusercontent.com/ReturnFI/Blitz/nodb/install.sh)${NC}"
+        log_error "Installation aborted."
+        exit 1
+    fi
 }
+
 
 install_mongodb() {
     log_info "Installing MongoDB..."

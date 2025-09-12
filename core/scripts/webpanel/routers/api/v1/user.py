@@ -180,7 +180,6 @@ async def remove_user_api(username: str):
         cli_api.kick_user_by_name(username)
         cli_api.traffic_status(display_output=False)
         cli_api.remove_user(username)
-        cli_api.traffic_status(display_output=False)
         return DetailResponse(detail=f'User {username} has been removed.')
     except HTTPException:
 
