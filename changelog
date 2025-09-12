@@ -1,11 +1,11 @@
-⚡ [2.1.1] – Server Info Refactor & Cleanup
+### ⚡ **\[2.1.1] – Server Info Refactor & Cleanup**
 
-Released: 2025-09-11
+*Released: 2025-09-11*
 
-🧹 Fixes
+#### 🧹 Fixes
 
-🛠️ Webpanel(API): Removed duplicate traffic_status check
+* 🛠️ **Webpanel(API)**: Removed duplicate `traffic_status` check
 
-🗄️ Refactor
+#### 🗄️ Refactor
 
-🔄 Core: server_info.py now fetches traffic stats from MongoDB instead of deprecated users.json
+* 🔄 **Core**: `server_info.py` now fetches **traffic stats from MongoDB** instead of deprecated `users.json`
