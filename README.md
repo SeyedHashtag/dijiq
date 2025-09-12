@@ -14,7 +14,7 @@
 
 <div align=center>
 
-![image](https://github.com/user-attachments/assets/6726e169-ecec-4a87-b744-6f9d8bc622c4)
+<img width="2150" height="1115" alt="custom_output" src="https://github.com/user-attachments/assets/35319e14-9b01-4b5a-9764-8980140fa7d0" />
 
  </div>
 
