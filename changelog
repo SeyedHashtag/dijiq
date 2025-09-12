@@ -1,12 +1,13 @@
-### 🚀 **\[2.0.0] – Major Release: MongoDB Migration**
+### 🚀 **\[2.1.0] – Streamlined Installation & CI Improvements**
 
-*Released: 2025-09-10*
+*Released: 2025-09-11*
 
-#### 💾 Core Update
+#### ⚙️ CI/CD
 
-* 📦 **User management migrated from `users.json` → MongoDB**
-* ⚡ Improved **scalability, performance, and reliability** for large deployments
+* 🛠️ Added **build step** to release workflow
+* 🧹 Removed unnecessary **auth binary compilation** from core install script
 
-#### ⚠️ Breaking Change
+#### 📦 Installation & Upgrade
 
-* Previous JSON-based `users.json` file is no longer used
+* 🔄 **Refactored install script** to use release artifacts instead of `git clone`
+* ⬆️ **Refactored upgrade script** to pull release artifacts for faster, more reliable updates

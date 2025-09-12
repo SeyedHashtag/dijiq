@@ -83,26 +83,26 @@ install_mongodb() {
         return 0
     fi
     
-    local os_name os_version
-    os_name=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-    os_version=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-    
     curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor
     
-    if [[ "$os_name" == "ubuntu" ]]; then
-        if [[ "$os_version" == "24.04" ]]; then
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        elif [[ "$os_version" == "22.04" ]]; then
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        else
-            echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-        fi
-    elif [[ "$os_name" == "debian" && "$os_version" == "12" ]]; then
-        echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
-    else
-        log_error "Unsupported OS for MongoDB installation: $os_name $os_version"
-        exit 1
-    fi
+    local codename
+    codename=$(lsb_release -cs)
+    local repo_line=""
+
+    case "$codename" in
+        "noble" | "jammy")
+            repo_line="deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu $codename/mongodb-org/8.0 multiverse"
+            ;;
+        "bookworm" | "trixie")
+            repo_line="deb [ signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] http://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main"
+            ;;
+        *)
+            log_error "Unsupported OS codename for MongoDB installation: $codename"
+            exit 1
+            ;;
+    esac
+
+    echo "$repo_line" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list > /dev/null
     
     apt update -qq
     apt install -y -qq mongodb-org
@@ -118,8 +118,9 @@ install_mongodb() {
     fi
 }
 
+
 install_packages() {
-    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "git" "bc" "zip" "cron" "lsof" "golang-go" "gnupg" "lsb-release")
+    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "bc" "zip" "unzip" "lsof" "gnupg" "lsb-release")
     local MISSING_PACKAGES=()
     
     log_info "Checking required packages..."
@@ -153,26 +154,62 @@ install_packages() {
     install_mongodb
 }
 
-clone_repository() {
-    log_info "Cloning Blitz repository..."
-    
+download_and_extract_release() {
+    log_info "Downloading and extracting Blitz panel..."
+
     if [ -d "/etc/hysteria" ]; then
         log_warning "Directory /etc/hysteria already exists."
-        read -p "Do you want to remove it and clone again? (y/n): " -n 1 -r
+        read -p "Do you want to remove it and install again? (y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -rf /etc/hysteria
         else
-            log_info "Using existing directory."
+            log_info "Skipping download. Using existing directory."
             return 0
         fi
     fi
-    
-    if git clone https://github.com/ReturnFI/Blitz /etc/hysteria &> /dev/null; then
-        log_success "Repository cloned successfully"
+
+    local arch
+    case $(uname -m) in
+        x86_64) arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        *)
+            log_error "Unsupported architecture: $(uname -m)"
+            exit 1
+            ;;
+    esac
+    log_info "Detected architecture: $arch"
+
+    local zip_name="Blitz-${arch}.zip"
+    local download_url="https://github.com/ReturnFI/Blitz/releases/latest/download/${zip_name}"
+    local temp_zip="/tmp/${zip_name}"
+
+    log_info "Downloading from ${download_url}..."
+    if curl -sL -o "$temp_zip" "$download_url"; then
+        log_success "Download complete."
     else
-        log_error "Failed to clone repository"
+        log_error "Failed to download the release asset. Please check the URL and your connection."
         exit 1
+    fi
+
+    log_info "Extracting to /etc/hysteria..."
+    mkdir -p /etc/hysteria
+    if unzip -q "$temp_zip" -d /etc/hysteria; then
+        log_success "Extracted successfully."
+    else
+        log_error "Failed to extract the archive."
+        exit 1
+    fi
+    
+    rm "$temp_zip"
+    log_info "Cleaned up temporary file."
+    
+    local auth_binary="/etc/hysteria/core/scripts/auth/user_auth"
+    if [ -f "$auth_binary" ]; then
+        chmod +x "$auth_binary"
+        log_success "Set execute permission for auth binary."
+    else
+        log_warning "Auth binary not found at $auth_binary. The installation might be incomplete."
     fi
 }
 
@@ -227,7 +264,7 @@ main() {
     check_root
     check_os_version
     install_packages
-    clone_repository
+    download_and_extract_release
     setup_python_env
     add_alias
     
