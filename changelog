@@ -1,11 +1,12 @@
-### ⚡ **\[2.1.1] – Server Info Refactor & Cleanup**
+### ⚡ **\[2.1.2] – AVX Check & Install Improvements**
 
 *Released: 2025-09-11*
 
-#### 🧹 Fixes
+#### ✨ Features
 
-* 🛠️ **Webpanel(API)**: Removed duplicate `traffic_status` check
+* 🛠️ **Upgrade Script**: Added AVX instruction set check
+* ℹ️ **Install Script**: Show nodb version notice if AVX not supported
 
-#### 🗄️ Refactor
+#### 📦 Dependencies
 
-* 🔄 **Core**: `server_info.py` now fetches **traffic stats from MongoDB** instead of deprecated `users.json`
+* ⬆️ **pymongo** upgraded from `4.14.1` → `4.15.0`
