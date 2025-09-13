@@ -1,12 +1,7 @@
-### 🎨 **\[2.1.3] – UI Logo Update & Upgrade Reliability Fix**
+### 🐛 **\[2.1.4] – API Response Model Fix**
 
 *Released: 2025-09-13*
 
-#### ✨ Features
-
-* 🎨 Improved **sidebar logo visibility** for better UI clarity
-* 🖼️ Updated **mockup and logo assets**
-
 #### 🐛 Fixes
 
-* ⚡ Improved **service restart reliability** in upgrade process
+* Aligned **user detail API endpoint** with the expected response model for more consistent output
