@@ -1,12 +1,12 @@
-### ⚡ **\[2.1.2] – AVX Check & Install Improvements**
+### 🎨 **\[2.1.3] – UI Logo Update & Upgrade Reliability Fix**
 
-*Released: 2025-09-12*
+*Released: 2025-09-13*
 
 #### ✨ Features
 
-* 🛠️ **Upgrade Script**: Added AVX instruction set check
-* ℹ️ **Install Script**: Show nodb version notice if AVX not supported
+* 🎨 Improved **sidebar logo visibility** for better UI clarity
+* 🖼️ Updated **mockup and logo assets**
 
-#### 📦 Dependencies
+#### 🐛 Fixes
 
-* ⬆️ **pymongo** upgraded from `4.14.1` → `4.15.0`
+* ⚡ Improved **service restart reliability** in upgrade process
