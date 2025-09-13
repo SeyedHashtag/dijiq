@@ -126,11 +126,18 @@ async def get_user_api(username: str):
         HTTPException: if the user is not found, or if an error occurs.
     """
     try:
-        if res := cli_api.get_user(username):
-            return res
-        raise HTTPException(status_code=404, detail=f'User {username} not found.')
+        user_data = cli_api.get_user(username)
+        if not user_data:
+            raise HTTPException(status_code=404, detail=f'User {username} not found.')
+        
+        if '_id' in user_data:
+            user_data['username'] = user_data.pop('_id')
+            
+        return user_data
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse user data from CLI: {e}")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
+        raise HTTPException(status_code=500, detail=f'An unexpected error occurred: {str(e)}')
 
 
 @router.patch('/{username}', response_model=DetailResponse)
