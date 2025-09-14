@@ -1,11 +1,18 @@
-### ⚡ **\[2.1.1] – Server Info Refactor & Cleanup**
+### 🚀 **\[2.2.0] – Bulk User Deletion & Performance Boost**
 
-*Released: 2025-09-11*
+*Released: 2025-09-13*
 
-#### 🧹 Fixes
+#### ⚡ Performance
 
-* 🛠️ **Webpanel(API)**: Removed duplicate `traffic_status` check
+* **Core:** Re-engineered user deletion with MongoDB `delete_many` for efficient batch operations
+* Resolved freeze issues in web panel & database during multi-user removals
 
-#### 🗄️ Refactor
+#### 🌐 API
 
-* 🔄 **Core**: `server_info.py` now fetches **traffic stats from MongoDB** instead of deprecated `users.json`
+* ✨ Added `POST /api/v1/users/bulk-delete` for batch deletions
+* 🐛 Fixed single-user `DELETE` endpoint to align with new bulk logic
+
+#### 🖥️ Frontend
+
+* Optimized **Users page** to call bulk API when multiple users are selected
+* Significantly improved UI responsiveness under heavy load

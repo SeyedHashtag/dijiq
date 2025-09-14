@@ -22,6 +22,22 @@ success() { echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] [OK] - ${RESET} $1";
 warn() { echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] - ${RESET} $1"; }
 error() { echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] - ${RESET} $1"; }
 
+# ========== Check AVX Support ==========
+check_avx_support() {
+    info "Checking CPU for AVX support (required for MongoDB)..."
+    if grep -q -m1 -o -E 'avx|avx2|avx512' /proc/cpuinfo; then
+        success "CPU supports AVX instruction set."
+    else
+        error "CPU does not support the required AVX instruction set for MongoDB."
+        info "Your system is not compatible with this version."
+        info "Please use the 'nodb' upgrade script instead:"
+        echo -e "${YELLOW}bash <(curl -sL https://raw.githubusercontent.com/ReturnFI/Blitz/nodb/upgrade.sh)${RESET}"
+        error "Upgrade aborted."
+        exit 1
+    fi
+}
+
+
 # ========== Install MongoDB ==========
 install_mongodb() {
     info "Checking for MongoDB..."
@@ -138,6 +154,9 @@ for SERVICE in "${ALL_SERVICES[@]}"; do
     fi
 done
 
+# ========== Check AVX Support Prerequisite ==========
+check_avx_support
+
 # ========== Install MongoDB Prerequisite ==========
 install_mongodb
 
@@ -251,7 +270,17 @@ if [ ${#ACTIVE_SERVICES_BEFORE_UPGRADE[@]} -eq 0 ]; then
     warn "No relevant services were active before the upgrade. Skipping restart."
 else
     for SERVICE in "${ACTIVE_SERVICES_BEFORE_UPGRADE[@]}"; do
-        systemctl restart "$SERVICE" && success "$SERVICE restarted." || warn "$SERVICE failed to restart."
+        info "Attempting to restart $SERVICE..."
+        systemctl enable "$SERVICE" &>/dev/null || warn "Could not enable $SERVICE. It might not exist."
+        systemctl restart "$SERVICE"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE"; then
+            success "$SERVICE restarted successfully and is active."
+        else
+            warn "$SERVICE failed to restart or is not active."
+            warn "Showing last 5 log entries for $SERVICE:"
+            journalctl -u "$SERVICE" -n 5 --no-pager
+        fi
     done
 fi
 

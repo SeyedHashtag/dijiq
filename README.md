@@ -1,7 +1,7 @@
 <div align="center">
 
 [![Telegram](https://img.shields.io/badge/Telegram-Join%20Chat-26A5E4?logo=telegram&logoColor=white)](https://t.me/hysteria2_panel)
-[![Docs](https://img.shields.io/badge/Docs-Read%20Now-FFA500?logo=bookstack&logoColor=white)](https://returnfi.github.io/Hys2-docs/)
+[![Docs](https://img.shields.io/badge/Docs-Read%20Now-FFA500?logo=bookstack&logoColor=white)](https://returnfi.github.io/Blitz-docs/)
 [![Language](https://img.shields.io/badge/Language-Persian-009688?logo=google-translate&logoColor=white)](README-fa.md)
 [![Latest Release](https://img.shields.io/badge/Release-Latest-brightgreen?logo=github)](https://github.com/ReturnFI/Blitz/releases)
 [![License](https://img.shields.io/badge/License-GPL-blueviolet?logo=open-source-initiative&logoColor=white)](LICENSE)
@@ -14,7 +14,7 @@
 
 <div align=center>
 
-![image](https://github.com/user-attachments/assets/6726e169-ecec-4a87-b744-6f9d8bc622c4)
+<img width="2150" height="1115" alt="custom_output" src="https://github.com/user-attachments/assets/2bb6ddd6-c612-4ad1-84d9-76f11cdadfdd" />
 
  </div>
 
