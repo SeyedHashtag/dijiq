@@ -19,64 +19,53 @@ jobs:
         go-version: '1.22.x'
         cache-dependency-path: core/scripts/auth/go.sum
 
-    - name: Generate beta version string
-      id: get_version
-      run: echo "version=beta-$(date +'%Y%m%d')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
     - name: Initialize Go module
       working-directory: ./core/scripts/auth
       run: |
         go mod init hysteria_auth
         go mod tidy
 
-    - name: Build and Package for linux-amd64
-      id: package_amd64
-      run: |
-        (cd core/scripts/auth && GOOS=linux GOARCH=amd64 go build -o user_auth .)
-        zip_name="Blitz-${{ steps.get_version.outputs.version }}-amd64.zip"
-        zip -r "$zip_name" . \
-          -x ".git/*" \
-             ".github/*" \
-             "*.zip" \
-             ".gitignore" \
-             "CONTRIBUTING.md" \
-             "LICENSE" \
-             "README*.md" \
-             "SECURITY.md" \
-             "changelog" \
-             "core/scripts/auth/go.*" \
-             "core/scripts/auth/user_auth.go"
-        rm core/scripts/auth/user_auth
-        echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
-
-    - name: Build and Package for linux-arm64
-      id: package_arm64
-      run: |
-        (cd core/scripts/auth && GOOS=linux GOARCH=arm64 go build -o user_auth .)
-        zip_name="Blitz-${{ steps.get_version.outputs.version }}-arm64.zip"
-        zip -r "$zip_name" . \
-          -x ".git/*" \
-             ".github/*" \
-             "*.zip" \
-             ".gitignore" \
-             "CONTRIBUTING.md" \
-             "LICENSE" \
-             "README*.md" \
-             "SECURITY.md" \
-             "changelog" \
-             "core/scripts/auth/go.*" \
-             "core/scripts/auth/user_auth.go"
-        rm core/scripts/auth/user_auth
-        echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
+    - name: Build for linux-amd64
+      run: (cd core/scripts/auth && GOOS=linux GOARCH=amd64 go build -o user_auth .)
 
     - name: Upload amd64 Beta Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Blitz-Beta-amd64
-        path: ${{ steps.package_amd64.outputs.zip_name }}
+        name: Blitz-amd64
+        path: |
+          .
+          !.git/**
+          !.github/**
+          !*.zip
+          !.gitignore
+          !CONTRIBUTING.md
+          !LICENSE
+          !README*.md
+          !SECURITY.md
+          !changelog
+          !core/scripts/auth/go.*
+          !core/scripts/auth/user_auth.go
+
+    - name: Clean amd64 binary
+      run: rm core/scripts/auth/user_auth
+
+    - name: Build for linux-arm64
+      run: (cd core/scripts/auth && GOOS=linux GOARCH=arm64 go build -o user_auth .)
 
     - name: Upload arm64 Beta Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Blitz-Beta-arm64
-        path: ${{ steps.package_arm64.outputs.zip_name }}
+        name: Blitz-arm64
+        path: |
+          .
+          !.git/**
+          !.github/**
+          !*.zip
+          !.gitignore
+          !CONTRIBUTING.md
+          !LICENSE
+          !README*.md
+          !SECURITY.md
+          !changelog
+          !core/scripts/auth/go.*
+          !core/scripts/auth/user_auth.go
