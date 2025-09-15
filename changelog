@@ -1,18 +1,12 @@
-### 🚀 **\[2.2.0] – Bulk User Deletion & Performance Boost**
+### 🚀 **\[2.2.1] – IP Limit Migration & UI Enhancements**
 
-*Released: 2025-09-13*
+*Released: 2025-09-15*
 
-#### ⚡ Performance
+#### 🗄️ Core & Scripts
 
-* **Core:** Re-engineered user deletion with MongoDB `delete_many` for efficient batch operations
-* Resolved freeze issues in web panel & database during multi-user removals
+* Migrated **IP limit state** from legacy JSON file → MongoDB for consistency with new database system
+* Improved reliability & scalability for IP limit management
 
-#### 🌐 API
+#### 🎨 User Interface
 
-* ✨ Added `POST /api/v1/users/bulk-delete` for batch deletions
-* 🐛 Fixed single-user `DELETE` endpoint to align with new bulk logic
-
-#### 🖥️ Frontend
-
-* Optimized **Users page** to call bulk API when multiple users are selected
-* Significantly improved UI responsiveness under heavy load
+* Added **emoji icons** to command buttons for clearer visibility and better UX
