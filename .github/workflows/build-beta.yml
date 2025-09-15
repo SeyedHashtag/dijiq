@@ -69,10 +69,14 @@ jobs:
         rm core/scripts/auth/user_auth
         echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
 
-    - name: Upload Beta Artifacts
+    - name: Upload amd64 Beta Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Blitz-Beta-Builds
-        path: |
-          ${{ steps.package_amd64.outputs.zip_name }}
-          ${{ steps.package_arm64.outputs.zip_name }}
+        name: Blitz-Beta-amd64
+        path: ${{ steps.package_amd64.outputs.zip_name }}
+
+    - name: Upload arm64 Beta Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Blitz-Beta-arm64
+        path: ${{ steps.package_arm64.outputs.zip_name }}
