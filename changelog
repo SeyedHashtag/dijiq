@@ -1,12 +1,7 @@
-### 🚀 **\[2.2.1] – IP Limit Migration & UI Enhancements**
+### 🚀 **\[2.2.2] – Subscription Page Refactor**
 
-*Released: 2025-09-15*
+*Released: 2025-09-18*
 
-#### 🗄️ Core & Scripts
+#### 🎨 UI
 
-* Migrated **IP limit state** from legacy JSON file → MongoDB for consistency with new database system
-* Improved reliability & scalability for IP limit management
-
-#### 🎨 User Interface
-
-* Added **emoji icons** to command buttons for clearer visibility and better UX
+* Refactored **subscription page templates** for improved structure and maintainability
