@@ -131,7 +131,7 @@
                             <!-- Telegram Bot Tab -->
                             <div class='tab-pane fade' id='telegram' role='tabpanel' aria-labelledby='telegram-tab'>
                                 <form id="telegram_form">
-                                    <div class='form-group'>
+                                    <div class='form-group' data-group="start-only">
                                         <label for='telegram_api_token'>API Token:</label>
                                         <input type='text' class='form-control' id='telegram_api_token'
                                             placeholder='Enter API Token'>
@@ -139,7 +139,7 @@
                                             Please enter a valid API Token.
                                         </div>
                                     </div>
-                                    <div class='form-group'>
+                                    <div class='form-group' data-group="start-only">
                                         <label for='telegram_admin_id'>Admin ID:</label>
                                         <input type='text' class='form-control' id='telegram_admin_id'
                                             placeholder='Enter Admin ID'>
@@ -147,8 +147,18 @@
                                             Please enter a valid Admin ID.
                                         </div>
                                     </div>
+                                    <div class='form-group'>
+                                        <label for='telegram_backup_interval'>Automatic Backup Interval (Hours):</label>
+                                        <input type='number' class='form-control' id='telegram_backup_interval' min="1"
+                                            placeholder='e.g., 12 (Default)'>
+                                        <div class="invalid-feedback">
+                                            Please enter a valid positive number for the interval.
+                                        </div>
+                                    </div>
                                     <button id="telegram_start" type='button' class='btn btn-success'>
                                         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>Start</button>
+                                    <button id="telegram_save_interval" type='button' class='btn btn-primary'
+                                        style="display: none;">Save Interval</button>
                                     <button id="telegram_stop" type='button' class='btn btn-danger'
                                         style="display: none;">Stop</button>
                                 </form>
@@ -693,7 +703,7 @@
 
         function validateForm(formId) {
             let isValid = true;
-            $(`#${formId} .form-control`).each(function () {
+            $(`#${formId} .form-control:visible`).each(function () {
                 const input = $(this);
                 const id = input.attr('id');
                 let fieldValid = true;
@@ -712,8 +722,12 @@
                     fieldValid = input.val().trim() !== "";
                 } else if (id === 'extra_config_uri') {
                     fieldValid = isValidURI(input.val());
-                } else if (id === 'block_duration' || id === 'max_ips') {
-                    fieldValid = isValidPositiveNumber(input.val());
+                } else if (id === 'block_duration' || id === 'max_ips' || id === 'telegram_backup_interval') {
+                    if (input.val().trim() === '' && id === 'telegram_backup_interval') {
+                       fieldValid = true;
+                    } else {
+                       fieldValid = isValidPositiveNumber(input.val());
+                    }
                 } else if (id === 'decoy_path') {
                     fieldValid = isValidPath(input.val());
                 } else {
@@ -944,10 +958,29 @@
             };
 
             Object.keys(servicesMap).forEach(serviceKey => {
-                let targetSelector = servicesMap[serviceKey];
                 let isRunning = data[serviceKey];
 
-                if (serviceKey === "hysteria_normal_sub") {
+                if (serviceKey === "hysteria_telegram_bot") {
+                    const $form = $("#telegram_form");
+                    if (isRunning) {
+                        $form.find('[data-group="start-only"]').hide();
+                        $("#telegram_start").hide();
+                        $("#telegram_stop").show();
+                        $("#telegram_save_interval").show();
+                        if ($form.find(".alert-info").length === 0) { 
+                           $form.prepend(`<div class='alert alert-info'>Service is running. You can stop it or change the backup interval.</div>`);
+                        }
+                        fetchTelegramBackupInterval();
+                    } else {
+                        $form.find('[data-group="start-only"]').show();
+                        $("#telegram_start").show();
+                        $("#telegram_stop").hide();
+                        $("#telegram_save_interval").hide();
+                        $form.find(".alert-info").remove();
+                        $("#telegram_backup_interval").val("");
+                    }
+
+                } else if (serviceKey === "hysteria_normal_sub") {
                     const $normalForm = $("#normal_sub_service_form");
                     const $normalFormGroups = $normalForm.find(".form-group");
                     const $normalStartBtn = $("#normal_start");
@@ -1011,23 +1044,6 @@
                            $("#warp_config_form")[0].reset();
                         }
                     }
-                } else {
-                    const $formSelector = $(targetSelector);
-                    if ($formSelector.length > 0) {
-                        if (isRunning) {
-                            $formSelector.find(".form-group").hide();
-                            $formSelector.find(".btn-success").hide();
-                            $formSelector.find(".btn-danger").show();
-                            if ($formSelector.find(".alert-info").length === 0) { 
-                               $formSelector.prepend(`<div class='alert alert-info'>Service is running. You can stop it if needed.</div>`);
-                            }
-                        } else {
-                            $formSelector.find(".form-group").show();
-                            $formSelector.find(".btn-success").show();
-                            $formSelector.find(".btn-danger").hide();
-                            $formSelector.find(".alert-info").remove();
-                        }
-                    }
                 }
             });
         }
@@ -1048,6 +1064,25 @@
                 }
             });
         }
+        
+        function fetchTelegramBackupInterval() {
+            $.ajax({
+                url: "{{ url_for('telegram_get_interval_api') }}",
+                type: "GET",
+                success: function (data) {
+                    if (data.backup_interval) {
+                        $("#telegram_backup_interval").val(data.backup_interval);
+                    } else {
+                        $("#telegram_backup_interval").val(""); 
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error("Failed to fetch Telegram backup interval:", error, xhr.responseText);
+                    $("#telegram_backup_interval").val(""); 
+                }
+            });
+        }
+
 
         function fetchIpLimitConfig() {
             $.ajax({
@@ -1223,11 +1258,21 @@
             if (!validateForm('telegram_form')) return;
             const apiToken = $("#telegram_api_token").val();
             const adminId = $("#telegram_admin_id").val();
+            let backupInterval = $("#telegram_backup_interval").val();
+
+            const data = {
+                token: apiToken,
+                admin_id: adminId
+            };
+            if (backupInterval) {
+                data.backup_interval = parseInt(backupInterval);
+            }
+
             confirmAction("start the Telegram bot", function () {
                 sendRequest(
                     "{{ url_for('telegram_start_api') }}",
                     "POST",
-                    { token: apiToken, admin_id: adminId },
+                    data,
                     "Telegram bot started successfully!",
                     "#telegram_start"
                 );
@@ -1245,6 +1290,33 @@
                 );
             });
         }
+
+        function saveTelegramInterval() {
+            if (!validateForm('telegram_form')) return;
+            let backupInterval = $("#telegram_backup_interval").val();
+
+            if (!backupInterval) {
+                 Swal.fire("Error!", "Backup interval cannot be empty.", "error");
+                return;
+            }
+
+            const data = {
+                backup_interval: parseInt(backupInterval)
+            };
+
+            confirmAction(`change the backup interval to ${backupInterval} hours`, function () {
+                sendRequest(
+                    "{{ url_for('telegram_set_interval_api') }}",
+                    "POST",
+                    data,
+                    "Backup interval updated successfully!",
+                    "#telegram_save_interval",
+                    false,
+                    fetchTelegramBackupInterval
+                );
+            });
+        }
+
 
         function startNormal() {
             if (!validateForm('normal_sub_service_form')) return;
@@ -1528,6 +1600,7 @@
 
         $("#telegram_start").on("click", startTelegram);
         $("#telegram_stop").on("click", stopTelegram);
+        $("#telegram_save_interval").on("click", saveTelegramInterval);
         $("#normal_start").on("click", startNormal);
         $("#normal_stop").on("click", stopNormal);
         $("#normal_subpath_save_btn").on("click", editNormalSubPath);
@@ -1621,13 +1694,17 @@
                  $(this).addClass('is-invalid');
             }
         });
-         $('#block_duration, #max_ips').on('input', function () {
+         $('#block_duration, #max_ips, #telegram_backup_interval').on('input', function () {
+            if ($(this).attr('id') === 'telegram_backup_interval' && $(this).val().trim() === '') {
+                $(this).removeClass('is-invalid');
+                return;
+            }
             if (isValidPositiveNumber($(this).val())) {
                 $(this).removeClass('is-invalid');
             } else if ($(this).val().trim() !== "") {
                 $(this).addClass('is-invalid');
             } else {
-                 $(this).removeClass('is-invalid');
+                 $(this).addClass('is-invalid');
             }
         });
 

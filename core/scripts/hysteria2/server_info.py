@@ -5,6 +5,8 @@ import json
 import asyncio
 import aiofiles
 import time
+import subprocess
+import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from hysteria2_api import Hysteria2Client
@@ -228,6 +230,54 @@ async def get_user_traffic() -> tuple[int, int]:
         return await loop.run_in_executor(executor, get_user_traffic_sync)
 
 
+def get_interface_addresses():
+    ipv4_address = ""
+    ipv6_address = ""
+
+    try:
+        interfaces_output = subprocess.check_output(["ip", "-o", "link", "show"]).decode()
+        interface_lines = interfaces_output.strip().splitlines()
+        
+        interfaces = []
+        for line in interface_lines:
+            parts = line.split(': ')
+            if len(parts) > 1:
+                iface_name = parts[1].split('@')[0]
+                if not re.match(r"^(lo|wgcf|warp)", iface_name):
+                    interfaces.append(iface_name)
+
+        for iface in interfaces:
+            try:
+                if not ipv4_address:
+                    ipv4_output = subprocess.check_output(["ip", "-o", "-4", "addr", "show", iface]).decode()
+                    for line in ipv4_output.strip().splitlines():
+                        addr = line.split()[3].split("/")[0]
+                        if not re.match(r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1]))", addr):
+                            ipv4_address = addr
+                            break
+                if not ipv6_address:
+                    ipv6_output = subprocess.check_output(["ip", "-o", "-6", "addr", "show", iface]).decode()
+                    for line in ipv6_output.strip().splitlines():
+                        addr = line.split()[3].split("/")[0]
+                        if not re.match(r"^(::1|fe80:)", addr):
+                            ipv6_address = addr
+                            break
+            except subprocess.CalledProcessError:
+                continue
+            if ipv4_address and ipv6_address:
+                break
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    return ipv4_address, ipv6_address
+
+
+async def get_interface_addresses_async():
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as executor:
+        return await loop.run_in_executor(executor, get_interface_addresses)
+
+
 async def main():
     secret = get_secret()
     
@@ -239,7 +289,8 @@ async def main():
         get_user_traffic(),
         get_cpu_usage(0.1),
         get_network_speed(0.3),
-        get_network_stats()
+        get_network_stats(),
+        get_interface_addresses_async()
     ]
     
     results = await asyncio.gather(*tasks)
@@ -252,8 +303,11 @@ async def main():
     cpu_usage = results[5]
     download_speed, upload_speed = results[6]
     reboot_rx, reboot_tx = results[7]
+    ipv4_address, ipv6_address = results[8]
 
     print(f"🕒 Uptime: {uptime_str} (since {boot_time_str})")
+    print(f"🖥️ Server IPv4: {ipv4_address if ipv4_address else 'Not Found'}")
+    print(f"🖥️ Server IPv6: {ipv6_address if ipv6_address else 'Not Found'}")
     print(f"📈 CPU Usage: {cpu_usage}%")
     print(f"💻 Used RAM: {mem_used}MB / {mem_total}MB")
     print(f"👥 Online Users: {online_users}")

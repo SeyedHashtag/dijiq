@@ -46,6 +46,8 @@ def __parse_server_status(server_info: str) -> ServerStatusResponse:
     data = {
         'uptime': 'N/A',
         'boot_time': 'N/A',
+        'server_ipv4': 'N/A',
+        'server_ipv6': 'N/A',
         'cpu_usage': '0%',
         'total_ram': '0MB',
         'ram_usage': '0MB',
@@ -88,6 +90,10 @@ def __parse_server_status(server_info: str) -> ServerStatusResponse:
                 uptime_part, _, boottime_part = value.partition('(')
                 data['uptime'] = uptime_part.strip()
                 data['boot_time'] = boottime_part.replace('since ', '').replace(')', '').strip()
+            elif 'server ipv4' in key:
+                data['server_ipv4'] = value
+            elif 'server ipv6' in key:
+                data['server_ipv6'] = value
             elif 'cpu usage' in key:
                 data['cpu_usage'] = value
             elif 'used ram' in key:

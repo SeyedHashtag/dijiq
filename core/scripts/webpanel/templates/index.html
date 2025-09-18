@@ -15,7 +15,6 @@
 
 <section class="content">
     <div class="container-fluid">
-        <!-- Core System & Network Stats -->
         <div class="row">
             <div class="col-md-3 col-sm-6 col-12">
                 <div class="info-box shadow-sm">
@@ -55,27 +54,46 @@
             </div>
         </div>
         <div class="row">
-            <div class="col-md-6 col-12">
+            <div class="col-md-4 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-primary"><i class="fas fa-exchange-alt"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">Download / Upload Speed</span>
-                        <span class="info-box-number" id="network-speed">-- / --</span>
+                        <span class="info-box-text">Network Speed</span>
+                        <div style="font-size: 16px; line-height: 1.3; font-weight: bold;">
+                            <span class="d-block" id="download-speed">🔽 Download: --</span>
+                            <span class="d-block" id="upload-speed">🔼 Upload: --</span>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6 col-12">
+            <div class="col-md-4 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-dark"><i class="fas fa-project-diagram"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">TCP / UDP Connections</span>
-                        <span class="info-box-number" id="network-connections">-- / --</span>
+                        <span class="info-box-text">Active Connections</span>
+                        <div style="font-size: 16px; line-height: 1.3; font-weight: bold;">
+                            <span class="d-block" id="tcp-connections">TCP: --</span>
+                            <span class="d-block" id="udp-connections">UDP: --</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-12">
+                <div class="info-box shadow-sm" id="ip-info-box">
+                    <span class="info-box-icon bg-purple"><i class="fas fa-network-wired"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Server IPs
+                            <a href="#" id="toggle-ip-visibility" class="text-muted ml-2"><i class="fas fa-eye"></i></a>
+                        </span>
+                        <div id="ip-addresses" style="filter: blur(5px); font-size: 16px; line-height: 1.3; font-weight: bold;">
+                            <span class="d-block" id="server-ipv4">IPv4: --</span>
+                            <span class="d-block" id="server-ipv6">IPv6: --</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Traffic Monitoring -->
         <div class="row">
             <div class="col-lg-6">
                 <div class="card card-outline card-danger">
@@ -121,7 +139,6 @@
             </div>
         </div>
 
-        <!-- Service Statuses -->
         <div class="row">
             <div class="col-lg-3 col-6">
                 <div class="small-box" id="hysteria2-status-box">
@@ -178,29 +195,29 @@
         fetch('{{ url_for("server_status_api") }}')
             .then(response => response.json())
             .then(data => {
-                // Core Stats
                 document.getElementById('cpu-usage').textContent = data.cpu_usage;
                 document.getElementById('ram-usage').textContent = `${data.ram_usage} / ${data.total_ram}`;
                 document.getElementById('online-users').textContent = data.online_users;
                 document.getElementById('uptime').textContent = data.uptime;
 
-                // Network Stats
-                document.getElementById('network-speed').innerHTML = `🔽 ${data.download_speed} / 🔼 ${data.upload_speed}`;
-                document.getElementById('network-connections').textContent = `${data.tcp_connections} / ${data.udp_connections}`;
+                document.getElementById('server-ipv4').textContent = `IPv4: ${data.server_ipv4 || 'N/A'}`;
+                document.getElementById('server-ipv6').textContent = `IPv6: ${data.server_ipv6 || 'N/A'}`;
 
-                // Traffic Since Reboot
+                document.getElementById('download-speed').textContent = `🔽 Download: ${data.download_speed}`;
+                document.getElementById('upload-speed').textContent = `🔼 Upload: ${data.upload_speed}`;
+                document.getElementById('tcp-connections').textContent = `TCP: ${data.tcp_connections}`;
+                document.getElementById('udp-connections').textContent = `UDP: ${data.udp_connections}`;
+
                 document.getElementById('reboot-uploaded-traffic').textContent = data.reboot_uploaded_traffic;
                 document.getElementById('reboot-downloaded-traffic').textContent = data.reboot_downloaded_traffic;
                 document.getElementById('reboot-total-traffic').textContent = data.reboot_total_traffic;
 
-                // User Traffic (All Time)
                 document.getElementById('user-uploaded-traffic').textContent = data.user_uploaded_traffic;
                 document.getElementById('user-downloaded-traffic').textContent = data.user_downloaded_traffic;
                 document.getElementById('user-total-traffic').textContent = data.user_total_traffic;
             })
             .catch(error => console.error('Error fetching server info:', error));
     }
-
 
     function updateServiceStatuses() {
         fetch('{{ url_for("server_services_status_api") }}')
@@ -234,6 +251,16 @@
         updateServiceStatuses();
         setInterval(updateServerInfo, 2000);
         setInterval(updateServiceStatuses, 10000);
+
+        const toggleIpBtn = document.getElementById('toggle-ip-visibility');
+        const ipAddressesDiv = document.getElementById('ip-addresses');
+        toggleIpBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const isBlurred = ipAddressesDiv.style.filter === 'blur(5px)';
+            ipAddressesDiv.style.filter = isBlurred ? 'none' : 'blur(5px)';
+            toggleIpBtn.querySelector('i').classList.toggle('fa-eye');
+            toggleIpBtn.querySelector('i').classList.toggle('fa-eye-slash');
+        });
     });
 </script>
 {% endblock %}

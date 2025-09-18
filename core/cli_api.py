@@ -14,6 +14,7 @@ CONFIG_FILE = '/etc/hysteria/config.json'
 CONFIG_ENV_FILE = '/etc/hysteria/.configs.env'
 WEBPANEL_ENV_FILE = '/etc/hysteria/core/scripts/webpanel/.env'
 NORMALSUB_ENV_FILE = '/etc/hysteria/core/scripts/normalsub/.env'
+TELEGRAM_ENV_FILE = '/etc/hysteria/core/scripts/telegrambot/.env'
 NODES_JSON_PATH = "/etc/hysteria/nodes.json"
 
 
@@ -566,16 +567,46 @@ def warp_status() -> str | None:
     return run_cmd(['python3', Command.STATUS_WARP.value])
 
 
-def start_telegram_bot(token: str, adminid: str):
+def start_telegram_bot(token: str, adminid: str, backup_interval: Optional[int] = None):
     '''Starts the Telegram bot.'''
     if not token or not adminid:
         raise InvalidInputError('Error: Both --token and --adminid are required for the start action.')
-    run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid])
-
+    
+    command = ['python3', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid]
+    if backup_interval is not None:
+        command.append(str(backup_interval))
+    
+    run_cmd(command)
 
 def stop_telegram_bot():
     '''Stops the Telegram bot.'''
     run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'stop'])
+
+def get_telegram_bot_backup_interval() -> int | None:
+    '''Retrievels the current BACKUP_INTERVAL_HOUR for the Telegram Bot service from its .env file.'''
+    try:
+        if not os.path.exists(TELEGRAM_ENV_FILE):
+            return None 
+        
+        env_vars = dotenv_values(TELEGRAM_ENV_FILE)
+        interval_str = env_vars.get('BACKUP_INTERVAL_HOUR')
+        
+        if interval_str:
+            try:
+                return int(float(interval_str))
+            except (ValueError, TypeError):
+                return None
+        
+        return None
+    except Exception as e:
+        print(f"Error reading Telegram Bot .env file: {e}")
+        return None
+
+def set_telegram_bot_backup_interval(backup_interval: int):
+    '''Sets the backup interval for the Telegram bot.'''
+    if backup_interval is None:
+        raise InvalidInputError('Error: Backup interval is required.')
+    run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'set_backup_interval', str(backup_interval)])
 
 
 def start_singbox(domain: str, port: int):

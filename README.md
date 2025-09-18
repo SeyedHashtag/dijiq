@@ -23,27 +23,6 @@
 
 A powerful and user-friendly management panel for Hysteria2 proxy server. Features include complete user management, traffic monitoring, WARP integration, Telegram bot support, and multiple subscription formats. Simple installation with advanced configuration options for both beginners and experienced users.
 
-🛡️ **Key Features**
-
-- ⚙️ Hysteria2 Installation & Configuration
-- 👤 User Management (Add, Edit, Reset, Remove)
-- ℹ️ Detailed User Information & Listing
-- 📊 Traffic Monitoring & Status
-- 🔗 User URI Generation (Normal-Sub)
-- 🛠️ Advanced Network Tools (TCP Brutal, WARP)
-- 🤖 Telegram Bot Integration
-- 🌐 Normal-Sub(SUBPATH) Service Management
-- 🔒 Web Panel Management & API Access
-- 🔄 Port & SNI Configuration
-- 🛡️ Obfuscation Management
-- 🌍 Geo File Updates (Iran, China, Russia)
-- 🎭 Masquerade Configuration
-- 🛑 IP Limiter Service (Anti-Sharing)
-- 🚀 System Information & Service Status
-- ♻️ Hysteria2 Core Management (Restart, Update, Uninstall)
-- ✏️ IP Address Management (IPv4 and IPv6)
-
-
 
 ## 📋 Quick Start Guide
 
@@ -54,7 +33,6 @@ bash <(curl https://raw.githubusercontent.com/ReturnFI/Blitz/main/install.sh)
 After installation, use `hys2` to launch the management panel.
 
 There is no need to execute the installation command again.
-
 
 
 

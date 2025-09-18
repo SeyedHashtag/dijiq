@@ -1,12 +1,16 @@
-### 🚀 **\[2.2.1] – IP Limit Migration & UI Enhancements**
+### 🚀 **\[2.3.0] – Telegram Backup & Server IPs**
 
-*Released: 2025-09-15*
+*Released: 2025-09-19*
 
-#### 🗄️ Core & Scripts
+#### ✨ New Features
 
-* Migrated **IP limit state** from legacy JSON file → MongoDB for consistency with new database system
-* Improved reliability & scalability for IP limit management
+* 🔔 **Smart version checking** with user-friendly notifications
+* 🛡️ **Telegram backups**: Automatic scheduled backups via bot
+* ⚙️ **CLI**: Manage Telegram bot backup interval directly
+* 🌐 **Settings UI**: Configure Telegram backup interval in panel
+* 🔄 **API/Telegram**: Backup interval endpoints added & refactored
 
-#### 🎨 User Interface
+#### 🖥️ Dashboard & API
 
-* Added **emoji icons** to command buttons for clearer visibility and better UX
+* 🌍 **Dashboard**: Display server IP addresses
+* 📡 **API/Server Info**: Include server IPs in status response and output

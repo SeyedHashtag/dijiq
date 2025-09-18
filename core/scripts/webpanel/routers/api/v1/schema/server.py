@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 # We can't return bytes because the underlying script is returning human readable values which are hard to parse it
@@ -8,6 +9,8 @@ class ServerStatusResponse(BaseModel):
     # System Info
     uptime: str
     boot_time: str
+    server_ipv4: str
+    server_ipv6: str
     cpu_usage: str
     ram_usage: str
     total_ram: str
