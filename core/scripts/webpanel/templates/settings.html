@@ -970,12 +970,14 @@
                         if ($form.find(".alert-info").length === 0) { 
                            $form.prepend(`<div class='alert alert-info'>Service is running. You can stop it or change the backup interval.</div>`);
                         }
+                        fetchTelegramBackupInterval();
                     } else {
                         $form.find('[data-group="start-only"]').show();
                         $("#telegram_start").show();
                         $("#telegram_stop").hide();
                         $("#telegram_save_interval").hide();
                         $form.find(".alert-info").remove();
+                        $("#telegram_backup_interval").val("");
                     }
 
                 } else if (serviceKey === "hysteria_normal_sub") {
@@ -1062,6 +1064,25 @@
                 }
             });
         }
+        
+        function fetchTelegramBackupInterval() {
+            $.ajax({
+                url: "{{ url_for('telegram_get_interval_api') }}",
+                type: "GET",
+                success: function (data) {
+                    if (data.backup_interval) {
+                        $("#telegram_backup_interval").val(data.backup_interval);
+                    } else {
+                        $("#telegram_backup_interval").val(""); 
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error("Failed to fetch Telegram backup interval:", error, xhr.responseText);
+                    $("#telegram_backup_interval").val(""); 
+                }
+            });
+        }
+
 
         function fetchIpLimitConfig() {
             $.ajax({
@@ -1291,10 +1312,7 @@
                     "Backup interval updated successfully!",
                     "#telegram_save_interval",
                     false,
-                    function() {
-                        $("#telegram_backup_interval").val("");
-                        $("#telegram_backup_interval").removeClass("is-invalid");
-                    }
+                    fetchTelegramBackupInterval
                 );
             });
         }
