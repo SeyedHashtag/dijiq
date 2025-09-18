@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from ..schema.response import DetailResponse
-from ..schema.config.telegram import StartInputBody, SetIntervalInputBody
+from ..schema.config.telegram import StartInputBody, SetIntervalInputBody, BackupIntervalResponse
 import cli_api
 
 router = APIRouter()
@@ -38,6 +38,21 @@ async def telegram_stop_api():
         return DetailResponse(detail='Telegram bot stopped successfully.')
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
+
+
+@router.get('/backup-interval', response_model=BackupIntervalResponse, summary='Get Telegram Bot Backup Interval')
+async def telegram_get_interval_api():
+    """
+    Gets the current automatic backup interval for the Telegram bot.
+
+    Returns:
+        BackupIntervalResponse: The response containing the current interval in hours.
+    """
+    try:
+        interval = cli_api.get_telegram_bot_backup_interval()
+        return BackupIntervalResponse(backup_interval=interval)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error: {str(e)}')
 
 
 @router.post('/backup-interval', response_model=DetailResponse, summary='Set Telegram Bot Backup Interval')

@@ -10,3 +10,7 @@ class StartInputBody(BaseModel):
 
 class SetIntervalInputBody(BaseModel):
     backup_interval: int
+
+
+class BackupIntervalResponse(BaseModel):
+    backup_interval: Optional[int] = None
