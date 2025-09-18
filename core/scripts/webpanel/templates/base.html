@@ -25,6 +25,59 @@
 
 <body class="hold-transition sidebar-mini sidebar-collapse">
     <div class="wrapper">
+        
+        <!-- Update Notification Bar -->
+        <div id="updateBar" class="m-0 rounded-0 border-0" style="display: none; position: relative; z-index: 1100; background: linear-gradient(135deg, #f0f2ff 0%, #e6e9ff 100%); box-shadow: 0 2px 8px rgba(102, 16, 242, 0.15); border-bottom: 1px solid rgba(0,0,0,0.05);">
+            <div class="container-fluid py-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <div class="d-flex align-items-center justify-content-center mr-3" style="width: 36px; height: 36px; background: rgba(255,255,255,0.9); border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <i class="fas fa-rocket text-indigo" style="font-size: 16px;"></i>
+                        </div>
+                        <div>
+                            <div class="d-flex align-items-center">
+                                <span id="updateMessage" class="font-weight-bold text-indigo mb-0" style="font-size: 15px;">New version available</span>
+                                <button type="button" class="btn btn-link btn-sm p-0 ml-2 text-indigo" id="showChangelog" style="text-decoration: none; opacity: 0.8; transition: all 0.2s ease;">
+                                    <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+                                </button>
+                            </div>
+                            <small class="d-block" style="font-size: 13px; margin-top: 2px; color: #6f7a99;">Click to view changelog and update options</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="dropdown">
+                            <button class="btn btn-sm dropdown-toggle text-indigo font-weight-bold" type="button" style="background: rgba(255,255,255,0.7); border: 1px solid rgba(102, 16, 242, 0.3); padding: 8px 16px; border-radius: 20px; font-size: 13px;" data-toggle="dropdown">
+                                <i class="fas fa-download mr-1"></i> Update Options
+                            </button>
+                            <div class="dropdown-menu dropdown-menu-right shadow-sm">
+                                <a class="dropdown-item" href="#" id="viewRelease">
+                                    <i class="fas fa-external-link-alt mr-2 text-success"></i> View Release Page
+                                </a>
+                                <div class="dropdown-divider"></div>
+                                <a class="dropdown-item" href="#" id="remindLater">
+                                    <i class="fas fa-clock mr-2 text-info"></i> Remind me tomorrow
+                                </a>
+                                <a class="dropdown-item" href="#" id="skipVersion">
+                                    <i class="fas fa-times mr-2 text-warning"></i> Skip this version
+                                </a>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm ml-2 text-indigo" id="closeUpdateBar" style="background: rgba(255,255,255,0.7); border: 1px solid rgba(102, 16, 242, 0.3); width: 32px; height: 32px; border-radius: 50%; padding: 0; opacity: 0.8; transition: all 0.2s ease;">
+                            <i class="fas fa-times" style="font-size: 12px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="changelogContent" class="mt-3" style="display: none;">
+                    <div style="background: rgba(255,255,255,0.9); border-radius: 8px; padding: 16px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-list-ul text-info mr-2"></i>
+                            <h6 class="mb-0 font-weight-bold text-dark">Release Notes</h6>
+                        </div>
+                        <div id="changelogText" style="max-height: 180px; overflow-y: auto; font-size: 14px; line-height: 1.5; color: #2d3436;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Navbar -->
         <nav class="main-header navbar navbar-expand navbar-white navbar-light">
@@ -128,9 +181,6 @@
                 <a href="https://t.me/hysteria2_panel" target="_blank" rel="noopener noreferrer" class="text-decoration-none mr-3">
                     <i class="fab fa-telegram-plane"></i> Telegram
                 </a>
-                <!-- <a href="https://github.com/ReturnFI/Blitz/releases" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                    <i class="fas fa-code-branch"></i> <span id="panel-version">Loading version...</span>
-                </a> -->
                 <div class="ml-auto">
                     <a href="https://github.com/ReturnFI/Blitz/releases" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
                         <i class="fas fa-code-branch"></i> <span id="panel-version">Loading version...</span>
@@ -197,33 +247,96 @@
                 }
             });
 
-            const checkVersionUrl = "{{ url_for('check_version_info') }}"; 
-            $.ajax({
-                url: checkVersionUrl,
-                type: 'GET',
-                success: function (response) {
-                    if (!response.is_latest) {
-                        Swal.fire({
-                            title: 'Update Available!',
-                            html: `A new version of the panel is available: <b>${response.latest_version}</b><br><br>${response.changelog.replace(/\n/g, '<br>')}`,
-                            icon: 'info',
-                            showCancelButton: false,
-                            confirmButtonText: 'OK'
-                        });
-                    }
-                },
-                error: function (xhr, status, error) {
-                    console.error("Error checking for updates:", error);
-                    if (xhr.responseJSON && xhr.responseJSON.detail) {
-                        console.error("Server detail:", xhr.responseJSON.detail);
-                    }
-                }
-            });
+            function shouldCheckForUpdates() {
+                const lastCheck = localStorage.getItem('lastUpdateCheck');
+                const updateDismissed = localStorage.getItem('updateDismissed');
+                const now = Date.now();
+                const checkInterval = 24 * 60 * 60 * 1000;
+                
+                if (!lastCheck) return true;
+                if (updateDismissed && now - parseInt(updateDismissed) < 7 * 24 * 60 * 60 * 1000) return false;
+                
+                return now - parseInt(lastCheck) > checkInterval;
+            }
 
+            function showUpdateBar(version, changelog) {
+                $('#updateMessage').text(`Version ${version} is now available`);
+                $('#changelogText').html(changelog ? changelog.replace(/\n/g, '<br>') : 'No changelog available');
+                $('#updateBar').slideDown(300);
+                
+                $('#viewRelease').off('click').on('click', function(e) {
+                    e.preventDefault();
+                    window.open('https://github.com/ReturnFI/Blitz/releases/latest', '_blank');
+                });
+                
+                $('#showChangelog').off('click').on('click', function() {
+                    const $content = $('#changelogContent');
+                    const $icon = $(this).find('i');
+                    
+                    if ($content.is(':visible')) {
+                        $content.slideUp(250);
+                        $icon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+                        $(this).css('opacity', '0.8');
+                    } else {
+                        $content.slideDown(250);
+                        $icon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+                        $(this).css('opacity', '1');
+                    }
+                });
+                
+                $('.dropdown-toggle').dropdown();
+                
+                $('#remindLater').off('click').on('click', function(e) {
+                    e.preventDefault();
+                    $('#updateBar').slideUp(350);
+                });
+                
+                $('#skipVersion').off('click').on('click', function(e) {
+                    e.preventDefault();
+                    localStorage.setItem('dismissedVersion', version);
+                    localStorage.setItem('updateDismissed', Date.now().toString());
+                    $('#updateBar').slideUp(350);
+                });
+                
+                $('#closeUpdateBar').off('click').on('click', function() {
+                    $('#updateBar').slideUp(350);
+                });
+            }
+
+            function checkForUpdates() {
+                if (!shouldCheckForUpdates()) return;
+
+                const checkVersionUrl = "{{ url_for('check_version_info') }}";
+                $.ajax({
+                    url: checkVersionUrl,
+                    type: 'GET',
+                    timeout: 10000,
+                    success: function (response) {
+                        localStorage.setItem('lastUpdateCheck', Date.now().toString());
+                        
+                        if (response.is_latest) {
+                            localStorage.removeItem('updateDismissed');
+                            return;
+                        }
+
+                        const dismissedVersion = localStorage.getItem('dismissedVersion');
+                        if (dismissedVersion === response.latest_version) return;
+
+                        showUpdateBar(response.latest_version, response.changelog);
+                    },
+                    error: function (xhr, status, error) {
+                        if (status !== 'timeout') {
+                            console.warn("Update check failed:", error);
+                        }
+                        localStorage.setItem('lastUpdateCheck', Date.now().toString());
+                    }
+                });
+            }
+
+            setTimeout(checkForUpdates, 2000);
         });
     </script>
     {% block javascripts %}{% endblock %}
 </body>
 
 </html>
-
