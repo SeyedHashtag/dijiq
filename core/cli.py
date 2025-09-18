@@ -514,8 +514,8 @@ def warp_status():
 @click.option('--action', '-a', required=True, help='Action to perform: start, stop, or set_backup_interval', type=click.Choice(['start', 'stop', 'set_backup_interval'], case_sensitive=False))
 @click.option('--token', '-t', required=False, help='Token for running the telegram bot (for start)', type=str)
 @click.option('--adminid', '-aid', required=False, help='Telegram admins ID for running the telegram bot (for start)', type=str)
-@click.option('--interval', '-i', required=False, help='Automatic backup interval in hours (for start and set_backup_interval)', type=str)
-def telegram(action: str, token: str, adminid: str, interval: str):
+@click.option('--interval', '-i', required=False, help='Automatic backup interval in hours (for start and set_backup_interval)', type=int)
+def telegram(action: str, token: str, adminid: str, interval: int):
     """Manage the Telegram bot service."""
     try:
         if action == 'start':
@@ -527,7 +527,7 @@ def telegram(action: str, token: str, adminid: str, interval: str):
             cli_api.stop_telegram_bot()
             click.echo(f'Telegram bot stopped successfully.')
         elif action == 'set_backup_interval':
-            if not interval:
+            if interval is None:
                 raise click.UsageError('Error: --interval is required for the set_backup_interval action.')
             cli_api.set_telegram_bot_backup_interval(interval)
             click.echo(f'Telegram bot backup interval set to {interval} hours.')
