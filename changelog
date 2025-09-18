@@ -1,7 +1,16 @@
-### 🚀 **\[2.2.2] – Subscription Page Refactor**
+### 🚀 **\[2.3.0] – Telegram Backup & Server IPs**
 
-*Released: 2025-09-18*
+*Released: 2025-09-19*
 
-#### 🎨 UI
+#### ✨ New Features
 
-* Refactored **subscription page templates** for improved structure and maintainability
+* 🔔 **Smart version checking** with user-friendly notifications
+* 🛡️ **Telegram backups**: Automatic scheduled backups via bot
+* ⚙️ **CLI**: Manage Telegram bot backup interval directly
+* 🌐 **Settings UI**: Configure Telegram backup interval in panel
+* 🔄 **API/Telegram**: Backup interval endpoints added & refactored
+
+#### 🖥️ Dashboard & API
+
+* 🌍 **Dashboard**: Display server IP addresses
+* 📡 **API/Server Info**: Include server IPs in status response and output
