@@ -566,16 +566,26 @@ def warp_status() -> str | None:
     return run_cmd(['python3', Command.STATUS_WARP.value])
 
 
-def start_telegram_bot(token: str, adminid: str):
+def start_telegram_bot(token: str, adminid: str, backup_interval: str = None):
     '''Starts the Telegram bot.'''
     if not token or not adminid:
         raise InvalidInputError('Error: Both --token and --adminid are required for the start action.')
-    run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid])
-
+    
+    command = ['python3', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid]
+    if backup_interval:
+        command.append(backup_interval)
+    
+    run_cmd(command)
 
 def stop_telegram_bot():
     '''Stops the Telegram bot.'''
     run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'stop'])
+
+def set_telegram_bot_backup_interval(backup_interval: str):
+    '''Sets the backup interval for the Telegram bot.'''
+    if not backup_interval:
+        raise InvalidInputError('Error: Backup interval is required.')
+    run_cmd(['python3', Command.INSTALL_TELEGRAMBOT.value, 'set_backup_interval', backup_interval])
 
 
 def start_singbox(domain: str, port: int):
