@@ -1,8 +1,23 @@
-### 🚀 **\[2.3.1] – User Table Enhancements**
+### 🚀 **\[2.3.1] – UI/UX Enhancements**
 
 *Released: 2025-09-20*
 
-#### 📊 Features
+#### 📊 User Management
 
-* **Day Usage Column**: Added a new column to the user table to display daily usage.
-* **Responsive UI**: Improved usability of the user list on smaller screens.
+* Added **"Day Usage" column** to the user table for clearer daily tracking
+
+#### 📱 UI/UX
+
+* Enhanced **user list responsiveness** on mobile & tablet
+
+  * Collapsible detail rows for Status, Traffic, Expiry, etc.
+  * Hamburger dropdown filters for small screens
+  * Optimized layout using Bootstrap responsive classes
+
+#### 🔔 Notifications
+
+* Improved **update notification system**
+
+  * Reduced skip reminder from 7 days → 2 hours
+  * Integrated **Markdown rendering** via showdown.js
+  * Enhanced styling & visibility of notification bar
