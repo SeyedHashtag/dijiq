@@ -1,16 +1,8 @@
-### 🚀 **\[2.3.0] – Telegram Backup & Server IPs**
+### 🚀 **\[2.3.1] – User Table Enhancements**
 
-*Released: 2025-09-19*
+*Released: 2025-09-20*
 
-#### ✨ New Features
+#### 📊 Features
 
-* 🔔 **Smart version checking** with user-friendly notifications
-* 🛡️ **Telegram backups**: Automatic scheduled backups via bot
-* ⚙️ **CLI**: Manage Telegram bot backup interval directly
-* 🌐 **Settings UI**: Configure Telegram backup interval in panel
-* 🔄 **API/Telegram**: Backup interval endpoints added & refactored
-
-#### 🖥️ Dashboard & API
-
-* 🌍 **Dashboard**: Display server IP addresses
-* 📡 **API/Server Info**: Include server IPs in status response and output
+* **Day Usage Column**: Added a new column to the user table to display daily usage.
+* **Responsive UI**: Improved usability of the user list on smaller screens.
