@@ -68,12 +68,6 @@ We deeply appreciate your generosity! Please note:
 Thank you for keeping this project alive and thriving! ❤️
 
 
-## 🤝 Contributing
-
-We welcome contributions! Whether you're fixing bugs, adding new features, improving documentation, or just have suggestions, your help is greatly appreciated! We believe that a diverse community of contributors is essential to building the best possible tools.  Every contribution, big or small, makes a difference.
-
-We're excited to have you contribute! Thank you for helping make this project better!
-
 ## ⚠️ Disclaimer
 
 This tool is provided for educational and research purposes only. Users are responsible for:
@@ -86,7 +80,7 @@ This tool is provided for educational and research purposes only. Users are resp
 
 - [Hysteria2 Core Team ](https://github.com/apernet/hysteria)
 - Community Members
-- [@Iam54r1n4](https://github.com/Iam54r1n4)
+- [IamSarina](https://github.com/Iam54r1n4)
 
 ---
 
