@@ -2,6 +2,28 @@
 
 {% block title %}Users{% endblock %}
 
+{% block styles %}
+<style>
+    .user-details-content p {
+        margin-bottom: 0.5rem;
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.5rem;
+    }
+    .user-details-content p:last-child {
+        border-bottom: none;
+    }
+    .user-details-content strong {
+        margin-right: 10px;
+    }
+    .user-details-actions .btn {
+        margin-right: 5px;
+        margin-bottom: 5px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="content-header">
     <div class="container-fluid">
@@ -20,27 +42,42 @@
                 <h3 class="card-title">User List {% if users %}({{ users|length }}){% endif %}</h3>
                 <div class="card-tools d-flex align-items-center flex-wrap">
 
-                    <div class="mr-2 mb-2">
+                    <!-- Mobile Filter Dropdown -->
+                    <div class="dropdown d-md-none mr-2 mb-2">
+                        <button class="btn btn-sm btn-default dropdown-toggle" type="button" id="filterDropdown" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            <i class="fas fa-filter"></i>
+                        </button>
+                        <div class="dropdown-menu" aria-labelledby="filterDropdown">
+                            <a class="dropdown-item filter-button" href="#" data-filter="all"><i class="fas fa-list fa-fw mr-2"></i> All</a>
+                            <a class="dropdown-item filter-button" href="#" data-filter="on-hold"><i class="fas fa-pause-circle fa-fw mr-2 text-warning"></i> Hold</a>
+                            <a class="dropdown-item filter-button" href="#" data-filter="online"><i class="fas fa-wifi fa-fw mr-2 text-info"></i> Online</a>
+                            <a class="dropdown-item filter-button" href="#" data-filter="enable"><i class="fas fa-check fa-fw mr-2 text-success"></i> Enable</a>
+                            <a class="dropdown-item filter-button" href="#" data-filter="disable"><i class="fas fa-ban fa-fw mr-2 text-danger"></i> Disable</a>
+                        </div>
+                    </div>
+
+                    <!-- Desktop Filter Buttons -->
+                    <div class="mr-2 mb-2 d-none d-md-block">
                         <button type="button" class="btn btn-sm btn-default filter-button" data-filter="all">
                             <i class="fas fa-list"></i> All
                         </button>
                     </div>
-                    <div class="mr-2 mb-2">
+                    <div class="mr-2 mb-2 d-none d-md-block">
                         <button type="button" class="btn btn-sm btn-warning filter-button" data-filter="on-hold">
                             <i class="fas fa-pause-circle"></i> Hold
                         </button>
                     </div>
-                    <div class="mr-2 mb-2">
+                    <div class="mr-2 mb-2 d-none d-md-block">
                         <button type="button" class="btn btn-sm btn-info filter-button" data-filter="online">
                             <i class="fas fa-wifi"></i> Online
                         </button>
                     </div>
-                    <div class="mr-2 mb-2">
+                    <div class="mr-2 mb-2 d-none d-md-block">
                         <button type="button" class="btn btn-sm btn-success filter-button" data-filter="enable">
                             <i class="fas fa-check"></i> Enable
                         </button>
                     </div>
-                    <div class="mr-2 mb-2">
+                    <div class="mr-2 mb-2 d-none d-md-block">
                         <button type="button" class="btn btn-sm btn-danger filter-button" data-filter="disable">
                             <i class="fas fa-ban"></i> Disable
                         </button>
@@ -78,26 +115,28 @@
                                 <input type="checkbox" id="selectAll">
                             </th>
                             <th>#</th>
-                            <th>Status</th>
                             <th>Username</th>
-                            <th>Traffic Usage</th>
-                            <th class="text-nowrap">Expiry Date</th>
-                            <th class="text-nowrap">Expiry Days</th>
-                            <th class="text-nowrap">Day Usage</th>
-                            <th>Enable</th>
-                            <th class="text-nowrap requires-iplimit-service" style="display: none;">Unlimited IP</th>
-                            <th class="text-nowrap">Configs</th>
-                            <th class="text-nowrap">Actions</th>
+                            <th class="d-none d-md-table-cell">Status</th>
+                            <th class="d-none d-md-table-cell">Traffic Usage</th>
+                            <th class="d-none d-md-table-cell text-nowrap">Expiry Date</th>
+                            <th class="d-none d-md-table-cell text-nowrap">Expiry Days</th>
+                            <th class="d-none d-md-table-cell text-nowrap">Day Usage</th>
+                            <th class="d-none d-md-table-cell">Enable</th>
+                            <th class="d-none d-md-table-cell text-nowrap requires-iplimit-service" style="display: none;">Unlimited IP</th>
+                            <th class="d-none d-md-table-cell text-nowrap">Configs</th>
+                            <th class="d-none d-md-table-cell text-nowrap">Actions</th>
+                            <th class="d-md-none text-center">Details</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for user in users|sort(attribute='username', case_sensitive=false) %}
-                        <tr>
+                        <tr class="user-main-row">
                             <td>
                                 <input type="checkbox" class="user-checkbox" value="{{ user.username }}">
                             </td>
                             <td>{{ loop.index }}</td>
-                            <td>
+                            <td data-username="{{ user.username }}">{{ user.username }}</td>
+                            <td class="d-none d-md-table-cell">
                                 {% if user.status == "Online" %}
                                     <i class="fas fa-circle text-success"></i> Online
                                     {% if user.online_count and user.online_count > 0 %}
@@ -113,32 +152,31 @@
                                     <i class="fas fa-circle text-danger"></i> {{ user.status }}
                                 {% endif %}
                             </td>
-                            <td data-username="{{ user.username }}">{{ user.username }}</td>
-                            <td>{{ user.traffic_used }}</td>
-                            <td>{{ user.expiry_date }}</td>
-                            <td>{{ user.expiry_days }}</td>
-                            <td>{{ user.day_usage }}</td>
-                            <td>
+                            <td class="d-none d-md-table-cell">{{ user.traffic_used }}</td>
+                            <td class="d-none d-md-table-cell">{{ user.expiry_date }}</td>
+                            <td class="d-none d-md-table-cell">{{ user.expiry_days }}</td>
+                            <td class="d-none d-md-table-cell">{{ user.day_usage }}</td>
+                            <td class="d-none d-md-table-cell">
                                 {% if user.enable %}
                                 <i class="fas fa-check-circle text-success"></i>
                                 {% else %}
                                 <i class="fas fa-times-circle text-danger"></i>
                                 {% endif %}
                             </td>
-                            <td class="unlimited-ip-cell requires-iplimit-service" style="display: none;">
+                            <td class="d-none d-md-table-cell unlimited-ip-cell requires-iplimit-service" style="display: none;">
                                 {% if user.unlimited_ip %}
                                 <i class="fas fa-shield-alt text-primary"></i>
                                 {% else %}
                                 <i class="fas fa-times-circle text-muted"></i>
                                 {% endif %}
                             </td>
-                            <td class="text-nowrap">
+                            <td class="d-none d-md-table-cell text-nowrap">
                                 <a href="#" class="config-link" data-toggle="modal" data-target="#qrcodeModal"
                                     data-username="{{ user.username }}">
                                     <i class="fas fa-qrcode"></i>
                                 </a>
                             </td>
-                            <td class="text-nowrap">
+                            <td class="d-none d-md-table-cell text-nowrap">
                                 <button type="button" class="btn btn-sm btn-info edit-user"
                                     data-user="{{ user.username }}" data-toggle="modal"
                                     data-target="#editUserModal">
@@ -152,6 +190,75 @@
                                     data-user="{{ user.username }}">
                                     <i class="fas fa-trash"></i>
                                 </button>
+                            </td>
+                            <td class="d-md-none text-center">
+                                <button type="button" class="btn btn-sm btn-secondary toggle-details-btn">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="user-details-row d-md-none" style="display: none;">
+                            <td colspan="4">
+                                <div class="user-details-content p-2">
+                                    <p><strong>Status:</strong>
+                                        <span>
+                                        {% if user.status == "Online" %}
+                                            <i class="fas fa-circle text-success"></i> Online
+                                            {% if user.online_count and user.online_count > 0 %}
+                                                ({{ user.online_count }})
+                                            {% endif %}
+                                        {% elif user.status == "Offline" %}
+                                            <i class="fas fa-circle text-secondary"></i> Offline
+                                        {% elif user.status == "On-hold" %}
+                                            <i class="fas fa-circle text-warning"></i> On-hold
+                                        {% elif user.status == "Conflict" %}
+                                            <i class="fas fa-circle text-danger"></i> Conflict
+                                        {% else %}
+                                            <i class="fas fa-circle text-danger"></i> {{ user.status }}
+                                        {% endif %}
+                                        </span>
+                                    </p>
+                                    <p><strong>Traffic Usage:</strong> <span>{{ user.traffic_used }}</span></p>
+                                    <p><strong>Expiry Date:</strong> <span>{{ user.expiry_date }}</span></p>
+                                    <p><strong>Expiry Days:</strong> <span>{{ user.expiry_days }}</span></p>
+                                    <p><strong>Day Usage:</strong> <span>{{ user.day_usage }}</span></p>
+                                    <p><strong>Enable:</strong>
+                                        <span>
+                                            {% if user.enable %}
+                                            <i class="fas fa-check-circle text-success"></i> Enabled
+                                            {% else %}
+                                            <i class="fas fa-times-circle text-danger"></i> Disabled
+                                            {% endif %}
+                                        </span>
+                                    </p>
+                                    <p class="requires-iplimit-service" style="display: none;"><strong>Unlimited IP:</strong>
+                                        <span>
+                                            {% if user.unlimited_ip %}
+                                            <i class="fas fa-shield-alt text-primary"></i> Yes
+                                            {% else %}
+                                            <i class="fas fa-times-circle text-muted"></i> No
+                                            {% endif %}
+                                        </span>
+                                    </p>
+                                    <div class="mt-2">
+                                        <strong>Configs:</strong>
+                                        <a href="#" class="btn btn-sm btn-outline-secondary config-link" data-toggle="modal" data-target="#qrcodeModal" data-username="{{ user.username }}">
+                                            <i class="fas fa-qrcode"></i> Show
+                                        </a>
+                                    </div>
+                                    <div class="mt-2 user-details-actions">
+                                        <strong>Actions:</strong>
+                                        <button type="button" class="btn btn-sm btn-info edit-user" data-user="{{ user.username }}" data-toggle="modal" data-target="#editUserModal">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-warning reset-user" data-user="{{ user.username }}">
+                                            <i class="fas fa-undo"></i> Reset
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger delete-user" data-user="{{ user.username }}">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -375,24 +482,28 @@
             validateUsername(this, `#${this.id}Error`);
         });
 
-        $(".filter-button").on("click", function () {
+        $(".filter-button").on("click", function (e) {
+            e.preventDefault();
             const filter = $(this).data("filter");
             $("#selectAll").prop("checked", false);
-            $("#userTable tbody tr").each(function () {
+            $("#userTable tbody tr.user-main-row").each(function () {
                 let showRow;
                 switch (filter) {
-                    case "on-hold":    showRow = $(this).find("td:eq(2) i").hasClass("text-warning"); break;
-                    case "online":     showRow = $(this).find("td:eq(2) i").hasClass("text-success"); break;
+                    case "on-hold":    showRow = $(this).find("td:eq(3) i").hasClass("text-warning"); break;
+                    case "online":     showRow = $(this).find("td:eq(3) i").hasClass("text-success"); break;
                     case "enable":     showRow = $(this).find("td:eq(8) i").hasClass("text-success"); break;
                     case "disable":    showRow = $(this).find("td:eq(8) i").hasClass("text-danger"); break;
                     default:           showRow = true;
                 }
                 $(this).toggle(showRow).find(".user-checkbox").prop("checked", false);
+                if (!showRow) {
+                    $(this).next('tr.user-details-row').hide();
+                }
             });
         });
 
         $("#selectAll").on("change", function () {
-            $("#userTable tbody tr:visible .user-checkbox").prop("checked", this.checked);
+            $("#userTable tbody tr.user-main-row:visible .user-checkbox").prop("checked", this.checked);
         });
 
         $("#deleteSelected").on("click", function () {
@@ -457,16 +568,18 @@
 
         $("#editUserModal").on("show.bs.modal", function (event) {
             const user = $(event.relatedTarget).data("user");
-            const row = $(event.relatedTarget).closest("tr");
-            const trafficText = row.find("td:eq(4)").text();
-            const expiryText = row.find("td:eq(6)").text();
+            const clickedRow = $(event.relatedTarget).closest("tr");
+            const dataRow = clickedRow.hasClass('user-main-row') ? clickedRow : clickedRow.prev('.user-main-row');
+
+            const trafficText = dataRow.find("td:eq(4)").text();
+            const expiryText = dataRow.find("td:eq(6)").text();
             
             $("#originalUsername").val(user);
             $("#editUsername").val(user);
             $("#editTrafficLimit").val(parseFloat(trafficText.split('/')[1]) || 0);
             $("#editExpirationDays").val(parseInt(expiryText) || 0);
-            $("#editBlocked").prop("checked", !row.find("td:eq(8) i").hasClass("text-success"));
-            $("#editUnlimitedIp").prop("checked", row.find(".unlimited-ip-cell i").hasClass("text-primary"));
+            $("#editBlocked").prop("checked", !dataRow.find("td:eq(8) i").hasClass("text-success"));
+            $("#editUnlimitedIp").prop("checked", dataRow.find(".unlimited-ip-cell i").hasClass("text-primary"));
             validateUsername('#editUsername', '#editUsernameError');
         });
         
@@ -625,11 +738,29 @@
 
         function filterUsers() {
             const searchText = $("#searchInput").val().toLowerCase();
-            $("#userTable tbody tr").each(function () {
-                const username = $(this).find("td:eq(3)").text().toLowerCase();
-                $(this).toggle(username.includes(searchText));
+            $("#userTable tbody tr.user-main-row").each(function () {
+                const username = $(this).find("td:eq(2)").text().toLowerCase();
+                const isVisible = username.includes(searchText);
+                $(this).toggle(isVisible);
+                if (!isVisible) {
+                    $(this).next('tr.user-details-row').hide();
+                }
             });
         }
+
+        $('#userTable').on('click', '.toggle-details-btn', function() {
+            const $this = $(this);
+            const icon = $this.find('i');
+            const detailsRow = $this.closest('tr.user-main-row').next('tr.user-details-row');
+
+            detailsRow.toggle();
+
+            if (detailsRow.is(':visible')) {
+                icon.removeClass('fa-plus').addClass('fa-minus');
+            } else {
+                icon.removeClass('fa-minus').addClass('fa-plus');
+            }
+        });
         
         $('#addUserModal').on('show.bs.modal', function () {
             $('#addUserForm, #addBulkUsersForm').trigger('reset');
@@ -642,7 +773,8 @@
             $('#addUserModal a[data-toggle="tab"]').first().tab('show');
         });
 
-        $("#searchButton, #searchInput").on("click keyup", filterUsers);
+        $("#searchButton").on("click", filterUsers);
+        $("#searchInput").on("keyup", filterUsers);
         
         checkIpLimitServiceStatus();
     });
