@@ -107,7 +107,7 @@ download_and_extract_latest_release() {
     info "Detected architecture: $arch"
 
     local zip_name="Blitz-${arch}.zip"
-    local download_url="https://github.com/ReturnFI/Blitz/releases/latest/download/${zip_name}"
+    local download_url="https://github.com/SeyedHashtag/dijiq/releases/latest/download/${zip_name}"
     local temp_zip="/tmp/${zip_name}"
 
     info "Downloading latest release from ${download_url}..."
