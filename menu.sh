@@ -397,7 +397,7 @@ edit_ips() {
 }
 
 hysteria_upgrade(){
-    bash <(curl https://raw.githubusercontent.com/ReturnFI/Blitz/main/upgrade.sh)
+    bash <(curl https://raw.githubusercontent.com/SeyedHashtag/dijiq/main/upgrade.sh)
 }
 
 warp_configure_handler() {
