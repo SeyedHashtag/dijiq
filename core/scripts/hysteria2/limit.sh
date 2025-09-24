@@ -2,12 +2,10 @@
 
 source /etc/hysteria/core/scripts/path.sh
 
-# --- Configuration ---
 SERVICE_NAME="hysteria-ip-limit.service"
 DB_NAME="blitz_panel"
 CONNECTIONS_COLLECTION="active_connections"
 
-# Load configurations from .configs.env
 if [ -f "$CONFIG_ENV" ]; then
   source "$CONFIG_ENV"
   BLOCK_DURATION="${BLOCK_DURATION:-60}" # Default to 60 seconds
@@ -19,17 +17,14 @@ else
   echo -e "BLOCK_DURATION=240\nMAX_IPS=5" > "$CONFIG_ENV"
 fi
 
-# --- Ensure files exist ---
 [ ! -f "$BLOCK_LIST" ] && touch "$BLOCK_LIST"
 
-# --- Logging function ---
 log_message() {
     local level="$1"
     local message="$2"
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] [$level] $message"
 }
 
-# --- Add an IP to the database for a user ---
 add_ip_to_db() {
     local username="$1"
     local ip_address="$2"
@@ -44,7 +39,6 @@ add_ip_to_db() {
     log_message "INFO" "DB Update: Added $ip_address for user $username"
 }
 
-# --- Remove an IP from the database for a user ---
 remove_ip_from_db() {
     local username="$1"
     local ip_address="$2"
@@ -61,7 +55,6 @@ remove_ip_from_db() {
     log_message "INFO" "DB Update: Removed $ip_address for user $username"
 }
 
-# --- Block an IP using iptables and track it ---
 block_ip() {
     local ip_address="$1"
     local username="$2"
@@ -77,7 +70,6 @@ block_ip() {
     log_message "WARN" "Blocked IP $ip_address for user $username for $BLOCK_DURATION seconds"
 }
 
-# --- Explicitly unblock an IP using iptables ---
 unblock_ip() {
     local ip_address="$1"
 
@@ -88,7 +80,6 @@ unblock_ip() {
     sed -i "/$ip_address,/d" "$BLOCK_LIST"
 }
 
-# --- Block all IPs for a user ---
 block_all_user_ips() {
     local username="$1"
     
@@ -114,7 +105,6 @@ block_all_user_ips() {
     log_message "WARN" "User $username has been completely blocked for $BLOCK_DURATION seconds"
 }
 
-# --- Check for and unblock expired IPs ---
 check_expired_blocks() {
     local current_time=$(date +%s)
     local ip username expiry
@@ -129,7 +119,6 @@ check_expired_blocks() {
     done < "$BLOCK_LIST"
 }
 
-# --- Check if a user has exceeded the IP limit ---
 check_ip_limit() {
     local username="$1"
 
@@ -154,7 +143,6 @@ check_ip_limit() {
     fi
 }
 
-# --- Parse log lines for connections and disconnections ---
 parse_log_line() {
     local log_line="$1"
     local ip_address
@@ -180,7 +168,6 @@ parse_log_line() {
     fi
 }
 
-# --- Install Systemd Service ---
 install_service() {
     cat <<EOF > /etc/systemd/system/${SERVICE_NAME}
 [Unit]
@@ -204,7 +191,6 @@ EOF
     log_message "INFO" "IP Limiter service started"
 }
 
-# --- Uninstall Systemd Service ---
 uninstall_service() {
     systemctl stop ${SERVICE_NAME} 2>/dev/null
     systemctl disable ${SERVICE_NAME} 2>/dev/null
@@ -213,7 +199,6 @@ uninstall_service() {
     log_message "INFO" "IP Limiter service stopped and removed"
 }
 
-# --- Change Configuration ---
 change_config() {
     local new_block_duration="$1"
     local new_max_ips="$2"
@@ -244,7 +229,6 @@ change_config() {
     fi
 }
 
-# --- Startup Checks ---
 if [[ $EUID -ne 0 ]]; then
     echo "Error: This script must be run as root."
     exit 1
@@ -257,7 +241,6 @@ if ! command -v jq &>/dev/null; then
     log_message "WARN" "'jq' is not installed. JSON parsing for blocking might fail."
 fi
 
-# --- Command execution ---
 case "$1" in
     start)
         install_service

@@ -1,23 +1,7 @@
-### 🚀 **\[2.3.1] – UI/UX Enhancements**
+### 🚀 **\[2.3.3] – Bug Fix Release**
 
-*Released: 2025-09-20*
+*Released: 2025-09-24*
 
-#### 📊 User Management
+#### 🐛 Fixes
 
-* Added **"Day Usage" column** to the user table for clearer daily tracking
-
-#### 📱 UI/UX
-
-* Enhanced **user list responsiveness** on mobile & tablet
-
-  * Collapsible detail rows for Status, Traffic, Expiry, etc.
-  * Hamburger dropdown filters for small screens
-  * Optimized layout using Bootstrap responsive classes
-
-#### 🔔 Notifications
-
-* Improved **update notification system**
-
-  * Reduced skip reminder from 7 days → 2 hours
-  * Integrated **Markdown rendering** via showdown.js
-  * Enhanced styling & visibility of notification bar
+* Fixed an issue in **user management JavaScript** that caused malfunction in the web panel

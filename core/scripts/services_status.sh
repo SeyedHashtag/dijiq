@@ -9,7 +9,6 @@ declare -a services=(
     "hysteria-telegram-bot.service"
     "hysteria-normal-sub.service"
     "hysteria-caddy-normalsub.service"
-    # "hysteria-singbox.service"
     "hysteria-ip-limit.service"
     "wg-quick@wgcf.service"
 )
