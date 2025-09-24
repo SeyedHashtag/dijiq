@@ -1,23 +1,16 @@
-### 🚀 **\[2.3.1] – UI/UX Enhancements**
+### 🚀 **\[2.3.2] – Refactor & Cleanup**
 
-*Released: 2025-09-20*
+*Released: 2025-09-24*
 
-#### 📊 User Management
+#### 🧹 Cleanup
 
-* Added **"Day Usage" column** to the user table for clearer daily tracking
+* Cleaned up **shell script formatting & structure**
+* Removed deprecated **singbox sub**
 
-#### 📱 UI/UX
+#### 📦 Webpanel Refactor
 
-* Enhanced **user list responsiveness** on mobile & tablet
+* Externalized all **JavaScript** into dedicated asset files for better maintainability
 
-  * Collapsible detail rows for Status, Traffic, Expiry, etc.
-  * Hamburger dropdown filters for small screens
-  * Optimized layout using Bootstrap responsive classes
+#### 🐛 Fixes
 
-#### 🔔 Notifications
-
-* Improved **update notification system**
-
-  * Reduced skip reminder from 7 days → 2 hours
-  * Integrated **Markdown rendering** via showdown.js
-  * Enhanced styling & visibility of notification bar
+* Fixed **JSON array parsing** in `menu.sh`
