@@ -601,56 +601,7 @@ telegram_bot_handler() {
 }
 
 singbox_handler() {
-    while true; do
-        echo -e "${cyan}Merged with Normal-Sub sublink.${NC}"
-        # echo -e "${cyan}1.${NC} Start Singbox service"
-        echo -e "${red}2.${NC} Stop Singbox service"
-        echo "0. Back"
-        read -p "Choose an option: " option
-
-        case $option in
-            # 1)
-            #     if systemctl is-active --quiet hysteria-singbox.service; then
-            #         echo "The hysteria-singbox.service is already active."
-            #     else
-            #         while true; do
-            #             read -e -p "Enter the domain name for the SSL certificate: " domain
-            #             if [ -z "$domain" ]; then
-            #                 echo "Domain name cannot be empty. Please try again."
-            #             else
-            #                 break
-            #             fi
-            #         done
-
-            #         while true; do
-            #             read -e -p "Enter the port number for the service: " port
-            #             if [ -z "$port" ]; then
-            #                 echo "Port number cannot be empty. Please try again."
-            #             elif ! [[ "$port" =~ ^[0-9]+$ ]]; then
-            #                 echo "Port must be a number. Please try again."
-            #             else
-            #                 break
-            #             fi
-            #         done
-
-            #         python3 $CLI_PATH singbox -a start -d "$domain" -p "$port"
-            #     fi
-            #     ;;
-            2)
-                if ! systemctl is-active --quiet hysteria-singbox.service; then
-                    echo "The hysteria-singbox.service is already inactive."
-                else
-                    python3 $CLI_PATH singbox -a stop
-                fi
-                ;;
-            0)
-                break
-                ;;
-            *)
-                echo "Invalid option. Please try again."
-                ;;
-        esac
-    done
+    echo -e "${red} Deprecated${NC}"
 }
 
 normalsub_handler() {
