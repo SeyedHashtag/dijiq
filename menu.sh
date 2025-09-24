@@ -232,30 +232,37 @@ hysteria2_get_user_handler() {
 
 hysteria2_list_users_handler() {
     users_json=$(python3 $CLI_PATH list-users 2>/dev/null)
+    
     if [ $? -ne 0 ] || [ -z "$users_json" ]; then
         echo -e "${red}Error:${NC} Failed to list users."
         return 1
     fi
-
-    # Extract keys (usernames) from JSON
-    users_keys=$(echo "$users_json" | jq -r 'keys[]')
-
-    if [ -z "$users_keys" ]; then
+    
+    user_count=$(echo "$users_json" | jq 'length')
+    
+    if [ "$user_count" -eq 0 ]; then
         echo -e "${red}Error:${NC} No users found."
         return 1
     fi
-
-    # Print headers
-    printf "%-20s %-20s %-15s %-20s %-30s %-10s\n" "Username" "Traffic Limit (GB)" "Expiration (Days)" "Creation Date" "Password" "Blocked"
-
-    # Print user details
-    for key in $users_keys; do
-        echo "$users_json" | jq -r --arg key "$key" '
-            "\($key) \(.[$key].max_download_bytes / 1073741824) \(.[$key].expiration_days) \(.[$key].account_creation_date) \(.[$key].password) \(.[$key].blocked)"' | \
-        while IFS= read -r line; do
-            IFS=' ' read -r username traffic_limit expiration_date creation_date password blocked <<< "$line"
-            printf "%-20s %-20s %-15s %-20s %-30s %-10s\n" "$username" "$traffic_limit" "$expiration_date" "$creation_date" "$password" "$blocked"
-        done
+    
+    printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
+        "Username" "Traffic(GB)" "Expiry(Days)" "Created" "Password" "Blocked" "Status" "Down(MB)" "Up(MB)"
+    
+    echo "$users_json" | jq -r '.[] | 
+        [.username, 
+         (if .max_download_bytes == 0 then "Unlimited" else (.max_download_bytes / 1073741824 | tostring) end),
+         (if .expiration_days == 0 then "Never" else (.expiration_days | tostring) end),
+         (.account_creation_date // "N/A"),
+         .password,
+         .blocked,
+         .status,
+         ((.download_bytes // 0) / 1048576 | floor),
+         ((.upload_bytes // 0) / 1048576 | floor),
+         .online_count] | 
+        @tsv' | \
+    while IFS=$'\t' read -r username traffic expiry created password blocked status down up online; do
+        printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
+            "$username" "$traffic" "$expiry" "$created" "$password" "$blocked" "$status" "$down" "$up"
     done
 }
 
