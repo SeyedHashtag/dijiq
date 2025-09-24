@@ -1,7 +1,5 @@
 source /etc/hysteria/core/scripts/path.sh
-# source /etc/hysteria/core/scripts/services_status.sh
 
-# Function to define colors
 define_colors() {
     green='\033[0;32m'
     cyan='\033[0;36m'
@@ -81,7 +79,6 @@ load_hysteria2_ips() {
         IP6=$(grep -E "^IP6=" "$CONFIG_ENV" | cut -d '=' -f 2)
         
         if [[ -z "$IP4" || -z "$IP6" ]]; then
-            # echo "Warning: IP4 or IP6 is not set in configs.env. Fetching from system..."
             default_interface=$(ip route | grep default | awk '{print $5}')
             
             if [ -n "$default_interface" ]; then
@@ -90,7 +87,6 @@ load_hysteria2_ips() {
                     if [ -n "$system_IP4" ]; then
                         IP4="$system_IP4"
                     else
-                        # echo "Attempting to fetch IPv4 from external service..."
                         system_IP4=$(curl -s -4 ip.sb)
                         [ -n "$system_IP4" ] && IP4="$system_IP4" || IP4="None"
                     fi
@@ -101,13 +97,11 @@ load_hysteria2_ips() {
                     if [ -n "$system_IP6" ]; then
                         IP6="$system_IP6"
                     else
-                        # echo "Attempting to fetch IPv6 from external service..."
                         system_IP6=$(curl -s -6 ip.sb)
                         [ -n "$system_IP6" ] && IP6="$system_IP6" || IP6="None"
                     fi
                 fi
             else
-                # echo "Warning: Could not determine default interface, trying external services..."
                 if [ -z "$IP4" ]; then
                     system_IP4=$(curl -s -4 ip.sb)
                     [ -n "$system_IP4" ] && IP4="$system_IP4" || IP4="None"
@@ -164,19 +158,3 @@ load_hysteria2_ips() {
     fi
 }
 
-
-
-# check_services() {
-#     # source /etc/hysteria/core/scripts/services_status.sh
-#     for service in "${services[@]}"; do
-#         service_base_name=$(basename "$service" .service)
-
-#         display_name=$(echo "$service_base_name" | sed -E 's/([^-]+)-?/\u\1/g') 
-
-#         if systemctl is-active --quiet "$service"; then
-#             echo -e "${NC}${display_name}:${green} Active${NC}"
-#         else
-#             echo -e "${NC}${display_name}:${red} Inactive${NC}"
-#         fi
-#     done
-# }
