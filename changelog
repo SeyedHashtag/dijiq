@@ -1,16 +1,7 @@
-### 🚀 **\[2.3.2] – Refactor & Cleanup**
+### 🚀 **\[2.3.3] – Bug Fix Release**
 
 *Released: 2025-09-24*
 
-#### 🧹 Cleanup
-
-* Cleaned up **shell script formatting & structure**
-* Removed deprecated **singbox sub**
-
-#### 📦 Webpanel Refactor
-
-* Externalized all **JavaScript** into dedicated asset files for better maintainability
-
 #### 🐛 Fixes
 
-* Fixed **JSON array parsing** in `menu.sh`
+* Fixed an issue in **user management JavaScript** that caused malfunction in the web panel
