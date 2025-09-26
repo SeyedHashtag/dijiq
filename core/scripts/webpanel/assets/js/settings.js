@@ -4,8 +4,6 @@ $(document).ready(function () {
     const API_URLS = {
         serverServicesStatus: contentSection.dataset.serverServicesStatusUrl,
         getIp: contentSection.dataset.getIpUrl,
-        getPort: contentSection.dataset.getPortUrl,
-        getSni: contentSection.dataset.getSniUrl,
         getAllNodes: contentSection.dataset.getAllNodesUrl,
         addNode: contentSection.dataset.addNodeUrl,
         deleteNode: contentSection.dataset.deleteNodeUrl,
@@ -19,16 +17,11 @@ $(document).ready(function () {
         setupDecoy: contentSection.dataset.setupDecoyUrl,
         stopDecoy: contentSection.dataset.stopDecoyUrl,
         getDecoyStatus: contentSection.dataset.getDecoyStatusUrl,
-        checkObfs: contentSection.dataset.checkObfsUrl,
-        enableObfs: contentSection.dataset.enableObfsUrl,
-        disableObfs: contentSection.dataset.disableObfsUrl,
         telegramStart: contentSection.dataset.telegramStartUrl,
         telegramStop: contentSection.dataset.telegramStopUrl,
         telegramSetInterval: contentSection.dataset.telegramSetIntervalUrl,
         normalSubStart: contentSection.dataset.normalSubStartUrl,
         normalSubStop: contentSection.dataset.normalSubStopUrl,
-        setPortTemplate: contentSection.dataset.setPortUrlTemplate,
-        setSniTemplate: contentSection.dataset.setSniUrlTemplate,
         editIp: contentSection.dataset.editIpUrl,
         backup: contentSection.dataset.backupUrl,
         restore: contentSection.dataset.restoreUrl,
@@ -36,7 +29,6 @@ $(document).ready(function () {
         stopIpLimit: contentSection.dataset.stopIpLimitUrl,
         configIpLimit: contentSection.dataset.configIpLimitUrl,
         statusWarp: contentSection.dataset.statusWarpUrl,
-        updateGeoTemplate: contentSection.dataset.updateGeoUrlTemplate,
         installWarp: contentSection.dataset.installWarpUrl,
         uninstallWarp: contentSection.dataset.uninstallWarpUrl,
         configureWarp: contentSection.dataset.configureWarpUrl
@@ -44,7 +36,6 @@ $(document).ready(function () {
 
     initUI();
     fetchDecoyStatus();
-    fetchObfsStatus();
     fetchNodes();
     fetchExtraConfigs();
 
@@ -185,9 +176,9 @@ $(document).ready(function () {
             const id = input.attr('id');
             let fieldValid = true;
 
-            if (id === 'normal_domain' || id === 'sni_domain' || id === 'decoy_domain') {
+            if (id === 'normal_domain' || id === 'decoy_domain') {
                 fieldValid = isValidDomain(input.val());
-            } else if (id === 'normal_port' || id === 'hysteria_port') {
+            } else if (id === 'normal_port') {
                 fieldValid = isValidPort(input.val());
             } else if (id === 'normal_subpath_input') {
                 fieldValid = isValidSubPath(input.val());
@@ -245,28 +236,6 @@ $(document).ready(function () {
             },
             error: function (xhr, status, error) {
                 console.error("Failed to fetch IP addresses:", error, xhr.responseText);
-            }
-        });
-
-        $.ajax({
-            url: API_URLS.getPort,
-            type: "GET",
-            success: function (data) {
-                $("#hysteria_port").val(data.port || "");
-            },
-            error: function (xhr, status, error) {
-                console.error("Failed to fetch port:", error, xhr.responseText);
-            }
-        });
-
-        $.ajax({
-            url: API_URLS.getSni,
-            type: "GET",
-            success: function (data) {
-                $("#sni_domain").val(data.sni || "");
-            },
-            error: function (xhr, status, error) {
-                console.error("Failed to fetch SNI domain:", error, xhr.responseText);
             }
         });
     }
@@ -669,67 +638,6 @@ $(document).ready(function () {
         }
     }
 
-    function fetchObfsStatus() {
-        $.ajax({
-            url: API_URLS.checkObfs,
-            type: "GET",
-            success: function (data) {
-                updateObfsUI(data.obfs);
-            },
-            error: function (xhr, status, error) {
-                $("#obfs_status_message").html('<span class="text-danger">Failed to fetch OBFS status.</span>');
-                console.error("Failed to fetch OBFS status:", error, xhr.responseText);
-                 $("#obfs_enable_btn").hide();
-                $("#obfs_disable_btn").hide();
-            }
-        });
-    }
-
-    function updateObfsUI(statusMessage) {
-        $("#obfs_status_message").text(statusMessage);
-        if (statusMessage === "OBFS is active.") {
-            $("#obfs_enable_btn").hide();
-            $("#obfs_disable_btn").show();
-            $("#obfs_status_container").removeClass("border-danger border-warning alert-danger alert-warning").addClass("border-success alert-success");
-        } else if (statusMessage === "OBFS is not active.") {
-            $("#obfs_enable_btn").show();
-            $("#obfs_disable_btn").hide();
-            $("#obfs_status_container").removeClass("border-success border-danger alert-success alert-danger").addClass("border-warning alert-warning");
-        } else {
-            $("#obfs_enable_btn").hide();
-            $("#obfs_disable_btn").hide();
-            $("#obfs_status_container").removeClass("border-success border-warning alert-success alert-warning").addClass("border-danger alert-danger");
-        }
-    }
-
-    function enableObfs() {
-        confirmAction("enable OBFS", function () {
-            sendRequest(
-                API_URLS.enableObfs,
-                "GET",
-                null,
-                "OBFS enabled successfully!",
-                "#obfs_enable_btn",
-                false,
-                fetchObfsStatus
-            );
-        });
-    }
-
-    function disableObfs() {
-        confirmAction("disable OBFS", function () {
-            sendRequest(
-                API_URLS.disableObfs,
-                "GET",
-                null,
-                "OBFS disabled successfully!",
-                "#obfs_disable_btn",
-                false,
-                fetchObfsStatus
-            );
-        });
-    }
-
     function startTelegram() {
         if (!validateForm('telegram_form')) return;
         const apiToken = $("#telegram_api_token").val();
@@ -818,24 +726,6 @@ $(document).ready(function () {
                 "Normal subscription stopped successfully!",
                 "#normal_stop"
             );
-        });
-    }
-
-    function changePort() {
-        if (!validateForm('port_form')) return;
-        const port = $("#hysteria_port").val();
-        const url = API_URLS.setPortTemplate.replace("PORT_PLACEHOLDER", port);
-        confirmAction("change the port", function () {
-            sendRequest(url, "GET", null, "Port changed successfully!", "#port_change");
-        });
-    }
-
-    function changeSNI() {
-        if (!validateForm('sni_form')) return;
-        const domain = $("#sni_domain").val();
-        const url = API_URLS.setSniTemplate.replace("SNI_PLACEHOLDER", domain);
-        confirmAction("change the SNI", function () {
-            sendRequest(url, "GET", null, "SNI changed successfully!", "#sni_change");
         });
     }
 
@@ -1007,24 +897,6 @@ $(document).ready(function () {
         });
     }
 
-    function updateGeo(country) {
-        const countryName = country.charAt(0).toUpperCase() + country.slice(1);
-        const buttonId = `#geo_update_${country}`;
-        const url = API_URLS.updateGeoTemplate.replace('COUNTRY_PLACEHOLDER', country);
-
-        confirmAction(`update the Geo files for ${countryName}`, function () {
-            sendRequest(
-                url,
-                "GET",
-                null,
-                `Geo files for ${countryName} updated successfully!`,
-                buttonId,
-                false,
-                null
-            );
-        });
-    }
-
     $("#warp_start_btn").on("click", function() {
         confirmAction("install and start WARP", function () {
             sendRequest(
@@ -1077,8 +949,6 @@ $(document).ready(function () {
     $("#normal_start").on("click", startNormal);
     $("#normal_stop").on("click", stopNormal);
     $("#normal_subpath_save_btn").on("click", editNormalSubPath);
-    $("#port_change").on("click", changePort);
-    $("#sni_change").on("click", changeSNI);
     $("#ip_change").on("click", saveIP);
     $("#download_backup").on("click", downloadBackup);
     $("#upload_backup").on("click", uploadBackup);
@@ -1087,8 +957,6 @@ $(document).ready(function () {
     $("#ip_limit_change_config").on("click", configIPLimit);
     $("#decoy_setup").on("click", setupDecoy);
     $("#decoy_stop").on("click", stopDecoy);
-    $("#obfs_enable_btn").on("click", enableObfs);
-    $("#obfs_disable_btn").on("click", disableObfs);
     $("#add_node_btn").on("click", addNode);
     $("#nodes_table").on("click", ".delete-node-btn", function() {
         const nodeName = $(this).data("name");
@@ -1099,11 +967,8 @@ $(document).ready(function () {
         const configName = $(this).data("name");
         deleteExtraConfig(configName);
     });
-    $("#geo_update_iran").on("click", function() { updateGeo('iran'); });
-    $("#geo_update_china").on("click", function() { updateGeo('china'); });
-    $("#geo_update_russia").on("click", function() { updateGeo('russia'); });
 
-    $('#normal_domain, #sni_domain, #decoy_domain').on('input', function () {
+    $('#normal_domain, #decoy_domain').on('input', function () {
         if (isValidDomain($(this).val())) {
             $(this).removeClass('is-invalid');
         } else if ($(this).val().trim() !== "") {
@@ -1113,7 +978,7 @@ $(document).ready(function () {
         }
     });
 
-    $('#normal_port, #hysteria_port').on('input', function () {
+    $('#normal_port').on('input', function () {
          if (isValidPort($(this).val())) {
             $(this).removeClass('is-invalid');
         } else if ($(this).val().trim() !== "") {
