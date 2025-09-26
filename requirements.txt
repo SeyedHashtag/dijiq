@@ -11,7 +11,7 @@ idna==3.10
 multidict==6.6.4
 pillow==11.3.0
 propcache==0.3.2
-psutil==7.0.0
+psutil==7.1.0
 pypng==0.20220715.0
 pyTelegramBotAPI==4.29.1
 python-dotenv==1.1.1
