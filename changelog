@@ -1,7 +1,22 @@
-### 🚀 **\[2.3.3] – Bug Fix Release**
+### 🚀 **[2.3.4] – Hysteria Settings Page & UI Update**
 
-*Released: 2025-09-24*
+*Released: 2025-09-26*
 
-#### 🐛 Fixes
+#### ✨ Features & Refactor
 
-* Fixed an issue in **user management JavaScript** that caused malfunction in the web panel
+* **Separated Hysteria Settings** into a dedicated page (`/settings/hysteria`)
+
+  * New template: `hysteria_settings.html`
+  * New JS logic: `hysteria_settings.js`
+  * Removed old section from main settings page
+* Added **Hysteria Settings** entry in the sidebar menu for quicker access
+
+#### 📦 Dependencies
+
+* ⬆️ Bump **pydantic** → 2.11.9
+* ⬆️ Bump **starlette** → 0.48.0
+* ⬆️ Bump **pymongo** → 4.15.1
+* ⬆️ Bump **fastapi** → 0.117.1
+* ⬆️ Bump **anyio** → 4.11.0
+* ⬆️ Bump **psutil** → 7.1.0
+* ⬆️ Bump **pydantic-settings** → 2.11.0
