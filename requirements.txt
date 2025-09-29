@@ -32,7 +32,7 @@ fastapi==0.117.1
 h11==0.16.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
-MarkupSafe==3.0.2
+MarkupSafe==3.0.3
 pydantic==2.11.9
 pydantic_core==2.33.2
 python-multipart==0.0.20
