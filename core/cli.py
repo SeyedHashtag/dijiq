@@ -164,7 +164,7 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
 @click.option('--unlimited-ip/--limited-ip', 'unlimited_ip', default=None, help='Set user to be exempt from or subject to IP limits.')
 def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
     try:
-        cli_api.kick_user_by_name(username)
+        cli_api.kick_users_by_name(username)
         cli_api.traffic_status(display_output=False)
         cli_api.edit_user(username, new_username, new_traffic_limit, new_expiration_days,
                           renew_password, renew_creation_date, blocked, unlimited_ip)
