@@ -6,16 +6,8 @@ import argparse
 from pathlib import Path
 import re
 from ipaddress import ip_address
-
-core_scripts_dir = Path(__file__).resolve().parents[1]
-if str(core_scripts_dir) not in sys.path:
-    sys.path.append(str(core_scripts_dir))
-
-try:
-    from paths import NODES_JSON_PATH
-except ImportError:
-    NODES_JSON_PATH = Path("/etc/hysteria/nodes.json")
-
+from init_paths import *
+from paths import NODES_JSON_PATH
 
 def is_valid_ip_or_domain(value: str) -> bool:
     """Check if the value is a valid IP address or domain name."""
