@@ -1,22 +1,19 @@
-### 🚀 **[2.3.4] – Hysteria Settings Page & UI Update**
+### 🚀 **[2.3.5] – Dependency Updates & Minor Fixes**
 
-*Released: 2025-09-26*
+*Released: 2025-10-13*
 
-#### ✨ Features & Refactor
+#### 🧩 Dependency Updates
 
-* **Separated Hysteria Settings** into a dedicated page (`/settings/hysteria`)
+* ⬆️ **pydantic-core** → 2.41.1
+* ⬆️ **pydantic** → 2.12.0
+* ⬆️ **fastapi** → 0.118.0
+* ⬆️ **pymongo** → 4.15.2
+* ⬆️ **certifi** → 2025.10.5
+* ⬆️ **frozenlist** → 1.8.0
+* ⬆️ **markupsafe** → 3.0.3
+* ⬆️ **propcache** → 0.4.1
 
-  * New template: `hysteria_settings.html`
-  * New JS logic: `hysteria_settings.js`
-  * Removed old section from main settings page
-* Added **Hysteria Settings** entry in the sidebar menu for quicker access
+#### 🛠 Fixes
 
-#### 📦 Dependencies
-
-* ⬆️ Bump **pydantic** → 2.11.9
-* ⬆️ Bump **starlette** → 0.48.0
-* ⬆️ Bump **pymongo** → 4.15.1
-* ⬆️ Bump **fastapi** → 0.117.1
-* ⬆️ Bump **anyio** → 4.11.0
-* ⬆️ Bump **psutil** → 7.1.0
-* ⬆️ Bump **pydantic-settings** → 2.11.0
+* 🐛 Fixed **path handling bug** in Core module
+* ✏️ Fixed **typo** in CLI messages
