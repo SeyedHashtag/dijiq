@@ -49,6 +49,9 @@ def is_valid_sha256_pin(value: str) -> bool:
     pin_regex = re.compile(r'^([0-9A-F]{2}:){31}[0-9A-F]{2}$')
     return re.match(pin_regex, value) is not None
 
+def is_valid_port(port: int) -> bool:
+    return 1 <= port <= 65535
+
 def read_nodes():
     if not NODES_JSON_PATH.exists():
         return []
@@ -69,17 +72,21 @@ def write_nodes(nodes):
     except (IOError, OSError) as e:
         sys.exit(f"Error writing to {NODES_JSON_PATH}: {e}")
 
-def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None = None):
+def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None = None, port: int | None = None):
     if not is_valid_ip_or_domain(ip):
         print(f"Error: '{ip}' is not a valid IP address or domain name.", file=sys.stderr)
         sys.exit(1)
 
     if sni and not is_valid_sni(sni):
-        print(f"Error: '{sni}' is not a valid domain name for SNI. Do not include http/https and ensure it's not an IP.", file=sys.stderr)
+        print(f"Error: '{sni}' is not a valid domain name for SNI.", file=sys.stderr)
         sys.exit(1)
 
     if pinSHA256 and not is_valid_sha256_pin(pinSHA256):
         print(f"Error: '{pinSHA256}' is not a valid SHA256 pin format.", file=sys.stderr)
+        sys.exit(1)
+
+    if port and not is_valid_port(port):
+        print(f"Error: Port '{port}' must be between 1 and 65535.", file=sys.stderr)
         sys.exit(1)
 
     nodes = read_nodes()
@@ -95,6 +102,8 @@ def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None =
         new_node["sni"] = sni.strip()
     if pinSHA256:
         new_node["pinSHA256"] = pinSHA256.strip().upper()
+    if port:
+        new_node["port"] = port
 
     nodes.append(new_node)
     write_nodes(nodes)
@@ -118,14 +127,15 @@ def list_nodes():
         print("No nodes configured.")
         return
         
-    print(f"{'Name':<20} {'IP / Domain':<25} {'SNI':<25} {'Pin SHA256'}")
-    print(f"{'-'*20} {'-'*25} {'-'*25} {'-'*30}")
+    print(f"{'Name':<20} {'IP / Domain':<25} {'Port':<10} {'SNI':<25} {'Pin SHA256'}")
+    print(f"{'-'*20} {'-'*25} {'-'*10} {'-'*25} {'-'*30}")
     for node in sorted(nodes, key=lambda x: x['name']):
         name = node['name']
         ip = node['ip']
+        port = node.get('port', 'N/A')
         sni = node.get('sni', 'N/A')
         pin = node.get('pinSHA256', 'N/A')
-        print(f"{name:<20} {ip:<25} {sni:<25} {pin}")
+        print(f"{name:<20} {ip:<25} {str(port):<10} {sni:<25} {pin}")
 
 def generate_cert():
     try:
@@ -185,6 +195,7 @@ def main():
     add_parser = subparsers.add_parser('add', help='Add a new node.')
     add_parser.add_argument('--name', type=str, required=True, help='The unique name of the node.')
     add_parser.add_argument('--ip', type=str, required=True, help='The IP address or domain of the node.')
+    add_parser.add_argument('--port', type=int, help='Optional: The port of the node.')
     add_parser.add_argument('--sni', type=str, help='Optional: The Server Name Indication (e.g., yourdomain.com).')
     add_parser.add_argument('--pinSHA256', type=str, help='Optional: The public key SHA256 pin.')
 
@@ -198,7 +209,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'add':
-        add_node(args.name, args.ip, args.sni, args.pinSHA256)
+        add_node(args.name, args.ip, args.sni, args.pinSHA256, args.port)
     elif args.command == 'delete':
         delete_node(args.name)
     elif args.command == 'list':

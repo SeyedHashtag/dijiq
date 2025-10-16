@@ -464,11 +464,13 @@ def edit_ip_address(ipv4: str, ipv6: str):
     if ipv6:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-6', ipv6])
 
-def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[str] = None):
+def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[str] = None, port: Optional[int] = None):
     """
     Adds a new external node.
     """
     command = ['python3', Command.NODE_MANAGER.value, 'add', '--name', name, '--ip', ip]
+    if port:
+        command.extend(['--port', str(port)])
     if sni:
         command.extend(['--sni', sni])
     if pinSHA256:
