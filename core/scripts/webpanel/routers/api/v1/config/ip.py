@@ -93,7 +93,14 @@ async def add_node(body: AddNodeBody):
         body: Request body containing the name and IP of the node.
     """
     try:
-        cli_api.add_node(body.name, body.ip)
+        cli_api.add_node(
+            name=body.name, 
+            ip=body.ip, 
+            port=body.port, 
+            sni=body.sni, 
+            pinSHA256=body.pinSHA256, 
+            obfs=body.obfs
+        )
         return DetailResponse(detail=f"Node '{body.name}' added successfully.")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -102,7 +109,6 @@ async def add_node(body: AddNodeBody):
 @router.post('/nodes/delete', response_model=DetailResponse, summary='Delete External Node')
 async def delete_node(body: DeleteNodeBody):
     """
-
     Deletes an external node from the configuration by its name.
 
     Args:
