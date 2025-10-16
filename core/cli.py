@@ -334,10 +334,11 @@ def node():
 @click.option('--port', required=False, type=int, help='Optional: The port of the node.')
 @click.option('--sni', required=False, type=str, help='Optional: The Server Name Indication.')
 @click.option('--pinSHA256', required=False, type=str, help='Optional: The public key SHA256 pin.')
-def add_node(name, ip, port, sni, pinsha256):
+@click.option('--obfs', required=False, type=str, help='Optional: The obfuscation key/password.')
+def add_node(name, ip, port, sni, pinsha256, obfs):
     """Add a new external node."""
     try:
-        output = cli_api.add_node(name, ip, sni, pinSHA256=pinsha256, port=port)
+        output = cli_api.add_node(name, ip, sni, pinSHA256=pinsha256, port=port, obfs=obfs)
         click.echo(output.strip())
     except Exception as e:
         click.echo(f'{e}', err=True)
