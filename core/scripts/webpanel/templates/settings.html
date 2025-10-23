@@ -228,6 +228,7 @@
                                                         <th>Port</th>
                                                         <th>SNI</th>
                                                         <th>OBFS</th>
+                                                        <th>Insecure</th>
                                                         <th>Pin SHA256</th>
                                                         <th>Action</th>
                                                     </tr>
@@ -275,6 +276,14 @@
                                                 <label for="node_pin">Pin SHA256 (Optional)</label>
                                                 <input type="text" class="form-control" id="node_pin" placeholder="5D:23:0E:E9:10:AB:96:E0:43...">
                                                 <div class="invalid-feedback">Invalid SHA256 pin format.</div>
+                                            </div>
+                                            <div class="form-group">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="node_insecure">
+                                                    <label class="form-check-label" for="node_insecure">
+                                                        Insecure
+                                                    </label>
+                                                </div>
                                             </div>
                                             <button type="button" id="add_node_btn" class="btn btn-success">
                                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>

@@ -72,7 +72,7 @@ def write_nodes(nodes):
     except (IOError, OSError) as e:
         sys.exit(f"Error writing to {NODES_JSON_PATH}: {e}")
 
-def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None = None, port: int | None = None, obfs: str | None = None):
+def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None = None, port: int | None = None, obfs: str | None = None, insecure: bool = False):
     if not is_valid_ip_or_domain(ip):
         print(f"Error: '{ip}' is not a valid IP address or domain name.", file=sys.stderr)
         sys.exit(1)
@@ -89,10 +89,6 @@ def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None =
         print(f"Error: Port '{port}' must be between 1 and 65535.", file=sys.stderr)
         sys.exit(1)
 
-    if obfs and not obfs.strip():
-        print(f"Error: OBFS value cannot be empty or just whitespace.", file=sys.stderr)
-        sys.exit(1)
-
     nodes = read_nodes()
     if any(node['name'] == name for node in nodes):
         print(f"Error: A node with the name '{name}' already exists.", file=sys.stderr)
@@ -102,14 +98,16 @@ def add_node(name: str, ip: str, sni: str | None = None, pinSHA256: str | None =
         sys.exit(1)
     
     new_node = {"name": name, "ip": ip}
-    if port:
-        new_node["port"] = port
     if sni:
         new_node["sni"] = sni.strip()
     if pinSHA256:
         new_node["pinSHA256"] = pinSHA256.strip().upper()
+    if port:
+        new_node["port"] = port
     if obfs:
         new_node["obfs"] = obfs.strip()
+    if insecure:
+        new_node["insecure"] = insecure
 
     nodes.append(new_node)
     write_nodes(nodes)
@@ -133,16 +131,17 @@ def list_nodes():
         print("No nodes configured.")
         return
         
-    print(f"{'Name':<15} {'IP / Domain':<25} {'Port':<8} {'OBFS':<15} {'SNI':<20} {'Pin SHA256'}")
-    print(f"{'-'*15} {'-'*25} {'-'*8} {'-'*15} {'-'*20} {'-'*30}")
+    print(f"{'Name':<15} {'IP / Domain':<25} {'Port':<8} {'SNI':<20} {'Insecure':<10} {'OBFS':<20} {'Pin SHA256'}")
+    print(f"{'-'*15} {'-'*25} {'-'*8} {'-'*20} {'-'*10} {'-'*20} {'-'*30}")
     for node in sorted(nodes, key=lambda x: x['name']):
         name = node['name']
         ip = node['ip']
         port = node.get('port', 'N/A')
-        obfs = node.get('obfs', 'N/A')
         sni = node.get('sni', 'N/A')
+        insecure = str(node.get('insecure', 'False'))
+        obfs = node.get('obfs', 'N/A')
         pin = node.get('pinSHA256', 'N/A')
-        print(f"{name:<15} {ip:<25} {str(port):<8} {obfs:<15} {sni:<20} {pin}")
+        print(f"{name:<15} {ip:<25} {str(port):<8} {sni:<20} {insecure:<10} {obfs:<20} {pin}")
 
 def generate_cert():
     try:
@@ -203,21 +202,22 @@ def main():
     add_parser.add_argument('--name', type=str, required=True, help='The unique name of the node.')
     add_parser.add_argument('--ip', type=str, required=True, help='The IP address or domain of the node.')
     add_parser.add_argument('--port', type=int, help='Optional: The port of the node.')
-    add_parser.add_argument('--sni', type=str, help='Optional: The Server Name Indication (e.g., yourdomain.com).')
+    add_parser.add_argument('--sni', type=str, help='Optional: The Server Name Indication.')
     add_parser.add_argument('--pinSHA256', type=str, help='Optional: The public key SHA256 pin.')
-    add_parser.add_argument('--obfs', type=str, help='Optional: The obfuscation key/password.')
+    add_parser.add_argument('--obfs', type=str, help='Optional: The obfuscation key.')
+    add_parser.add_argument('--insecure', action='store_true', help='Optional: Skip certificate verification.')
 
     delete_parser = subparsers.add_parser('delete', help='Delete a node by name.')
     delete_parser.add_argument('--name', type=str, required=True, help='The name of the node to delete.')
 
     subparsers.add_parser('list', help='List all configured nodes.')
     
-    subparsers.add_parser('generate-cert', help="Generate blitz.crt and blitz.key if they don't exist or are expiring soon.")
+    subparsers.add_parser('generate-cert', help="Generate blitz.crt and blitz.key.")
     
     args = parser.parse_args()
 
     if args.command == 'add':
-        add_node(args.name, args.ip, args.sni, args.pinSHA256, args.port, args.obfs)
+        add_node(args.name, args.ip, args.sni, args.pinSHA256, args.port, args.obfs, args.insecure)
     elif args.command == 'delete':
         delete_node(args.name)
     elif args.command == 'list':

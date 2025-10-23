@@ -39,6 +39,7 @@ class Node(BaseModel):
     sni: Optional[str] = None
     pinSHA256: Optional[str] = None
     obfs: Optional[str] = None
+    insecure: Optional[bool] = False
 
     @field_validator('ip', mode='before')
     def check_node_ip(cls, v: str | None):

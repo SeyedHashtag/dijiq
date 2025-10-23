@@ -90,7 +90,7 @@ async def add_node(body: AddNodeBody):
     Adds a new external node to the configuration.
 
     Args:
-        body: Request body containing the name and IP of the node.
+        body: Request body containing the full details of the node.
     """
     try:
         cli_api.add_node(
@@ -99,7 +99,8 @@ async def add_node(body: AddNodeBody):
             port=body.port, 
             sni=body.sni, 
             pinSHA256=body.pinSHA256, 
-            obfs=body.obfs
+            obfs=body.obfs,
+            insecure=body.insecure
         )
         return DetailResponse(detail=f"Node '{body.name}' added successfully.")
     except Exception as e:

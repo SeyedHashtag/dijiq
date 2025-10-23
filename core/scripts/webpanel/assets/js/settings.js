@@ -286,6 +286,7 @@ $(document).ready(function () {
                                 <td>${escapeHtml(node.port || 'N/A')}</td>
                                 <td>${escapeHtml(node.sni || 'N/A')}</td>
                                 <td>${escapeHtml(node.obfs || 'N/A')}</td>
+                                <td>${escapeHtml(node.insecure ? 'True' : 'False')}</td>
                                 <td>${escapeHtml(node.pinSHA256 || 'N/A')}</td>
                                 <td>
                                     <button class="btn btn-xs btn-danger delete-node-btn" data-name="${escapeHtml(node.name)}">
@@ -310,8 +311,9 @@ $(document).ready(function () {
         const sni = $("#node_sni").val().trim();
         const obfs = $("#node_obfs").val().trim();
         const pinSHA256 = $("#node_pin").val().trim();
+        const insecure = $("#node_insecure").is(':checked');
         
-        const data = { name: name, ip: ip };
+        const data = { name: name, ip: ip, insecure: insecure };
         if (port) data.port = parseInt(port);
         if (sni) data.sni = sni;
         if (obfs) data.obfs = obfs;
@@ -326,12 +328,7 @@ $(document).ready(function () {
                 "#add_node_btn",
                 false,
                 function() {
-                    $("#node_name").val('');
-                    $("#node_ip").val('');
-                    $("#node_port").val('');
-                    $("#node_sni").val('');
-                    $("#node_obfs").val('');
-                    $("#node_pin").val('');
+                    $("#add_node_form")[0].reset();
                     $("#add_node_form .form-control").removeClass('is-invalid');
                     fetchNodes();
                 }

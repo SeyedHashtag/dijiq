@@ -464,7 +464,7 @@ def edit_ip_address(ipv4: str, ipv6: str):
     if ipv6:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-6', ipv6])
 
-def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[str] = None, port: Optional[int] = None, obfs: Optional[str] = None):
+def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[str] = None, port: Optional[int] = None, obfs: Optional[str] = None, insecure: Optional[bool] = None):
     """
     Adds a new external node.
     """
@@ -477,6 +477,8 @@ def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[
         command.extend(['--pinSHA256', pinSHA256])
     if obfs:
         command.extend(['--obfs', obfs])
+    if insecure:
+        command.append('--insecure')
     return run_cmd(command)
 
 def delete_node(name: str):
