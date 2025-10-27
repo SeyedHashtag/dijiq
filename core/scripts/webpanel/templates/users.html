@@ -44,11 +44,12 @@
     data-edit-user-url-template="{{ url_for('edit_user_api', username='U') }}"
     data-reset-user-url-template="{{ url_for('reset_user_api', username='U') }}"
     data-user-uri-url-template="{{ url_for('show_user_uri_api', username='U') }}"
-    data-bulk-uri-url="{{ url_for('show_multiple_user_uris_api') }}">
+    data-bulk-uri-url="{{ url_for('show_multiple_user_uris_api') }}"
+    data-users-base-url="{{ url_for('users') }}">
     <div class="container-fluid">
         <div class="card">
             <div class="card-header">
-                <h3 class="card-title">User List {% if users %}({{ users|length }}){% endif %}</h3>
+                <h3 class="card-title">User List {% if total_users is defined %}({{ total_users }}){% endif %}</h3>
                 <div class="card-tools d-flex align-items-center flex-wrap">
 
                     <!-- Mobile Filter Dropdown -->
@@ -143,7 +144,7 @@
                             <td>
                                 <input type="checkbox" class="user-checkbox" value="{{ user.username }}">
                             </td>
-                            <td>{{ loop.index }}</td>
+                            <td>{{ loop.index + ((current_page - 1) * limit) }}</td>
                             <td data-username="{{ user.username }}">{{ user.username }}</td>
                             <td class="d-none d-md-table-cell">
                                 {% if user.status == "Online" %}
@@ -274,6 +275,70 @@
                     </tbody>
                 </table>
                 {% endif %}
+            </div>
+            <div class="card-footer clearfix">
+                <div class="row">
+                    <div class="col-sm-12 col-md-5 d-flex align-items-center">
+                        <div class="dataTables_info" role="status" aria-live="polite">
+                            Showing {{ ((current_page - 1) * limit) + 1 }} to {{ [((current_page - 1) * limit) + limit, total_users] | min }} of {{ total_users }} users
+                        </div>
+                    </div>
+                    <div class="col-sm-12 col-md-7">
+                        <div class="d-flex justify-content-end align-items-center">
+                            <div class="mr-3">
+                                <form id="limit-form" method="get" class="form-inline">
+                                    <label for="limit-select" class="mr-2">Per Page:</label>
+                                    <select id="limit-select" class="form-control form-control-sm">
+                                        <option value="10">10</option>
+                                        <option value="25">25</option>
+                                        <option value="50" selected>50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </form>
+                            </div>
+                            {% if total_pages > 1 %}
+                            <nav aria-label="Page navigation">
+                                <ul class="pagination pagination-sm m-0">
+                                    <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
+                                        <a class="page-link" href="{{ url_for('users_paginated', page=current_page - 1) }}" aria-label="Previous">
+                                            <span aria-hidden="true">&laquo;</span>
+                                        </a>
+                                    </li>
+            
+                                    {% set page_start = [1, current_page - 2] | max %}
+                                    {% set page_end = [total_pages, current_page + 2] | min %}
+            
+                                    {% if page_start > 1 %}
+                                        <li class="page-item"><a class="page-link" href="{{ url_for('users_paginated', page=1) }}">1</a></li>
+                                        {% if page_start > 2 %}
+                                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                                        {% endif %}
+                                    {% endif %}
+            
+                                    {% for page_num in range(page_start, page_end + 1) %}
+                                    <li class="page-item {% if page_num == current_page %}active{% endif %}">
+                                        <a class="page-link" href="{{ url_for('users_paginated', page=page_num) }}">{{ page_num }}</a>
+                                    </li>
+                                    {% endfor %}
+            
+                                    {% if page_end < total_pages %}
+                                        {% if page_end < total_pages - 1 %}
+                                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                                        {% endif %}
+                                        <li class="page-item"><a class="page-link" href="{{ url_for('users_paginated', page=total_pages) }}">{{ total_pages }}</a></li>
+                                    {% endif %}
+                                    
+                                    <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
+                                        <a class="page-link" href="{{ url_for('users_paginated', page=current_page + 1) }}" aria-label="Next">
+                                            <span aria-hidden="true">&raquo;</span>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

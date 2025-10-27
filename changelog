@@ -1,19 +1,26 @@
-### 🚀 **[2.3.5] – Dependency Updates & Minor Fixes**
+### 🚀 **[2.4.0] – Advanced Node Management & Paginated User List**
 
-*Released: 2025-10-13*
+*Released: 2025-10-27*
 
-#### 🧩 Dependency Updates
+#### 🌐 **API & Backend**
 
-* ⬆️ **pydantic-core** → 2.41.1
-* ⬆️ **pydantic** → 2.12.0
-* ⬆️ **fastapi** → 0.118.0
-* ⬆️ **pymongo** → 4.15.2
-* ⬆️ **certifi** → 2025.10.5
-* ⬆️ **frozenlist** → 1.8.0
-* ⬆️ **markupsafe** → 3.0.3
-* ⬆️ **propcache** → 0.4.1
+* 🚀 **feat(api):** Added endpoint for receiving node traffic data
+* 🧩 **refactor(api):** Applied node-specific parameters to wrapper URI script
+* ⚙️ **refactor(uri):** Enhanced URI generation with node-specific parameters
+* 🧠 **refactor:** Cleaned up API documentation tags
+* 🧱 **feat(api):** Added full node configuration to web panel API
 
-#### 🛠 Fixes
+#### 🧮 **Node Management**
 
-* 🐛 Fixed **path handling bug** in Core module
-* ✏️ Fixed **typo** in CLI messages
+* 🧠 **feat(nodes):** Implemented advanced node management and automatic certificate generation
+* 🔐 **feat(nodes):** Added *insecure TLS* option for external nodes
+* 🌀 **feat(nodes):** Added optional **OBFS** and **port** parameters for flexible node setups
+
+#### 💻 **Frontend / Web Panel**
+
+* 🖥️ **feat(web):** Implemented full node configuration UI in the settings page
+* 📄 **feat(ui):** Added **paginated user list** with selectable limit for improved performance
+
+#### 🤖 **Bot & Scripts**
+
+* 🧰 **fix(bot):** Removed unnecessary `-u` flag from `remove-user` command

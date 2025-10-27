@@ -9,9 +9,31 @@ $(function () {
     const RESET_USER_URL_TEMPLATE = contentSection.dataset.resetUserUrlTemplate;
     const USER_URI_URL_TEMPLATE = contentSection.dataset.userUriUrlTemplate;
     const BULK_URI_URL = contentSection.dataset.bulkUriUrl;
+    const USERS_BASE_URL = contentSection.dataset.usersBaseUrl;
 
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
     let cachedUserData = [];
+
+    function setCookie(name, value, days) {
+        let expires = "";
+        if (days) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = "; expires=" + date.toUTCString();
+        }
+        document.cookie = name + "=" + (value || "") + expires + "; path=/";
+    }
+
+    function getCookie(name) {
+        const nameEQ = name + "=";
+        const ca = document.cookie.split(';');
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+        }
+        return null;
+    }
 
     function checkIpLimitServiceStatus() {
         $.getJSON(SERVICE_STATUS_URL)
@@ -324,6 +346,18 @@ $(function () {
 
     $("#searchButton").on("click", filterUsers);
     $("#searchInput").on("keyup", filterUsers);
+
+    function initializeLimitSelector() {
+        const savedLimit = getCookie('limit') || '50';
+        $('#limit-select').val(savedLimit);
+
+        $('#limit-select').on('change', function() {
+            const newLimit = $(this).val();
+            setCookie('limit', newLimit, 365);
+            window.location.href = USERS_BASE_URL;
+        });
+    }
     
+    initializeLimitSelector();
     checkIpLimitServiceStatus();
 });

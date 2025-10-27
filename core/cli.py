@@ -329,12 +329,17 @@ def node():
     pass
 
 @node.command('add')
-@click.option('--name', required=True, type=str, help='A unique name for the node (e.g., "Node-DE").')
-@click.option('--ip', required=True, type=str, help='The public IP address of the node.')
-def add_node(name, ip):
+@click.option('--name', required=True, type=str, help='Unique name for the node.')
+@click.option('--ip', required=True, type=str, help='Public IP address of the node.')
+@click.option('--port', required=False, type=int, help='Optional: Port of the node.')
+@click.option('--sni', required=False, type=str, help='Optional: Server Name Indication.')
+@click.option('--pinSHA256', required=False, type=str, help='Optional: Public key SHA256 pin.')
+@click.option('--obfs', required=False, type=str, help='Optional: Obfuscation key.')
+@click.option('--insecure', is_flag=True, default=False, help='Optional: Skip certificate verification.')
+def add_node(name, ip, port, sni, pinsha256, obfs, insecure):
     """Add a new external node."""
     try:
-        output = cli_api.add_node(name, ip)
+        output = cli_api.add_node(name, ip, sni, pinSHA256=pinsha256, port=port, obfs=obfs, insecure=insecure)
         click.echo(output.strip())
     except Exception as e:
         click.echo(f'{e}', err=True)
@@ -354,6 +359,15 @@ def list_nodes():
     """List all configured external nodes."""
     try:
         output = cli_api.list_nodes()
+        click.echo(output.strip())
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+@node.command('generate-cert')
+def generate_cert():
+    """Generate a self-signed certificate for nodes."""
+    try:
+        output = cli_api.generate_node_cert()
         click.echo(output.strip())
     except Exception as e:
         click.echo(f'{e}', err=True)

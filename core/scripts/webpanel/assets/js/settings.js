@@ -67,12 +67,22 @@ $(document).ready(function () {
     function isValidDomain(domain) {
         if (!domain) return false;
         const lowerDomain = domain.toLowerCase();
-        return !lowerDomain.startsWith("http://") && !lowerDomain.startsWith("https://");
+        if (lowerDomain.startsWith("http://") || lowerDomain.startsWith("https://")) return false;
+        const ipV4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        if(ipV4Regex.test(domain)) return false;
+        const domainRegex = /^(?!-)(?:[a-zA-Z\d-]{0,62}[a-zA-Z\d]\.){1,126}(?!\d+$)[a-zA-Z\d]{1,63}$/;
+        return domainRegex.test(lowerDomain);
     }
 
     function isValidPort(port) {
         if (!port) return false;
         return /^[0-9]+$/.test(port) && parseInt(port) > 0 && parseInt(port) <= 65535;
+    }
+
+    function isValidSha256Pin(pin) {
+        if (!pin) return false;
+        const pinRegex = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/i;
+        return pinRegex.test(pin.trim());
     }
 
     function isValidSubPath(subpath) {
@@ -198,6 +208,14 @@ $(document).ready(function () {
                 }
             } else if (id === 'decoy_path') {
                 fieldValid = isValidPath(input.val());
+            } else if (id === 'node_port') {
+                fieldValid = (input.val().trim() === '') ? true : isValidPort(input.val());
+            } else if (id === 'node_sni') {
+                fieldValid = (input.val().trim() === '') ? true : isValidDomain(input.val());
+            } else if (id === 'node_pin') {
+                fieldValid = (input.val().trim() === '') ? true : isValidSha256Pin(input.val());
+            } else if (id === 'node_obfs') {
+                fieldValid = true;
             } else {
                 if (input.attr('placeholder') && input.attr('placeholder').includes('Enter') && !input.attr('id').startsWith('ipv')) {
                      fieldValid = input.val().trim() !== "";
@@ -265,6 +283,11 @@ $(document).ready(function () {
                 const row = `<tr>
                                 <td>${escapeHtml(node.name)}</td>
                                 <td>${escapeHtml(node.ip)}</td>
+                                <td>${escapeHtml(node.port || 'N/A')}</td>
+                                <td>${escapeHtml(node.sni || 'N/A')}</td>
+                                <td>${escapeHtml(node.obfs || 'N/A')}</td>
+                                <td>${escapeHtml(node.insecure ? 'True' : 'False')}</td>
+                                <td>${escapeHtml(node.pinSHA256 || 'N/A')}</td>
                                 <td>
                                     <button class="btn btn-xs btn-danger delete-node-btn" data-name="${escapeHtml(node.name)}">
                                         <i class="fas fa-trash"></i> Delete
@@ -284,18 +307,28 @@ $(document).ready(function () {
 
         const name = $("#node_name").val().trim();
         const ip = $("#node_ip").val().trim();
+        const port = $("#node_port").val().trim();
+        const sni = $("#node_sni").val().trim();
+        const obfs = $("#node_obfs").val().trim();
+        const pinSHA256 = $("#node_pin").val().trim();
+        const insecure = $("#node_insecure").is(':checked');
+        
+        const data = { name: name, ip: ip, insecure: insecure };
+        if (port) data.port = parseInt(port);
+        if (sni) data.sni = sni;
+        if (obfs) data.obfs = obfs;
+        if (pinSHA256) data.pinSHA256 = pinSHA256;
 
         confirmAction(`add the node '${name}'`, function () {
             sendRequest(
                 API_URLS.addNode,
                 "POST",
-                { name: name, ip: ip },
+                data,
                 `Node '${name}' added successfully!`,
                 "#add_node_btn",
                 false,
                 function() {
-                    $("#node_name").val('');
-                    $("#node_ip").val('');
+                    $("#add_node_form")[0].reset();
                     $("#add_node_form .form-control").removeClass('is-invalid');
                     fetchNodes();
                 }
@@ -1053,6 +1086,33 @@ $(document).ready(function () {
             $(this).addClass('is-invalid');
         } else {
              $(this).addClass('is-invalid');
+        }
+    });
+
+    $('#node_port').on('input', function () {
+        const val = $(this).val().trim();
+        if (val === '' || isValidPort(val)) {
+            $(this).removeClass('is-invalid');
+        } else {
+            $(this).addClass('is-invalid');
+        }
+    });
+    
+    $('#node_sni').on('input', function () {
+        const val = $(this).val().trim();
+        if (val === '' || isValidDomain(val)) {
+            $(this).removeClass('is-invalid');
+        } else {
+            $(this).addClass('is-invalid');
+        }
+    });
+    
+    $('#node_pin').on('input', function () {
+        const val = $(this).val().trim();
+        if (val === '' || isValidSha256Pin(val)) {
+            $(this).removeClass('is-invalid');
+        } else {
+            $(this).addClass('is-invalid');
         }
     });
 });
