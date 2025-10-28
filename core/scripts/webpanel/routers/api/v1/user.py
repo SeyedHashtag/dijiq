@@ -47,7 +47,7 @@ async def add_user_api(body: AddUserInputBody):
                             detail=f"{str(e)}")
 
     try:
-        cli_api.add_user(body.username, body.traffic_limit, body.expiration_days, body.password, body.creation_date, body.unlimited)
+        cli_api.add_user(body.username, body.traffic_limit, body.expiration_days, body.password, body.creation_date, body.unlimited, body.note)
         return DetailResponse(detail=f'User {body.username} has been added.')
     except cli_api.CommandExecutionError as e:
         if "User already exists" in str(e):
@@ -172,7 +172,7 @@ async def edit_user_api(username: str, body: EditUserInputBody):
         cli_api.kick_users_by_name([username])
         cli_api.traffic_status(display_output=False)
         cli_api.edit_user(username, body.new_username, body.new_traffic_limit, body.new_expiration_days,
-                          body.renew_password, body.renew_creation_date, body.blocked, body.unlimited_ip)
+                          body.renew_password, body.renew_creation_date, body.blocked, body.unlimited_ip, body.note)
         return DetailResponse(detail=f'User {username} has been edited.')
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
