@@ -52,7 +52,7 @@ $(function () {
         $(inputElement).closest('form').find('button[type="submit"]').prop('disabled', !isValid);
     }
 
-    $('#addUsername, #addBulkPrefix, #editUsername').on('input', function() {
+    $('#addUsername, #addBulkPrefix').on('input', function() {
         validateUsername(this, `#${this.id}Error`);
     });
 
@@ -153,7 +153,6 @@ $(function () {
         $("#editExpirationDays").val(parseInt(expiryText) || 0);
         $("#editBlocked").prop("checked", !dataRow.find("td:eq(8) i").hasClass("text-success"));
         $("#editUnlimitedIp").prop("checked", dataRow.find(".unlimited-ip-cell i").hasClass("text-primary"));
-        validateUsername('#editUsername', '#editUsernameError');
     });
     
     $("#editUserForm").on("submit", function (e) {
@@ -166,7 +165,6 @@ $(function () {
         const jsonData = Object.fromEntries(formData.entries());
         jsonData.blocked = jsonData.blocked === 'on';
         jsonData.unlimited_ip = jsonData.unlimited_ip === 'on';
-        if (jsonData.new_username === originalUsername) delete jsonData.new_username;
 
         $.ajax({
             url: url,

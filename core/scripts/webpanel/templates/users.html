@@ -441,8 +441,12 @@
                 <form id="editUserForm">
                     <div class="form-group">
                         <label for="editUsername">Username</label>
-                        <input type="text" class="form-control" id="editUsername" name="new_username">
-                        <small class="form-text text-danger" id="editUsernameError"></small>
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-user"></i></span>
+                            </div>
+                            <input type="text" class="form-control" id="editUsername" readonly>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="editTrafficLimit">Traffic Limit (GB)</label>
