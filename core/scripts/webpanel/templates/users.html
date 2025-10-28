@@ -21,6 +21,9 @@
         margin-right: 5px;
         margin-bottom: 5px;
     }
+    .form-check-label i {
+        width: 16px;
+    }
 </style>
 {% endblock %}
 
@@ -450,22 +453,36 @@
                     </div>
                     <div class="form-group">
                         <label for="editTrafficLimit">Traffic Limit (GB)</label>
-                        <input type="number" class="form-control" id="editTrafficLimit" name="new_traffic_limit">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-database"></i></span>
+                            </div>
+                            <input type="number" class="form-control" id="editTrafficLimit" name="new_traffic_limit">
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="editExpirationDays">Expiration Days</label>
-                        <input type="number" class="form-control" id="editExpirationDays" name="new_expiration_days">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                            </div>
+                            <input type="number" class="form-control" id="editExpirationDays" name="new_expiration_days">
+                        </div>
                     </div>
                     <div class="form-check">
                         <input type="checkbox" class="form-check-input" id="editBlocked" name="blocked">
-                        <label class="form-check-label" for="editBlocked">Blocked</label>
+                        <label class="form-check-label" for="editBlocked">
+                            <i class="fas fa-ban text-danger mr-2"></i>Blocked
+                        </label>
                     </div>
                     <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
                         <input type="checkbox" class="form-check-input" id="editUnlimitedIp" name="unlimited_ip">
-                        <label class="form-check-label" for="editUnlimitedIp">Unlimited IP</label>
+                        <label class="form-check-label" for="editUnlimitedIp">
+                            <i class="fas fa-shield-alt text-primary mr-2"></i>Unlimited IP
+                        </label>
                     </div>
                     <input type="hidden" id="originalUsername" name="username">
-                    <button type="submit" class="btn btn-primary" id="editSubmitButton">Save Changes</button>
+                    <button type="submit" class="btn btn-primary mt-3" id="editSubmitButton">Save Changes</button>
                 </form>
             </div>
         </div>
