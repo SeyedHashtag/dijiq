@@ -311,7 +311,8 @@ $(function () {
         const searchText = $("#searchInput").val().toLowerCase();
         $("#userTable tbody tr.user-main-row").each(function () {
             const username = $(this).find("td:eq(2)").text().toLowerCase();
-            const isVisible = username.includes(searchText);
+            const note = $(this).data("note").toLowerCase();
+            const isVisible = username.includes(searchText) || note.includes(searchText);
             $(this).toggle(isVisible);
             if (!isVisible) {
                 $(this).next('tr.user-details-row').hide();

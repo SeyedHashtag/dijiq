@@ -144,7 +144,7 @@
                     </thead>
                     <tbody>
                         {% for user in users|sort(attribute='username', case_sensitive=false) %}
-                        <tr class="user-main-row">
+                        <tr class="user-main-row" data-note="{{ user.note or '' }}">
                             <td>
                                 <input type="checkbox" class="user-checkbox" value="{{ user.username }}">
                             </td>
