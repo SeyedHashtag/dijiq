@@ -146,11 +146,13 @@ $(function () {
 
         const trafficText = dataRow.find("td:eq(4)").text();
         const expiryText = dataRow.find("td:eq(6)").text();
+        const note = dataRow.find(".note-cell").data('note');
         
         $("#originalUsername").val(user);
         $("#editUsername").val(user);
         $("#editTrafficLimit").val(parseFloat(trafficText.split('/')[1]) || 0);
         $("#editExpirationDays").val(parseInt(expiryText) || 0);
+        $("#editNote").val(note || '');
         $("#editBlocked").prop("checked", !dataRow.find("td:eq(8) i").hasClass("text-success"));
         $("#editUnlimitedIp").prop("checked", dataRow.find(".unlimited-ip-cell i").hasClass("text-primary"));
     });
