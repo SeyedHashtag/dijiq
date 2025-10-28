@@ -1,26 +1,19 @@
-### 🚀 **[2.4.0] – Advanced Node Management & Paginated User List**
+### 📝 **[2.4.1] – User Notes & Interface Enhancements**
 
-*Released: 2025-10-27*
+*Released: 2025-10-28*
 
-#### 🌐 **API & Backend**
+#### 🌟 **New Features**
 
-* 🚀 **feat(api):** Added endpoint for receiving node traffic data
-* 🧩 **refactor(api):** Applied node-specific parameters to wrapper URI script
-* ⚙️ **refactor(uri):** Enhanced URI generation with node-specific parameters
-* 🧠 **refactor:** Cleaned up API documentation tags
-* 🧱 **feat(api):** Added full node configuration to web panel API
+* 🗒️ **User Notes Support (Core, API, CLI, UI)**
 
-#### 🧮 **Node Management**
+  * Added a `note` field for each user in the database.
+  * CLI and API now support adding and editing notes.
+  * Notes are displayed and editable directly from the web panel.
+* 🔍 **Search by Note** → Quickly find users via their personal note field.
+* 🧰 **Enhanced Forms** → Added icons to `Add User` and `Bulk Add` forms for a cleaner look.
 
-* 🧠 **feat(nodes):** Implemented advanced node management and automatic certificate generation
-* 🔐 **feat(nodes):** Added *insecure TLS* option for external nodes
-* 🌀 **feat(nodes):** Added optional **OBFS** and **port** parameters for flexible node setups
+#### 🎨 **UI Improvements**
 
-#### 💻 **Frontend / Web Panel**
-
-* 🖥️ **feat(web):** Implemented full node configuration UI in the settings page
-* 📄 **feat(ui):** Added **paginated user list** with selectable limit for improved performance
-
-#### 🤖 **Bot & Scripts**
-
-* 🧰 **fix(bot):** Removed unnecessary `-u` flag from `remove-user` command
+* ✏️ Redesigned **Edit User** modal with new icons.
+* 🔒 Made username field **readonly** during edits to prevent accidental changes.
+* 🧼 Removed redundant `Required` and `Optional` labels in the **External Nodes** form.
