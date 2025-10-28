@@ -269,13 +269,18 @@ def get_user(username: str) -> dict[str, Any] | None:
         return json.loads(res)
 
 
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool):
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool, note: str | None):
     '''
     Adds a new user with the given parameters, respecting positional argument requirements.
     '''
     command = ['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days)]
 
-    if unlimited:
+    if note:
+        final_password = password if password else generate_password()
+        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
+        unlimited_str = 'true' if unlimited else 'false'
+        command.extend([final_password, final_creation_date, unlimited_str, note])
+    elif unlimited:
         final_password = password if password else generate_password()
         final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
         command.extend([final_password, final_creation_date, 'true'])

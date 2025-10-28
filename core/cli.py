@@ -131,9 +131,10 @@ def get_user(username: str):
 @click.option('--password', '-p', required=False, help='Password for the user', type=str)
 @click.option('--creation-date', '-c', required=False, help='Creation date for the user (YYYY-MM-DD)', type=str)
 @click.option('--unlimited', is_flag=True, default=False, help='Exempt user from IP limit checks.')
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str, creation_date: str, unlimited: bool):
+@click.option('--note', '-n', required=False, help='An optional note for the user', type=str)
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str, creation_date: str, unlimited: bool, note: str):
     try:
-        cli_api.add_user(username, traffic_limit, expiration_days, password, creation_date, unlimited)
+        cli_api.add_user(username, traffic_limit, expiration_days, password, creation_date, unlimited, note)
         click.echo(f"User '{username}' added successfully.")
     except Exception as e:
         click.echo(f'{e}', err=True)
