@@ -311,7 +311,7 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
         
     run_cmd(command)
 
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
+def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
     '''
     Edits an existing user's details by calling the new edit_user.py script with named flags.
     '''
@@ -346,6 +346,9 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         
     if unlimited_ip is not None:
         command_args.extend(['--unlimited', 'true' if unlimited_ip else 'false'])
+
+    if note is not None:
+        command_args.extend(['--note', note])
 
     run_cmd(command_args)
 

@@ -163,12 +163,13 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
 @click.option('--renew-creation-date', '-rc', is_flag=True, help='Renew creation date for the user')
 @click.option('--blocked/--unblocked', 'blocked', '-b', default=None, help='Block or unblock the user.')
 @click.option('--unlimited-ip/--limited-ip', 'unlimited_ip', default=None, help='Set user to be exempt from or subject to IP limits.')
-def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
+@click.option('--note', '-n', required=False, help='New note for the user.', type=str)
+def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
     try:
         cli_api.kick_users_by_name(username)
         cli_api.traffic_status(display_output=False)
         cli_api.edit_user(username, new_username, new_traffic_limit, new_expiration_days,
-                          renew_password, renew_creation_date, blocked, unlimited_ip)
+                          renew_password, renew_creation_date, blocked, unlimited_ip, note)
         click.echo(f"User '{username}' updated successfully.")
     except Exception as e:
         click.echo(f'{e}', err=True)

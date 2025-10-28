@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from db.database import db
 
-def edit_user(username, new_username=None, new_password=None, traffic_gb=None, expiration_days=None, creation_date=None, blocked=None, unlimited_user=None):
+def edit_user(username, new_username=None, new_password=None, traffic_gb=None, expiration_days=None, creation_date=None, blocked=None, unlimited_user=None, note=None):
     if db is None:
         print("Error: Database connection failed.", file=sys.stderr)
         return 1
@@ -45,6 +45,9 @@ def edit_user(username, new_username=None, new_password=None, traffic_gb=None, e
 
     if unlimited_user is not None:
         updates['unlimited_user'] = unlimited_user
+
+    if note is not None:
+        updates['note'] = note
         
     try:
         if updates:
@@ -108,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--creation-date", dest="creation_date", type=validate_date, help="New creation date in YYYY-MM-DD format, or 'null' to reset to On-hold.")
     parser.add_argument("--blocked", type=str_to_bool, help="Set blocked status (true/false).")
     parser.add_argument("--unlimited", dest="unlimited_user", type=str_to_bool, help="Set unlimited user status for IP limits (true/false).")
+    parser.add_argument("--note", help="New note for the user. To clear the note, provide an empty string.")
 
     args = parser.parse_args()
 
@@ -119,5 +123,6 @@ if __name__ == "__main__":
         expiration_days=args.expiration_days,
         creation_date=args.creation_date,
         blocked=args.blocked,
-        unlimited_user=args.unlimited_user
+        unlimited_user=args.unlimited_user,
+        note=args.note
     ))
