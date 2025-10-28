@@ -13,6 +13,7 @@ class User(BaseModel):
     enable: bool
     unlimited_ip: bool
     online_count: int = 0
+    note: Optional[str] = None
 
     @staticmethod
     def from_dict(username: str, user_data: dict):
@@ -40,7 +41,8 @@ class User(BaseModel):
                 'day_usage': 'N/A',
                 'enable': False,
                 'unlimited_ip': False,
-                'online_count': 0
+                'online_count': 0,
+                'note': user_data.get('note', None)
             }
 
         expiration_days = user_data.get('expiration_days', 0)
@@ -88,7 +90,8 @@ class User(BaseModel):
             'day_usage': day_usage,
             'enable': not user_data.get('blocked', False),
             'unlimited_ip': user_data.get('unlimited_user', False),
-            'online_count': user_data.get('online_count', 0)
+            'online_count': user_data.get('online_count', 0),
+            'note': user_data.get('note', None)
         }
 
     @staticmethod
