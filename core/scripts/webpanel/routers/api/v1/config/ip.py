@@ -57,9 +57,8 @@ async def edit_ip_api(body: EditInputBody):
         body: An instance of EditInputBody containing the new IPv4 and/or IPv6 addresses.
     """
     try:
-        if not body.ipv4 and not body.ipv6:
-            raise HTTPException(status_code=400, detail='Error: You must specify either ipv4 or ipv6')
-
+        # if not body.ipv4 and not body.ipv6:
+        #     raise HTTPException(status_code=400, detail='Error: You must specify either ipv4 or ipv6')
         cli_api.edit_ip_address(str(body.ipv4), str(body.ipv6))
         return DetailResponse(detail='IP address edited successfully.')
     except Exception as e:

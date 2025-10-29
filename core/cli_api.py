@@ -465,8 +465,8 @@ def edit_ip_address(ipv4: str, ipv6: str):
     :raises InvalidInputError: If neither ipv4 nor ipv6 is provided.
     '''
 
-    if not ipv4 and not ipv6:
-        raise InvalidInputError('Error: --edit requires at least one of --ipv4 or --ipv6.')
+    # if not ipv4 and not ipv6:
+    #     raise InvalidInputError('Error: --edit requires at least one of --ipv4 or --ipv6.')
     if ipv4:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-4', ipv4])
     if ipv6:
