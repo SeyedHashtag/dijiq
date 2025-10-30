@@ -97,6 +97,7 @@ class NodeUserTraffic(BaseModel):
     upload_bytes: int
     download_bytes: int
     status: str
+    online_count: int
     account_creation_date: Optional[str] = None
 
     @field_validator('account_creation_date')

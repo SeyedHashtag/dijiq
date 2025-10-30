@@ -146,6 +146,7 @@ async def receive_node_traffic(body: NodesTrafficPayload):
                 'upload_bytes': new_upload,
                 'download_bytes': new_download,
                 'status': user_traffic.status,
+                'online_count': user_traffic.online_count,
             }
             
             if not db_user.get('account_creation_date') and user_traffic.account_creation_date:
