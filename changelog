@@ -1,19 +1,22 @@
-### 📝 **[2.4.1] – User Notes & Interface Enhancements**
+### 🌐 **[2.4.2] – Online User Count & Stability Updates**
 
-*Released: 2025-10-28*
+*Released: 2025-10-31*
 
-#### 🌟 **New Features**
+#### 🌟 **New Feature**
 
-* 🗒️ **User Notes Support (Core, API, CLI, UI)**
+* 👥 **Online User Count from Nodes**
+  The system now aggregates real-time online user data directly from active nodes, giving a more accurate live connection count on the dashboard.
 
-  * Added a `note` field for each user in the database.
-  * CLI and API now support adding and editing notes.
-  * Notes are displayed and editable directly from the web panel.
-* 🔍 **Search by Note** → Quickly find users via their personal note field.
-* 🧰 **Enhanced Forms** → Added icons to `Add User` and `Bulk Add` forms for a cleaner look.
+#### 🧩 **Improvements**
 
-#### 🎨 **UI Improvements**
+* 🧹 Removed unnecessary input validation logic to streamline core functions.
+* ⚙️ Improved consistency between node reports and server-side user tracking.
 
-* ✏️ Redesigned **Edit User** modal with new icons.
-* 🔒 Made username field **readonly** during edits to prevent accidental changes.
-* 🧼 Removed redundant `Required` and `Optional` labels in the **External Nodes** form.
+#### 📦 **Dependency Updates**
+
+* ⬆️ **FastAPI** → 0.120.1
+* ⬆️ **Starlette** → 0.49.1
+* ⬆️ **aiofiles** → 25.1.0
+* ⬆️ **pymongo** → 4.15.3
+* ⬆️ **yarl** → 1.22.0
+* ⬆️ **multidict** → 6.7.0
