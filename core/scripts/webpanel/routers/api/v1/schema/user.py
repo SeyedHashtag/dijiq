@@ -11,6 +11,7 @@ class UserInfoResponse(BaseModel):
     account_creation_date: Optional[str] = None
     blocked: bool
     unlimited_ip: bool = Field(False, alias='unlimited_user')
+    note: Optional[str] = None
     status: Optional[str] = None
     upload_bytes: Optional[int] = None
     download_bytes: Optional[int] = None
@@ -30,6 +31,7 @@ class AddUserInputBody(BaseModel):
     password: Optional[str] = None
     creation_date: Optional[str] = None
     unlimited: bool = False
+    note: Optional[str] = None
 
     @field_validator('username')
     def validate_username(cls, v):
@@ -61,6 +63,7 @@ class EditUserInputBody(BaseModel):
     renew_creation_date: bool = False
     blocked: Optional[bool] = None
     unlimited_ip: Optional[bool] = None
+    note: Optional[str] = None
 
     @field_validator('new_username')
     def validate_new_username(cls, v):

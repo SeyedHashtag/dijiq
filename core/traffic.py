@@ -90,7 +90,10 @@ def traffic_status(no_gui=False):
 
     for username, user_data in initial_users_data.items():
         updates = {}
-        is_online = username in online_status and online_status[username].is_online
+        is_online_locally = username in online_status and online_status[username].is_online
+        online_count_db = user_data.get('online_count', 0)
+        
+        is_online_globally = is_online_locally or online_count_db > 0
 
         if username in traffic_stats:
             new_upload = user_data.get('upload_bytes', 0) + traffic_stats[username].upload_bytes
@@ -102,16 +105,16 @@ def traffic_status(no_gui=False):
         
         if not is_activated:
             current_traffic = traffic_stats.get(username)
-            has_activity = is_online or (current_traffic and (current_traffic.upload_bytes > 0 or current_traffic.download_bytes > 0))
+            has_activity = is_online_globally or (current_traffic and (current_traffic.upload_bytes > 0 or current_traffic.download_bytes > 0))
 
             if has_activity:
                 updates["account_creation_date"] = today_date
-                updates["status"] = "Online" if is_online else "Offline"
+                updates["status"] = "Online" if is_online_globally else "Offline"
             else:
                 if user_data.get("status") != "On-hold":
                     updates["status"] = "On-hold"
         else:
-            new_status = "Online" if is_online else "Offline"
+            new_status = "Online" if is_online_globally else "Offline"
             if user_data.get("status") != new_status:
                 updates["status"] = new_status
         

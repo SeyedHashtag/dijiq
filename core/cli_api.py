@@ -35,7 +35,7 @@ class Command(Enum):
     SHOW_USER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'show_user_uri.py')
     WRAPPER_URI = os.path.join(SCRIPT_DIR, 'hysteria2', 'wrapper_uri.py')
     IP_ADD = os.path.join(SCRIPT_DIR, 'hysteria2', 'ip.py')
-    NODE_MANAGER = os.path.join(SCRIPT_DIR, 'hysteria2', 'node.py')
+    NODE_MANAGER = os.path.join(SCRIPT_DIR, 'nodes', 'node.py')
     MANAGE_OBFS = os.path.join(SCRIPT_DIR, 'hysteria2', 'manage_obfs.py')
     MASQUERADE_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'masquerade.py')
     EXTRA_CONFIG_SCRIPT = os.path.join(SCRIPT_DIR, 'hysteria2', 'extra_config.py')
@@ -269,13 +269,18 @@ def get_user(username: str) -> dict[str, Any] | None:
         return json.loads(res)
 
 
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool):
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str | None, creation_date: str | None, unlimited: bool, note: str | None):
     '''
     Adds a new user with the given parameters, respecting positional argument requirements.
     '''
     command = ['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days)]
 
-    if unlimited:
+    if note:
+        final_password = password if password else generate_password()
+        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
+        unlimited_str = 'true' if unlimited else 'false'
+        command.extend([final_password, final_creation_date, unlimited_str, note])
+    elif unlimited:
         final_password = password if password else generate_password()
         final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
         command.extend([final_password, final_creation_date, 'true'])
@@ -306,7 +311,7 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
         
     run_cmd(command)
 
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
+def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
     '''
     Edits an existing user's details by calling the new edit_user.py script with named flags.
     '''
@@ -341,6 +346,9 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         
     if unlimited_ip is not None:
         command_args.extend(['--unlimited', 'true' if unlimited_ip else 'false'])
+
+    if note is not None:
+        command_args.extend(['--note', note])
 
     run_cmd(command_args)
 
@@ -457,18 +465,29 @@ def edit_ip_address(ipv4: str, ipv6: str):
     :raises InvalidInputError: If neither ipv4 nor ipv6 is provided.
     '''
 
-    if not ipv4 and not ipv6:
-        raise InvalidInputError('Error: --edit requires at least one of --ipv4 or --ipv6.')
+    # if not ipv4 and not ipv6:
+    #     raise InvalidInputError('Error: --edit requires at least one of --ipv4 or --ipv6.')
     if ipv4:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-4', ipv4])
     if ipv6:
         run_cmd(['python3', Command.IP_ADD.value, 'edit', '-6', ipv6])
 
-def add_node(name: str, ip: str):
+def add_node(name: str, ip: str, sni: Optional[str] = None, pinSHA256: Optional[str] = None, port: Optional[int] = None, obfs: Optional[str] = None, insecure: Optional[bool] = None):
     """
     Adds a new external node.
     """
-    return run_cmd(['python3', Command.NODE_MANAGER.value, 'add', '--name', name, '--ip', ip])
+    command = ['python3', Command.NODE_MANAGER.value, 'add', '--name', name, '--ip', ip]
+    if port:
+        command.extend(['--port', str(port)])
+    if sni:
+        command.extend(['--sni', sni])
+    if pinSHA256:
+        command.extend(['--pinSHA256', pinSHA256])
+    if obfs:
+        command.extend(['--obfs', obfs])
+    if insecure:
+        command.append('--insecure')
+    return run_cmd(command)
 
 def delete_node(name: str):
     """
@@ -481,6 +500,12 @@ def list_nodes():
     Lists all configured external nodes.
     """
     return run_cmd(['python3', Command.NODE_MANAGER.value, 'list'])
+
+def generate_node_cert():
+    """
+    Generates a self-signed certificate for nodes.
+    """
+    return run_cmd(['python3', Command.NODE_MANAGER.value, 'generate-cert'])
 
 def update_geo(country: str):
     '''

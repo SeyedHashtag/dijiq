@@ -1,7 +1,22 @@
-### 🚀 **\[2.3.3] – Bug Fix Release**
+### 🌐 **[2.4.2] – Online User Count & Stability Updates**
 
-*Released: 2025-09-24*
+*Released: 2025-10-31*
 
-#### 🐛 Fixes
+#### 🌟 **New Feature**
 
-* Fixed an issue in **user management JavaScript** that caused malfunction in the web panel
+* 👥 **Online User Count from Nodes**
+  The system now aggregates real-time online user data directly from active nodes, giving a more accurate live connection count on the dashboard.
+
+#### 🧩 **Improvements**
+
+* 🧹 Removed unnecessary input validation logic to streamline core functions.
+* ⚙️ Improved consistency between node reports and server-side user tracking.
+
+#### 📦 **Dependency Updates**
+
+* ⬆️ **FastAPI** → 0.120.1
+* ⬆️ **Starlette** → 0.49.1
+* ⬆️ **aiofiles** → 25.1.0
+* ⬆️ **pymongo** → 4.15.3
+* ⬆️ **yarl** → 1.22.0
+* ⬆️ **multidict** → 6.7.0

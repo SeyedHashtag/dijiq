@@ -37,7 +37,10 @@ def generate_uri(username: str, auth_password: str, ip: str, port: str,
                  uri_params: Dict[str, str], ip_version: int, fragment_tag: str) -> str:
     ip_part = f"[{ip}]" if ip_version == 6 and ':' in ip else ip
     uri_base = f"hy2://{username}:{auth_password}@{ip_part}:{port}"
-    query_string = "&".join([f"{k}={v}" for k, v in uri_params.items()])
+    
+    query_params = [f"{k}={v}" for k, v in uri_params.items() if v is not None and v != '']
+    query_string = "&".join(query_params)
+    
     return f"{uri_base}?{query_string}#{fragment_tag}"
 
 def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
@@ -51,23 +54,23 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
         sys.exit(1)
 
     nodes = load_json_file(NODES_JSON_PATH) or []
-    port = config.get("listen", "").split(":")[-1]
+    
+    default_port = config.get("listen", "").split(":")[-1]
     tls_config = config.get("tls", {})
     hy2_env = load_env_file(CONFIG_ENV)
     ns_env = load_env_file(NORMALSUB_ENV)
 
-    base_uri_params = {
-        "insecure": "1" if tls_config.get("insecure", True) else "0",
-        "sni": hy2_env.get('SNI', '')
-    }
-    obfs_password = config.get("obfs", {}).get("salamander", {}).get("password")
-    if obfs_password:
-        base_uri_params["obfs"] = "salamander"
-        base_uri_params["obfs-password"] = obfs_password
+    default_sni = hy2_env.get('SNI', '')
+    default_obfs = config.get("obfs", {}).get("salamander", {}).get("password")
+    default_pin = tls_config.get("pinSHA256")
+    default_insecure = tls_config.get("insecure", True)
     
-    sha256 = tls_config.get("pinSHA256")
-    if sha256:
-        base_uri_params["pinSHA256"] = sha256
+    base_uri_params = {"insecure": "1" if default_insecure else "0"}
+    if default_sni: base_uri_params["sni"] = default_sni
+    if default_obfs:
+        base_uri_params["obfs"] = "salamander"
+        base_uri_params["obfs-password"] = default_obfs
+    if default_pin: base_uri_params["pinSHA256"] = default_pin
     
     ip4 = hy2_env.get('IP4')
     ip6 = hy2_env.get('IP6')
@@ -84,17 +87,34 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
         user_output = {"username": username, "ipv4": None, "ipv6": None, "nodes": [], "normal_sub": None}
 
         if ip4 and ip4 != "None":
-            user_output["ipv4"] = generate_uri(username, auth_password, ip4, port, base_uri_params, 4, f"{username}-IPv4")
+            user_output["ipv4"] = generate_uri(username, auth_password, ip4, default_port, base_uri_params, 4, f"{username}-IPv4")
         if ip6 and ip6 != "None":
-            user_output["ipv6"] = generate_uri(username, auth_password, ip6, port, base_uri_params, 6, f"{username}-IPv6")
+            user_output["ipv6"] = generate_uri(username, auth_password, ip6, default_port, base_uri_params, 6, f"{username}-IPv6")
 
         for node in nodes:
-            if node_name := node.get("name"):
-                if node_ip := node.get("ip"):
-                    ip_v = 6 if ':' in node_ip else 4
-                    tag = f"{username}-{node_name}"
-                    uri = generate_uri(username, auth_password, node_ip, port, base_uri_params, ip_v, tag)
-                    user_output["nodes"].append({"name": node_name, "uri": uri})
+            node_name = node.get("name")
+            node_ip = node.get("ip")
+            if not node_name or not node_ip:
+                continue
+
+            ip_v = 6 if ':' in node_ip else 4
+            tag = f"{username}-{node_name}"
+
+            node_port = str(node.get("port", default_port))
+            node_sni = node.get("sni", default_sni)
+            node_obfs = node.get("obfs", default_obfs)
+            node_pin = node.get("pinSHA256", default_pin)
+            node_insecure = node.get("insecure", default_insecure)
+            
+            node_params = {"insecure": "1" if node_insecure else "0"}
+            if node_sni: node_params["sni"] = node_sni
+            if node_obfs:
+                node_params["obfs"] = "salamander"
+                node_params["obfs-password"] = node_obfs
+            if node_pin: node_params["pinSHA256"] = node_pin
+            
+            uri = generate_uri(username, auth_password, node_ip, node_port, node_params, ip_v, tag)
+            user_output["nodes"].append({"name": node_name, "uri": uri})
         
         if ns_domain and ns_port and ns_subpath:
             user_output["normal_sub"] = f"https://{ns_domain}:{ns_port}/{ns_subpath}/sub/normal/{auth_password}#{username}"

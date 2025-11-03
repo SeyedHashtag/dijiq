@@ -24,7 +24,7 @@ def load_env_file(env_file: str) -> Dict[str, str]:
                     env_vars[key] = value
     return env_vars
 
-def load_nodes() -> List[Dict[str, str]]:
+def load_nodes() -> List[Dict[str, Any]]:
     if NODES_JSON_PATH.exists():
         try:
             with NODES_JSON_PATH.open("r") as f:
@@ -147,25 +147,26 @@ def show_uri(args: argparse.Namespace) -> None:
         return
     
     auth_password = user_doc["password"]
-    port = config["listen"].split(":")[-1]
-    sha256 = config.get("tls", {}).get("pinSHA256", "")
-    obfs_password = config.get("obfs", {}).get("salamander", {}).get("password", "")
-    insecure = config.get("tls", {}).get("insecure", True)
+
+    local_port = config["listen"].split(":")[-1]
+    local_sha256 = config.get("tls", {}).get("pinSHA256", "")
+    local_obfs_password = config.get("obfs", {}).get("salamander", {}).get("password", "")
+    local_insecure = config.get("tls", {}).get("insecure", True)
     
-    ip4, ip6, sni = load_hysteria2_ips()
+    ip4, ip6, local_sni = load_hysteria2_ips()
     nodes = load_nodes()
     terminal_width = get_terminal_width()
 
     if args.all or args.ip_version == 4:
         if ip4 and ip4 != "None":
-            uri = generate_uri(args.username, auth_password, ip4, port, 
-                                 obfs_password, sha256, sni, 4, insecure, f"{args.username}-IPv4")
+            uri = generate_uri(args.username, auth_password, ip4, local_port, 
+                                 local_obfs_password, local_sha256, local_sni, 4, local_insecure, f"{args.username}-IPv4")
             display_uri_and_qr(uri, "IPv4", args, terminal_width)
             
     if args.all or args.ip_version == 6:
         if ip6 and ip6 != "None":
-            uri = generate_uri(args.username, auth_password, ip6, port, 
-                                 obfs_password, sha256, sni, 6, insecure, f"{args.username}-IPv6")
+            uri = generate_uri(args.username, auth_password, ip6, local_port, 
+                                 local_obfs_password, local_sha256, local_sni, 6, local_insecure, f"{args.username}-IPv6")
             display_uri_and_qr(uri, "IPv6", args, terminal_width)
 
     for node in nodes:
@@ -177,8 +178,24 @@ def show_uri(args: argparse.Namespace) -> None:
         ip_v = 4 if '.' in node_ip else 6
         
         if args.all or args.ip_version == ip_v:
-            uri = generate_uri(args.username, auth_password, node_ip, port, 
-                                 obfs_password, sha256, sni, ip_v, insecure, f"{args.username}-{node_name}")
+            node_port = node.get("port", local_port)
+            node_sni = node.get("sni", local_sni)
+            node_obfs = node.get("obfs", local_obfs_password)
+            node_pin = node.get("pinSHA256", local_sha256)
+            node_insecure = node.get("insecure", local_insecure)
+
+            uri = generate_uri(
+                username=args.username,
+                auth_password=auth_password,
+                ip=node_ip,
+                port=str(node_port),
+                obfs_password=node_obfs,
+                sha256=node_pin,
+                sni=node_sni,
+                ip_version=ip_v,
+                insecure=node_insecure,
+                fragment_tag=f"{args.username}-{node_name}"
+            )
             display_uri_and_qr(uri, f"Node: {node_name} (IPv{ip_v})", args, terminal_width)
 
     if args.singbox and is_service_active("hysteria-singbox.service"):

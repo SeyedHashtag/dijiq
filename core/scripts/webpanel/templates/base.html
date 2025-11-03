@@ -136,6 +136,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ url_for('hysteria_settings') }}" class="nav-link {% if request.path == url_for('hysteria_settings') %}active{% endif %}">
+                                <i class="nav-icon fas fa-bolt"></i>
+                                <p>Hysteria</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ url_for('config') }}" class="nav-link {% if request.path == url_for('config') %}active{% endif %}">
                                 <i class="nav-icon fas fa-cog"></i>
                                 <p>Config</p>

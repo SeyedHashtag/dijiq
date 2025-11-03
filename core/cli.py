@@ -131,9 +131,10 @@ def get_user(username: str):
 @click.option('--password', '-p', required=False, help='Password for the user', type=str)
 @click.option('--creation-date', '-c', required=False, help='Creation date for the user (YYYY-MM-DD)', type=str)
 @click.option('--unlimited', is_flag=True, default=False, help='Exempt user from IP limit checks.')
-def add_user(username: str, traffic_limit: int, expiration_days: int, password: str, creation_date: str, unlimited: bool):
+@click.option('--note', '-n', required=False, help='An optional note for the user', type=str)
+def add_user(username: str, traffic_limit: int, expiration_days: int, password: str, creation_date: str, unlimited: bool, note: str):
     try:
-        cli_api.add_user(username, traffic_limit, expiration_days, password, creation_date, unlimited)
+        cli_api.add_user(username, traffic_limit, expiration_days, password, creation_date, unlimited, note)
         click.echo(f"User '{username}' added successfully.")
     except Exception as e:
         click.echo(f'{e}', err=True)
@@ -162,12 +163,13 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
 @click.option('--renew-creation-date', '-rc', is_flag=True, help='Renew creation date for the user')
 @click.option('--blocked/--unblocked', 'blocked', '-b', default=None, help='Block or unblock the user.')
 @click.option('--unlimited-ip/--limited-ip', 'unlimited_ip', default=None, help='Set user to be exempt from or subject to IP limits.')
-def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None):
+@click.option('--note', '-n', required=False, help='New note for the user.', type=str)
+def edit_user(username: str, new_username: str, new_traffic_limit: int, new_expiration_days: int, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
     try:
-        cli_api.kick_user_by_name(username)
+        cli_api.kick_users_by_name(username)
         cli_api.traffic_status(display_output=False)
         cli_api.edit_user(username, new_username, new_traffic_limit, new_expiration_days,
-                          renew_password, renew_creation_date, blocked, unlimited_ip)
+                          renew_password, renew_creation_date, blocked, unlimited_ip, note)
         click.echo(f"User '{username}' updated successfully.")
     except Exception as e:
         click.echo(f'{e}', err=True)
@@ -329,12 +331,17 @@ def node():
     pass
 
 @node.command('add')
-@click.option('--name', required=True, type=str, help='A unique name for the node (e.g., "Node-DE").')
-@click.option('--ip', required=True, type=str, help='The public IP address of the node.')
-def add_node(name, ip):
+@click.option('--name', required=True, type=str, help='Unique name for the node.')
+@click.option('--ip', required=True, type=str, help='Public IP address of the node.')
+@click.option('--port', required=False, type=int, help='Optional: Port of the node.')
+@click.option('--sni', required=False, type=str, help='Optional: Server Name Indication.')
+@click.option('--pinSHA256', required=False, type=str, help='Optional: Public key SHA256 pin.')
+@click.option('--obfs', required=False, type=str, help='Optional: Obfuscation key.')
+@click.option('--insecure', is_flag=True, default=False, help='Optional: Skip certificate verification.')
+def add_node(name, ip, port, sni, pinsha256, obfs, insecure):
     """Add a new external node."""
     try:
-        output = cli_api.add_node(name, ip)
+        output = cli_api.add_node(name, ip, sni, pinSHA256=pinsha256, port=port, obfs=obfs, insecure=insecure)
         click.echo(output.strip())
     except Exception as e:
         click.echo(f'{e}', err=True)
@@ -354,6 +361,15 @@ def list_nodes():
     """List all configured external nodes."""
     try:
         output = cli_api.list_nodes()
+        click.echo(output.strip())
+    except Exception as e:
+        click.echo(f'{e}', err=True)
+
+@node.command('generate-cert')
+def generate_cert():
+    """Generate a self-signed certificate for nodes."""
+    try:
+        output = cli_api.generate_node_cert()
         click.echo(output.strip())
     except Exception as e:
         click.echo(f'{e}', err=True)

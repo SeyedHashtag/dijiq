@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}Hysteria Settings{% endblock %}
+
+{% block content %}
+<div class='content-header'>
+    <div class='container-fluid'>
+        <div class='row mb-2'>
+            <div class='col-sm-6'>
+                <h1 class='m-0'>Hysteria Settings</h1>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class='content'
+    data-get-port-url="{{ url_for('get_port_api') }}"
+    data-get-sni-url="{{ url_for('get_sni_api') }}"
+    data-check-obfs-url="{{ url_for('check_obfs') }}"
+    data-enable-obfs-url="{{ url_for('enable_obfs') }}"
+    data-disable-obfs-url="{{ url_for('disable_obfs') }}"
+    data-set-port-url-template="{{ url_for('set_port_api', port='PORT_PLACEHOLDER') }}"
+    data-set-sni-url-template="{{ url_for('set_sni_api', sni='SNI_PLACEHOLDER') }}"
+    data-update-geo-url-template="{{ url_for('update_geo', country='COUNTRY_PLACEHOLDER') }}"
+>
+    <div class='container-fluid'>
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card card-outline card-primary h-100">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-server"></i> Change Port</h3></div>
+                    <div class="card-body">
+                        <form id="port_form">
+                            <div class='form-group'>
+                                <label for='hysteria_port'>Port:</label>
+                                <input type='text' class='form-control' id='hysteria_port'
+                                    placeholder='Enter Port'>
+                                <div class="invalid-feedback">
+                                    Please enter a valid port number.
+                                </div>
+                            </div>
+                            <button id="port_change" type='button' class='btn btn-primary'>Save</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card card-outline card-primary h-100">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-alt"></i> Change SNI</h3></div>
+                    <div class="card-body">
+                         <form id="sni_form">
+                            <div class='form-group'>
+                                <label for='sni_domain'>Domain:</label>
+                                <input type='text' class='form-control' id='sni_domain'
+                                    placeholder='Enter Domain'>
+                                <div class="invalid-feedback">
+                                    Please enter a valid domain (without http:// or https://).
+                                </div>
+                            </div>
+                            <button id="sni_change" type='button' class='btn btn-primary'>Save</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card card-outline card-secondary h-100">
+                    <div class="card-header"><h3 class="card-title"><i class="fas fa-user-secret"></i> OBFS</h3></div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <h5>OBFS Status</h5>
+                            <div id="obfs_status_container" class="p-3 border rounded">
+                                <span id="obfs_status_message">Loading OBFS status...</span>
+                            </div>
+                        </div>
+                        <button id="obfs_enable_btn" type='button' class='btn btn-success' style="display: none;">
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                            Enable OBFS
+                        </button>
+                        <button id="obfs_disable_btn" type='button' class='btn btn-danger' style="display: none;">
+                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                            Disable OBFS
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card card-outline card-info h-100">
+                    <div class="card-header">
+                        <h3 class="card-title"><i class="fas fa-globe-americas"></i> Update GeoIP & GeoSite Files</h3>
+                    </div>
+                    <div class="card-body">
+                        <p>Update GeoIP and GeoSite database files for specific countries. This is useful for routing rules.</p>
+                        <div class="d-flex flex-column">
+                            <button id="geo_update_iran" type='button' class='btn btn-secondary mb-2'>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Update for Iran
+                            </button>
+                             <button id="geo_update_china" type='button' class='btn btn-secondary mb-2'>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Update for China
+                            </button>
+                            <button id="geo_update_russia" type='button' class='btn btn-secondary'>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Update for Russia
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{{ url_for('assets', path='js/hysteria_settings.js') }}"></script>
+{% endblock %}
