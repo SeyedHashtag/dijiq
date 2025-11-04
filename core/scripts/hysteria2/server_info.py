@@ -9,27 +9,8 @@ import subprocess
 import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from hysteria2_api import Hysteria2Client
 import init_paths
-from paths import CONFIG_FILE, API_BASE_URL
 from db.database import db
-
-
-@lru_cache(maxsize=1)
-def get_secret() -> str:
-    if not CONFIG_FILE.exists():
-        print("Error: config.json file not found!", file=sys.stderr)
-        sys.exit(1)
-
-    with CONFIG_FILE.open() as f:
-        data = json.load(f)
-
-    secret = data.get("trafficStats", {}).get("secret")
-    if not secret:
-        print("Error: secret not found in config.json!", file=sys.stderr)
-        sys.exit(1)
-
-    return secret
 
 
 def convert_bytes(bytes_val: int) -> str:
@@ -191,23 +172,23 @@ async def get_connection_counts() -> tuple[int, int]:
     return parse_connection_counts(tcp_content, udp_content)
 
 
-def get_online_user_count_sync(secret: str) -> int:
+def get_online_user_count_sync() -> int:
+    if db is None:
+        print("Error: Database connection failed.", file=sys.stderr)
+        return 0
     try:
-        client = Hysteria2Client(
-            base_url=API_BASE_URL,
-            secret=secret
-        )
-        online_users = client.get_online_clients()
-        return sum(user.connections for user in online_users.values() if user.is_online)
+        users = db.get_all_users()
+        total_online = sum(int(user.get("online_count", 0) or 0) for user in users)
+        return total_online
     except Exception as e:
-        print(f"Error getting online users: {e}", file=sys.stderr)
+        print(f"Error retrieving online user count from database: {e}", file=sys.stderr)
         return 0
 
 
-async def get_online_user_count(secret: str) -> int:
+async def get_online_user_count() -> int:
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor() as executor:
-        return await loop.run_in_executor(executor, get_online_user_count_sync, secret)
+        return await loop.run_in_executor(executor, get_online_user_count_sync)
 
 
 def get_user_traffic_sync() -> tuple[int, int]:
@@ -279,13 +260,11 @@ async def get_interface_addresses_async():
 
 
 async def main():
-    secret = get_secret()
-    
     tasks = [
         get_uptime_and_boottime(),
         get_memory_usage(),
         get_connection_counts(),
-        get_online_user_count(secret),
+        get_online_user_count(),
         get_user_traffic(),
         get_cpu_usage(0.1),
         get_network_speed(0.3),
