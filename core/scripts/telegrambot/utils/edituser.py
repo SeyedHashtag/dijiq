@@ -71,12 +71,16 @@ def process_show_user(message):
 
     display_username = escape_markdown(actual_username)
 
+    note = user_details.get('note', '')
+    note_display = f"📝 Note: {escape_markdown(note)}" if note else "📝 Note: None"
+    
     formatted_details = (
         f"\n🆔 Name: {display_username}\n"
         f"📊 Traffic Limit: {user_details.get('max_download_bytes', 0) / (1024 ** 3):.2f} GB\n"
         f"📅 Days: {user_details.get('expiration_days', 'N/A')}\n"
         f"⏳ Creation: {user_details.get('account_creation_date', 'N/A')}\n"
-        f"💡 Blocked: {user_details.get('blocked', 'N/A')}\n\n"
+        f"💡 Blocked: {user_details.get('blocked', 'N/A')}\n"
+        f"{note_display}\n\n"
         f"{traffic_message}"
     )
 
@@ -113,7 +117,8 @@ def process_show_user(message):
     markup.add(types.InlineKeyboardButton("📅 Edit Expiration", callback_data=f"edit_expiration:{actual_username}"),
                types.InlineKeyboardButton("🔑 Renew Password", callback_data=f"renew_password:{actual_username}"))
     markup.add(types.InlineKeyboardButton("🕒 Renew Creation Date", callback_data=f"renew_creation:{actual_username}"),
-               types.InlineKeyboardButton("⛔ Block User", callback_data=f"block_user:{actual_username}"))
+               types.InlineKeyboardButton("📝 Edit Note", callback_data=f"edit_note:{actual_username}"))
+    markup.add(types.InlineKeyboardButton("⛔ Block User", callback_data=f"block_user:{actual_username}"))
 
     caption = formatted_details
     if uri_v4:
@@ -143,6 +148,22 @@ def handle_edit_callback(call):
     elif action == 'edit_expiration':
         msg = bot.send_message(call.message.chat.id, f"Enter new expiration days for {display_username}:")
         bot.register_next_step_handler(msg, process_edit_expiration, username)
+    elif action == 'edit_note':
+        # Get current user details to show current note
+        command = f"python3 {CLI_PATH} get-user -u \"{username}\""
+        user_result = run_cli_command(command)
+        current_note = ""
+        try:
+            user_details = json.loads(user_result)
+            current_note = user_details.get('note', '')
+        except json.JSONDecodeError:
+            pass
+        
+        if current_note:
+            msg = bot.send_message(call.message.chat.id, f"Current note for {display_username}: `{escape_markdown(current_note)}`\n\nEnter new note (or type 'clear' to remove):", parse_mode="Markdown")
+        else:
+            msg = bot.send_message(call.message.chat.id, f"Enter new note for {display_username} (or type 'clear' to remove):")
+        bot.register_next_step_handler(msg, process_edit_note, username)
     elif action == 'renew_password':
         command = f"python3 {CLI_PATH} edit-user -u \"{username}\" -rp"
         result = run_cli_command(command)
@@ -211,3 +232,22 @@ def process_edit_expiration(message, username):
         bot.reply_to(message, result)
     except ValueError:
         bot.reply_to(message, "Invalid expiration days. Please enter a number.")
+
+def process_edit_note(message, username):
+    note_input = message.text.strip()
+    
+    if note_input.lower() == 'clear':
+        # Clear the note
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" --note \"\""
+    else:
+        # Validate note length
+        if len(note_input) > 200:
+            bot.reply_to(message, "Note is too long (max 200 characters). Please enter a shorter note:")
+            bot.register_next_step_handler(message, process_edit_note, username)
+            return
+        
+        # Update with new note
+        command = f"python3 {CLI_PATH} edit-user -u \"{username}\" --note \"{note_input}\""
+    
+    result = run_cli_command(command)
+    bot.reply_to(message, result)
