@@ -13,6 +13,7 @@ $(function () {
     const GET_USER_URL_TEMPLATE = contentSection.dataset.getUserUrlTemplate;
 
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
+    const passwordRegex = /^[a-zA-Z0-9]+$/;
     let cachedUserData = [];
 
     function setCookie(name, value, days) {
@@ -61,6 +62,18 @@ $(function () {
         $(errorElement).text(isValid ? "" : "Usernames can only contain letters, numbers, and underscores.");
         $(inputElement).closest('form').find('button[type="submit"]').prop('disabled', !isValid);
     }
+    
+    function validatePassword(inputElement, errorElement) {
+        const password = $(inputElement).val();
+        // The password is valid if it's empty (no change) OR it matches the alphanumeric regex.
+        const isValid = password === '' || passwordRegex.test(password);
+        $(errorElement).text(isValid ? "" : "Password can only contain letters and numbers.");
+        $('#editSubmitButton').prop('disabled', !isValid);
+    }
+    
+    $('#editPassword').on('input', function() {
+        validatePassword(this, '#editPasswordError');
+    });
 
     $('#addUsername, #addBulkPrefix').on('input', function() {
         validateUsername(this, `#${this.id}Error`);
@@ -157,6 +170,9 @@ $(function () {
         const trafficText = dataRow.find("td:eq(4)").text();
         const expiryText = dataRow.find("td:eq(6)").text();
         const note = dataRow.data('note');
+        
+        $('#editPasswordError').text('');
+        $('#editSubmitButton').prop('disabled', false);
 
         $("#originalUsername").val(user);
         $("#editUsername").val(user);
@@ -172,6 +188,7 @@ $(function () {
         $.getJSON(url)
             .done(userData => {
                 passwordInput.val(userData.password || '');
+                validatePassword('#editPassword', '#editPasswordError');
             })
             .fail(() => {
                 passwordInput.val("").attr("placeholder", "Failed to load password");
@@ -182,7 +199,7 @@ $(function () {
     });
     
     $('#editUserModal').on('click', '#generatePasswordBtn', function() {
-        $('#editPassword').val(generatePassword());
+        $('#editPassword').val(generatePassword()).trigger('input');
     });
     
     $("#editUserForm").on("submit", function (e) {
