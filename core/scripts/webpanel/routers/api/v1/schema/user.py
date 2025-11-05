@@ -56,14 +56,15 @@ class AddBulkUsersInputBody(BaseModel):
 
 
 class EditUserInputBody(BaseModel):
-    new_username: Optional[str] = None
-    new_traffic_limit: Optional[int] = None
-    new_expiration_days: Optional[int] = None
-    renew_password: bool = False
-    renew_creation_date: bool = False
-    blocked: Optional[bool] = None
-    unlimited_ip: Optional[bool] = None
-    note: Optional[str] = None
+    new_username: Optional[str] = Field(None, description="The new username for the user.")
+    new_password: Optional[str] = Field(None, description="The new password for the user. Leave empty to keep the current one.")
+    new_traffic_limit: Optional[int] = Field(None, description="The new traffic limit in GB.")
+    new_expiration_days: Optional[int] = Field(None, description="The new expiration in days.")
+    renew_password: bool = Field(False, description="Whether to renew the user's password. Used by legacy clients like the bot.")
+    renew_creation_date: bool = Field(False, description="Whether to renew the user's account creation date.")
+    blocked: Optional[bool] = Field(None, description="Whether the user is blocked.")
+    unlimited_ip: Optional[bool] = Field(None, description="Whether the user has unlimited IP access.")
+    note: Optional[str] = Field(None, description="A note for the user.")
 
     @field_validator('new_username')
     def validate_new_username(cls, v):

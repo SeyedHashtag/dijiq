@@ -10,6 +10,7 @@ $(function () {
     const USER_URI_URL_TEMPLATE = contentSection.dataset.userUriUrlTemplate;
     const BULK_URI_URL = contentSection.dataset.bulkUriUrl;
     const USERS_BASE_URL = contentSection.dataset.usersBaseUrl;
+    const GET_USER_URL_TEMPLATE = contentSection.dataset.getUserUrlTemplate;
 
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
     let cachedUserData = [];
@@ -33,6 +34,15 @@ $(function () {
             if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
         }
         return null;
+    }
+
+    function generatePassword(length = 32) {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
     }
 
     function checkIpLimitServiceStatus() {
@@ -141,13 +151,13 @@ $(function () {
 
     $("#editUserModal").on("show.bs.modal", function (event) {
         const user = $(event.relatedTarget).data("user");
-        const clickedRow = $(event.relatedTarget).closest("tr");
-        const dataRow = clickedRow.hasClass('user-main-row') ? clickedRow : clickedRow.prev('.user-main-row');
+        const dataRow = $(event.relatedTarget).closest("tr.user-main-row");
+        const url = GET_USER_URL_TEMPLATE.replace('U', user);
 
         const trafficText = dataRow.find("td:eq(4)").text();
         const expiryText = dataRow.find("td:eq(6)").text();
-        const note = dataRow.find(".note-cell").data('note');
-        
+        const note = dataRow.data('note');
+
         $("#originalUsername").val(user);
         $("#editUsername").val(user);
         $("#editTrafficLimit").val(parseFloat(trafficText.split('/')[1]) || 0);
@@ -155,6 +165,24 @@ $(function () {
         $("#editNote").val(note || '');
         $("#editBlocked").prop("checked", !dataRow.find("td:eq(8) i").hasClass("text-success"));
         $("#editUnlimitedIp").prop("checked", dataRow.find(".unlimited-ip-cell i").hasClass("text-primary"));
+    
+        const passwordInput = $("#editPassword");
+        passwordInput.val("Loading...").prop("disabled", true);
+    
+        $.getJSON(url)
+            .done(userData => {
+                passwordInput.val(userData.password || '');
+            })
+            .fail(() => {
+                passwordInput.val("").attr("placeholder", "Failed to load password");
+            })
+            .always(() => {
+                passwordInput.prop("disabled", false);
+            });
+    });
+    
+    $('#editUserModal').on('click', '#generatePasswordBtn', function() {
+        $('#editPassword').val(generatePassword());
     });
     
     $("#editUserForm").on("submit", function (e) {
@@ -361,4 +389,5 @@ $(function () {
     
     initializeLimitSelector();
     checkIpLimitServiceStatus();
+    $('[data-toggle="tooltip"]').tooltip();
 });

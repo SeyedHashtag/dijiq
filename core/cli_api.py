@@ -311,7 +311,7 @@ def bulk_user_add(traffic_gb: float, expiration_days: int, count: int, prefix: s
         
     run_cmd(command)
 
-def edit_user(username: str, new_username: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
+def edit_user(username: str, new_username: str | None, new_password: str | None, new_traffic_limit: int | None, new_expiration_days: int | None, renew_password: bool, renew_creation_date: bool, blocked: bool | None, unlimited_ip: bool | None, note: str | None):
     '''
     Edits an existing user's details by calling the new edit_user.py script with named flags.
     '''
@@ -323,6 +323,15 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
     if new_username:
         command_args.extend(['--new-username', new_username])
 
+    password_to_set = None
+    if new_password:
+        password_to_set = new_password
+    elif renew_password:
+        password_to_set = generate_password()
+
+    if password_to_set:
+        command_args.extend(['--password', password_to_set])
+
     if new_traffic_limit is not None:
         if new_traffic_limit < 0:
             raise InvalidInputError('Error: traffic limit must be a non-negative number.')
@@ -332,10 +341,6 @@ def edit_user(username: str, new_username: str | None, new_traffic_limit: int | 
         if new_expiration_days < 0:
             raise InvalidInputError('Error: expiration days must be a non-negative number.')
         command_args.extend(['--expiration-days', str(new_expiration_days)])
-        
-    if renew_password:
-        password = generate_password()
-        command_args.extend(['--password', password])
         
     if renew_creation_date:
         creation_date = datetime.now().strftime('%Y-%m-%d')
