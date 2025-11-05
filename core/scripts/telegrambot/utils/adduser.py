@@ -16,6 +16,13 @@ def create_cancel_markup(back_step=None):
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
+def create_cancel_markup_with_skip(back_step=None, username=None, traffic_limit=None):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    if back_step:
+        markup.row(types.KeyboardButton("⬅️ Back"))
+    markup.row(types.KeyboardButton("⏭️ Skip"), types.KeyboardButton("❌ Cancel"))
+    return markup
+
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '➕ Add User')
 def add_user(message):
     msg = bot.reply_to(message, "Enter username (only letters, numbers, and underscores are allowed):", reply_markup=create_cancel_markup())
@@ -100,9 +107,39 @@ def process_add_user_step3(message, username, traffic_limit):
             bot.register_next_step_handler(message, process_add_user_step3, username, traffic_limit)
             return
             
-        add_user_command = f"python3 {CLI_PATH} add-user -u \"{username}\" -t {traffic_limit} -e {expiration_days}"
-        add_user_feedback = run_cli_command(add_user_command).strip()
+        msg = bot.reply_to(message, "Enter note (optional, press Skip to continue):", reply_markup=create_cancel_markup_with_skip(back_step=process_add_user_step3, username=username, traffic_limit=traffic_limit))
+        bot.register_next_step_handler(msg, process_add_user_step4, username, traffic_limit, expiration_days)
+    except ValueError:
+        bot.reply_to(message, "Invalid expiration days. Please enter a number:", reply_markup=create_cancel_markup(back_step=process_add_user_step2))
+        bot.register_next_step_handler(message, process_add_user_step3, username, traffic_limit)
 
+def process_add_user_step4(message, username, traffic_limit, expiration_days):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Process canceled.", reply_markup=create_main_markup())
+        return
+    if message.text == "⬅️ Back":
+        msg = bot.reply_to(message, "Enter expiration days:", reply_markup=create_cancel_markup(back_step=process_add_user_step2))
+        bot.register_next_step_handler(msg, process_add_user_step3, username, traffic_limit)
+        return
+    
+    try:
+        if message.text == "⏭️ Skip":
+            note = None
+        else:
+            note = message.text.strip()
+            if len(note) > 200:
+                bot.reply_to(message, "Note is too long (max 200 characters). Please enter a shorter note or press Skip:", reply_markup=create_cancel_markup_with_skip(back_step=process_add_user_step3, username=username, traffic_limit=traffic_limit))
+                bot.register_next_step_handler(message, process_add_user_step4, username, traffic_limit, expiration_days)
+                return
+
+        # Build command with or without note
+        if note is not None:
+            add_user_command = f"python3 {CLI_PATH} add-user -u \"{username}\" -t {traffic_limit} -e {expiration_days} -n \"{note}\""
+        else:
+            add_user_command = f"python3 {CLI_PATH} add-user -u \"{username}\" -t {traffic_limit} -e {expiration_days}"
+        
+        add_user_feedback = run_cli_command(add_user_command).strip()
+        
         bot.send_chat_action(message.chat.id, 'typing')
         
         uri_info_command = f"python3 {CLI_PATH} show-user-uri -u \"{username}\" -ip 4 -n -s"
