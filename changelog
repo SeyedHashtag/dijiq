@@ -1,31 +1,25 @@
-### 🚀 **[2.4.3] – Password Editing, Telegram Enhancements & Stability Fixes**
+### 🚑 **[2.4.4] – Traffic System Hotfix & Stability Improvements**
 
 *Released: 2025-11-06*
 
-#### 🔐 **Security & UI Improvements**
+#### 🐞 **Bug Fixes**
 
-* **Client-Side Password Validation** – Prevent weak or invalid passwords directly from the browser.
-* **Editable Password Field** – Users’ passwords can now be securely updated via the user modal.
+* Fixed incorrect user online status caused by outdated `online_count` logic.
+* Synchronized database state with live Hysteria2 API data for accurate user tracking.
+* Prevented false offline/online display in the web panel and Telegram bot.
 
-#### 🤖 **Telegram Bot Upgrades**
+#### 🧠 **Core Refactor**
 
-* Added **inline keyboard support** for clearing user notes.
-* Enhanced **user detail display**, showing notes and improved formatting for admins.
+* Rebuilt `traffic.py` into an object-oriented design using a new `TrafficManager` class.
+* Improved modularity and maintainability with clear separation for:
 
-#### ⚙️ **Backend & Server Enhancements**
+  * API interaction
+  * Database updates
+  * Traffic calculation
+  * Expired user handling
 
-* **Database-based Online Tracking:** Online user count now directly pulled from MongoDB instead of memory.
-* **Fixed traffic bug** causing incorrect offline user status in multi-node environments.
+#### 🧩 **Compatibility & Reliability**
 
-#### 🧹 **Maintenance & Dependencies**
-
-* Cleaned up `requirements.txt` to include only top-level dependencies.
-* Dependency upgrades:
-
-  * ⬆️ `psutil` → 7.1.3
-  * ⬆️ `certbot` → 5.1.0
-  * ⬆️ `python-dotenv` → 1.2.1
-  * ⬆️ `fastapi` → 0.121.0
-  * ⬆️ `aiohttp` → 3.13.2
-  * ⬆️ `idna` → 3.11
-  * ⬆️ `click` → 8.3.0
+* Reintroduced stable public methods (`traffic_status()` & `kick_expired_users()`) for CLI and API use.
+* Replaced scattered print statements with structured logging.
+* Added constants for better maintainability and consistency.
