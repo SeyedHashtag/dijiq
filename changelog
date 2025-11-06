@@ -1,22 +1,31 @@
-### 🌐 **[2.4.2] – Online User Count & Stability Updates**
+### 🚀 **[2.4.3] – Password Editing, Telegram Enhancements & Stability Fixes**
 
-*Released: 2025-10-31*
+*Released: 2025-11-06*
 
-#### 🌟 **New Feature**
+#### 🔐 **Security & UI Improvements**
 
-* 👥 **Online User Count from Nodes**
-  The system now aggregates real-time online user data directly from active nodes, giving a more accurate live connection count on the dashboard.
+* **Client-Side Password Validation** – Prevent weak or invalid passwords directly from the browser.
+* **Editable Password Field** – Users’ passwords can now be securely updated via the user modal.
 
-#### 🧩 **Improvements**
+#### 🤖 **Telegram Bot Upgrades**
 
-* 🧹 Removed unnecessary input validation logic to streamline core functions.
-* ⚙️ Improved consistency between node reports and server-side user tracking.
+* Added **inline keyboard support** for clearing user notes.
+* Enhanced **user detail display**, showing notes and improved formatting for admins.
 
-#### 📦 **Dependency Updates**
+#### ⚙️ **Backend & Server Enhancements**
 
-* ⬆️ **FastAPI** → 0.120.1
-* ⬆️ **Starlette** → 0.49.1
-* ⬆️ **aiofiles** → 25.1.0
-* ⬆️ **pymongo** → 4.15.3
-* ⬆️ **yarl** → 1.22.0
-* ⬆️ **multidict** → 6.7.0
+* **Database-based Online Tracking:** Online user count now directly pulled from MongoDB instead of memory.
+* **Fixed traffic bug** causing incorrect offline user status in multi-node environments.
+
+#### 🧹 **Maintenance & Dependencies**
+
+* Cleaned up `requirements.txt` to include only top-level dependencies.
+* Dependency upgrades:
+
+  * ⬆️ `psutil` → 7.1.3
+  * ⬆️ `certbot` → 5.1.0
+  * ⬆️ `python-dotenv` → 1.2.1
+  * ⬆️ `fastapi` → 0.121.0
+  * ⬆️ `aiohttp` → 3.13.2
+  * ⬆️ `idna` → 3.11
+  * ⬆️ `click` → 8.3.0
