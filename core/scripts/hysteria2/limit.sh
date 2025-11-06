@@ -121,16 +121,6 @@ check_expired_blocks() {
 
 check_ip_limit() {
     local username="$1"
-
-    local is_unlimited
-    is_unlimited=$(mongosh "$DB_NAME" --quiet --eval "
-        db.users.findOne({_id: '$username'}, {_id: 0, unlimited_user: 1})?.unlimited_user || false;
-    ")
-
-    if [ "$is_unlimited" == "true" ]; then
-        log_message "INFO" "User $username is exempt from IP limit. Skipping check."
-        return
-    fi
     
     local ip_count
     ip_count=$(mongosh "$DB_NAME" --quiet --eval "
@@ -160,7 +150,17 @@ parse_log_line() {
                 fi
             else
                 add_ip_to_db "$username" "$ip_address"
-                check_ip_limit "$username"
+                
+                local is_unlimited
+                is_unlimited=$(mongosh "$DB_NAME" --quiet --eval "
+                    db.users.findOne({_id: '$username'}, {_id: 0, unlimited_user: 1})?.unlimited_user || false;
+                ")
+
+                if [ "$is_unlimited" == "true" ]; then
+                    log_message "INFO" "User $username is exempt from IP limit. Skipping check."
+                else
+                    check_ip_limit "$username"
+                fi
             fi
         elif echo "$log_line" | grep -q "client disconnected"; then
             remove_ip_from_db "$username" "$ip_address"
