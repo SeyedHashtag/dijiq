@@ -773,6 +773,15 @@ def stop_ip_limit():
     except Exception as e:
         click.echo(f'{e}', err=True)
 
+@cli.command('clean-ip-limit')
+def clean_ip_limit():
+    """Cleans the IP limiter database and unblocks all IPs."""
+    try:
+        cli_api.clean_ip_limiter()
+        click.echo('IP Limiter database and block list have been cleaned successfully.')
+    except Exception as e:
+        click.echo(f'Error cleaning IP limiter: {e}', err=True)
+
 @cli.command('config-ip-limit')
 @click.option('--block-duration', '-bd', type=int, help='New block duration in seconds')
 @click.option('--max-ips', '-mi', type=int, help='New maximum IPs per user')

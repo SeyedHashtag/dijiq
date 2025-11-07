@@ -768,6 +768,10 @@ def stop_ip_limiter():
     '''Stops the IP limiter service.'''
     run_cmd(['bash', Command.LIMIT_SCRIPT.value, 'stop'])
 
+def clean_ip_limiter():
+    """Cleans the IP limiter database and unblocks all IPs."""
+    run_cmd(['bash', Command.LIMIT_SCRIPT.value, 'clean'])
+
 def config_ip_limiter(block_duration: Optional[int] = None, max_ips: Optional[int] = None):
     '''Configures the IP limiter service.'''
     if block_duration is not None and block_duration <= 0:
