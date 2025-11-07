@@ -328,6 +328,15 @@ async def stop_ip_limit_api():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error stopping IP Limiter: {str(e)}')
 
+@router.post('/ip-limit/clean', response_model=DetailResponse, summary='Clean IP Limiter Database')
+async def clean_ip_limit_api():
+    """Cleans the IP Limiter database and unblocks all IPs."""
+    try:
+        cli_api.clean_ip_limiter()
+        return DetailResponse(detail='IP Limiter database and block list have been cleaned successfully.')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error cleaning IP Limiter: {str(e)}')
+
 @router.post('/ip-limit/config', response_model=DetailResponse, summary='Configure IP Limiter')
 async def config_ip_limit_api(config: IPLimitConfig):
     """Configures the IP Limiter service parameters."""
