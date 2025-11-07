@@ -77,7 +77,7 @@ unblock_ip() {
         iptables -D INPUT -s "$ip_address" -j DROP
         log_message "INFO" "Unblocked IP $ip_address"
     fi
-    sed -i "/$ip_address,/d" "$BLOCK_LIST"
+    sed -i "/^$ip_address,/d" "$BLOCK_LIST"
 }
 
 block_all_user_ips() {
@@ -131,6 +131,28 @@ check_ip_limit() {
         log_message "WARN" "User $username has $ip_count IPs (max: $MAX_IPS) - blocking all IPs"
         block_all_user_ips "$username"
     fi
+}
+
+clean_all() {
+    log_message "WARN" "Starting cleanup of all tracked IPs and blocks..."
+
+    if [ -s "$BLOCK_LIST" ]; then
+        while IFS=, read -r ip _; do
+            if [[ -n "$ip" ]]; then
+                unblock_ip "$ip"
+            fi
+        done < "$BLOCK_LIST"
+    fi
+
+    > "$BLOCK_LIST"
+    log_message "INFO" "All IPs unblocked and block list file cleared."
+
+    mongosh "$DB_NAME" --quiet --eval "
+        db.getCollection('$CONNECTIONS_COLLECTION').drop();
+    "
+    log_message "INFO" "MongoDB collection '$CONNECTIONS_COLLECTION' has been dropped."
+
+    log_message "WARN" "Cleanup complete."
 }
 
 parse_log_line() {
@@ -251,6 +273,9 @@ case "$1" in
     config)
         change_config "$2" "$3"
         ;;
+    clean)
+        clean_all
+        ;;
     run)
         log_message "INFO" "Monitoring Hysteria connections. Max IPs: $MAX_IPS, Block Duration: $BLOCK_DURATION s"
         log_message "INFO" "--------------------------------------------------------"
@@ -277,7 +302,7 @@ case "$1" in
         done
         ;;
     *)
-        echo "Usage: $0 {start|stop|config|run} [block_duration] [max_ips]"
+        echo "Usage: $0 {start|stop|config|run|clean} [block_duration] [max_ips]"
         exit 1
         ;;
 esac
