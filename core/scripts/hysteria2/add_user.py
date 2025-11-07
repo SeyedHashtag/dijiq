@@ -52,7 +52,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, creation_date
             "max_download_bytes": traffic_bytes,
             "expiration_days": expiration_days,
             "blocked": False,
-            "unlimited_user": unlimited_user
+            "unlimited_user": unlimited_user,
+            "status": "On-hold"
         }
         
         if note:

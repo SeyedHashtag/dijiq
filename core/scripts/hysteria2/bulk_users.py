@@ -63,7 +63,8 @@ def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unl
             "max_download_bytes": traffic_bytes,
             "expiration_days": expiration_days,
             "blocked": False,
-            "unlimited_user": unlimited_user
+            "unlimited_user": unlimited_user,
+            "status": "On-hold"
         }
         users_to_insert.append(user_doc)
 
