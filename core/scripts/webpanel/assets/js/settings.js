@@ -27,6 +27,7 @@ $(document).ready(function () {
         restore: contentSection.dataset.restoreUrl,
         startIpLimit: contentSection.dataset.startIpLimitUrl,
         stopIpLimit: contentSection.dataset.stopIpLimitUrl,
+        cleanIpLimit: contentSection.dataset.cleanIpLimitUrl,
         configIpLimit: contentSection.dataset.configIpLimitUrl,
         statusWarp: contentSection.dataset.statusWarpUrl,
         installWarp: contentSection.dataset.installWarpUrl,
@@ -493,6 +494,7 @@ $(document).ready(function () {
                 if (isRunning) {
                    $("#ip_limit_start").hide();
                    $("#ip_limit_stop").show();
+                   $("#ip_limit_clean").show();
                    $configTabLi.show();
                    fetchIpLimitConfig();
                    if ($ipLimitServiceForm.find(".alert-info").length === 0) {
@@ -501,6 +503,7 @@ $(document).ready(function () {
                 } else {
                    $("#ip_limit_start").show();
                    $("#ip_limit_stop").hide();
+                   $("#ip_limit_clean").hide();
                    $configTabLi.hide();
                    if ($('#ip-limit-config-tab').hasClass('active')) {
                        $('#ip-limit-service-tab').tab('show');
@@ -876,6 +879,19 @@ $(document).ready(function () {
         });
     }
 
+    function cleanIPLimit() {
+        confirmAction("clean the IP Limit database and unblock all IPs", function () {
+           sendRequest(
+               API_URLS.cleanIpLimit,
+               "POST",
+               null,
+               "IP Limit database cleaned successfully!",
+               "#ip_limit_clean",
+               true
+           );
+       });
+   }
+
     function configIPLimit() {
         if (!validateForm('ip_limit_config_form')) return;
         const blockDuration = $("#block_duration").val();
@@ -987,6 +1003,7 @@ $(document).ready(function () {
     $("#upload_backup").on("click", uploadBackup);
     $("#ip_limit_start").on("click", startIPLimit);
     $("#ip_limit_stop").on("click", stopIPLimit);
+    $("#ip_limit_clean").on("click", cleanIPLimit);
     $("#ip_limit_change_config").on("click", configIPLimit);
     $("#decoy_setup").on("click", setupDecoy);
     $("#decoy_stop").on("click", stopDecoy);

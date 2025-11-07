@@ -39,6 +39,7 @@
     data-restore-url="{{ url_for('restore_api') }}"
     data-start-ip-limit-url="{{ url_for('start_ip_limit_api') }}"
     data-stop-ip-limit-url="{{ url_for('stop_ip_limit_api') }}"
+    data-clean-ip-limit-url="{{ url_for('clean_ip_limit_api') }}"
     data-config-ip-limit-url="{{ url_for('config_ip_limit_api') }}"
     data-status-warp-url="{{ url_for('status_warp') }}"
     data-install-warp-url="{{ url_for('install_warp') }}"
@@ -404,6 +405,7 @@
                                                 Start
                                             </button>
                                             <button id="ip_limit_stop" type='button' class='btn btn-danger' style="display: none;">Stop</button>
+                                            <button id="ip_limit_clean" type='button' class='btn btn-warning' style="display: none; margin-left: 5px;">Clean Database</button>
                                         </form>
                                     </div>
 
