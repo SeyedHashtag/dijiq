@@ -1,25 +1,19 @@
-### 🚑 **[2.4.4] – Traffic System Hotfix & Stability Improvements**
+### 🚀 **[2.4.5] – IP Limiter Management & Cleanup Improvements**
 
-*Released: 2025-11-06*
+*Released: 2025-11-07*
 
-#### 🐞 **Bug Fixes**
+#### ✨ **New Features**
 
-* Fixed incorrect user online status caused by outdated `online_count` logic.
-* Synchronized database state with live Hysteria2 API data for accurate user tracking.
-* Prevented false offline/online display in the web panel and Telegram bot.
+* **Web UI:** Added “Clean IP Limiter” button to the settings page for easy management.
+* **API:** Introduced `/api/limit/clean` endpoint to reset the IP limiter state remotely.
+* **CLI:** Added `clean` command to manage IP limiter directly from the terminal.
 
-#### 🧠 **Core Refactor**
+#### 🧠 **Core Enhancements**
 
-* Rebuilt `traffic.py` into an object-oriented design using a new `TrafficManager` class.
-* Improved modularity and maintainability with clear separation for:
+* Implemented backend logic to fully reset and clean the IP limiter database.
+* Improved tracking and state handling for user IP connections.
 
-  * API interaction
-  * Database updates
-  * Traffic calculation
-  * Expired user handling
+#### 🐞 **Fixes**
 
-#### 🧩 **Compatibility & Reliability**
-
-* Reintroduced stable public methods (`traffic_status()` & `kick_expired_users()`) for CLI and API use.
-* Replaced scattered print statements with structured logging.
-* Added constants for better maintainability and consistency.
+* Fixed issue where resetting a user didn’t properly clear usage fields.
+* Ensured all disconnected users have their IPs removed from the limiter state.
