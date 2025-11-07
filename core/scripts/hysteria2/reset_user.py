@@ -2,8 +2,6 @@
 
 import init_paths
 import sys
-import os
-from datetime import date
 from db.database import db
 
 def reset_user(username):
@@ -26,15 +24,21 @@ def reset_user(username):
             print(f"Error: User '{username}' not found in the database.")
             return 1
 
-        updates = {
-            'upload_bytes': 0,
-            'download_bytes': 0,
-            'status': 'Offline',
-            'account_creation_date': date.today().strftime("%Y-%m-%d"),
-            'blocked': False
-        }
+        result = db.collection.update_one(
+            {'_id': username},
+            {
+                '$set': {
+                    'status': 'On-hold',
+                    'blocked': False
+                },
+                '$unset': {
+                    'account_creation_date': "",
+                    'download_bytes': "",
+                    'upload_bytes': ""
+                }
+            }
+        )
 
-        result = db.update_user(username, updates)
         if result.modified_count > 0:
             print(f"User '{username}' has been reset successfully.")
             return 0
