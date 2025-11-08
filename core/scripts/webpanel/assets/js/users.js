@@ -11,10 +11,12 @@ $(function () {
     const BULK_URI_URL = contentSection.dataset.bulkUriUrl;
     const USERS_BASE_URL = contentSection.dataset.usersBaseUrl;
     const GET_USER_URL_TEMPLATE = contentSection.dataset.getUserUrlTemplate;
+    const SEARCH_USERS_URL = contentSection.dataset.searchUrl;
 
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
     const passwordRegex = /^[a-zA-Z0-9]+$/;
     let cachedUserData = [];
+    let searchTimeout = null;
 
     function setCookie(name, value, days) {
         let expires = "";
@@ -65,10 +67,78 @@ $(function () {
     
     function validatePassword(inputElement, errorElement) {
         const password = $(inputElement).val();
-        // The password is valid if it's empty (no change) OR it matches the alphanumeric regex.
         const isValid = password === '' || passwordRegex.test(password);
         $(errorElement).text(isValid ? "" : "Password can only contain letters and numbers.");
         $('#editSubmitButton').prop('disabled', !isValid);
+    }
+    
+    function refreshUserList() {
+        const query = $("#searchInput").val().trim();
+        if (query !== "") {
+            performSearch();
+        } else {
+            restoreInitialView();
+        }
+    }
+
+    function performSearch() {
+        const query = $("#searchInput").val().trim();
+        const $userTableBody = $("#userTableBody");
+        const $paginationContainer = $("#paginationContainer");
+        const $userTotalCount = $("#user-total-count");
+
+        $paginationContainer.hide();
+        $userTableBody.css('opacity', 0.5).html('<tr><td colspan="14" class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Searching...</td></tr>');
+
+        $.ajax({
+            url: SEARCH_USERS_URL,
+            type: 'GET',
+            data: { q: query },
+            success: function (data) {
+                $userTableBody.html(data);
+                checkIpLimitServiceStatus();
+                const resultCount = $userTableBody.find('tr.user-main-row').length;
+                $userTotalCount.text(resultCount);
+            },
+            error: function () {
+                Swal.fire("Error!", "An error occurred during search.", "error");
+                $userTableBody.html('<tr><td colspan="14" class="text-center p-4 text-danger">Search failed to load.</td></tr>');
+            },
+            complete: function () {
+                $userTableBody.css('opacity', 1);
+            }
+        });
+    }
+
+    function restoreInitialView() {
+        const $userTableBody = $("#userTableBody");
+        const $paginationContainer = $("#paginationContainer");
+        const $userTotalCount = $("#user-total-count");
+
+        $userTableBody.css('opacity', 0.5).html('<tr><td colspan="14" class="text-center p-4"><i class="fas fa-spinner fa-spin"></i> Loading users...</td></tr>');
+
+        $.ajax({
+            url: USERS_BASE_URL,
+            type: 'GET',
+            success: function (data) {
+                const newBody = $(data).find('#userTableBody').html();
+                const newPagination = $(data).find('#paginationContainer').html();
+                const newTotalCount = $(data).find('#user-total-count').text();
+
+                $userTableBody.html(newBody);
+                $paginationContainer.html(newPagination).show();
+                $userTotalCount.text(newTotalCount);
+
+                checkIpLimitServiceStatus();
+            },
+            error: function () {
+                Swal.fire("Error!", "Could not restore the user list.", "error");
+                $userTableBody.html('<tr><td colspan="14" class="text-center p-4 text-danger">Failed to load users. Please refresh the page.</td></tr>');
+            },
+            complete: function () {
+                $userTableBody.css('opacity', 1);
+            }
+        });
     }
     
     $('#editPassword').on('input', function() {
@@ -118,6 +188,13 @@ $(function () {
         }).then((result) => {
             if (!result.isConfirmed) return;
 
+            Swal.fire({
+                title: 'Deleting...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
             if (selectedUsers.length > 1) {
                 $.ajax({
                     url: BULK_REMOVE_URL,
@@ -125,7 +202,7 @@ $(function () {
                     contentType: "application/json",
                     data: JSON.stringify({ usernames: selectedUsers })
                 })
-                .done(() => Swal.fire("Success!", "Selected users have been deleted.", "success").then(() => location.reload()))
+                .done(() => Swal.fire("Success!", "Selected users have been deleted.", "success").then(() => refreshUserList()))
                 .fail((err) => Swal.fire("Error!", err.responseJSON?.detail || "An error occurred while deleting users.", "error"));
             } else {
                 const singleUrl = REMOVE_USER_URL_TEMPLATE.replace('U', selectedUsers[0]);
@@ -133,7 +210,7 @@ $(function () {
                     url: singleUrl,
                     method: "DELETE"
                 })
-                .done(() => Swal.fire("Success!", "The user has been deleted.", "success").then(() => location.reload()))
+                .done(() => Swal.fire("Success!", "The user has been deleted.", "success").then(() => refreshUserList()))
                 .fail((err) => Swal.fire("Error!", err.responseJSON?.detail || "An error occurred while deleting the user.", "error"));
             }
         });
@@ -151,13 +228,23 @@ $(function () {
 
         jsonData.unlimited = jsonData.unlimited === 'on';
 
+        Swal.fire({
+            title: 'Adding...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
         $.ajax({
             url: url,
             method: "POST",
             contentType: "application/json",
             data: JSON.stringify(jsonData),
         })
-        .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+        .done(res => {
+            $('#addUserModal').modal('hide');
+            Swal.fire("Success!", res.detail, "success").then(() => refreshUserList());
+        })
         .fail(err => Swal.fire("Error!", err.responseJSON?.detail || "An error occurred.", "error"))
         .always(() => button.prop('disabled', false));
     });
@@ -213,13 +300,23 @@ $(function () {
         jsonData.blocked = jsonData.blocked === 'on';
         jsonData.unlimited_ip = jsonData.unlimited_ip === 'on';
 
+        Swal.fire({
+            title: 'Updating...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
         $.ajax({
             url: url,
             method: "PATCH",
             contentType: "application/json",
             data: JSON.stringify(jsonData),
         })
-        .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+        .done(res => {
+            $('#editUserModal').modal('hide');
+            Swal.fire("Success!", res.detail, "success").then(() => refreshUserList());
+        })
         .fail(err => Swal.fire("Error!", err.responseJSON?.detail, "error"))
         .always(() => button.prop('disabled', false));
     });
@@ -240,11 +337,19 @@ $(function () {
             confirmButtonText: `Yes, ${action} it!`,
         }).then((result) => {
             if (!result.isConfirmed) return;
+
+            Swal.fire({
+                title: `${action.charAt(0).toUpperCase() + action.slice(1)}ing...`,
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
             $.ajax({
                 url: urlTemplate.replace("U", encodeURIComponent(username)),
                 method: isDelete ? "DELETE" : "GET",
             })
-            .done(res => Swal.fire("Success!", res.detail, "success").then(() => location.reload()))
+            .done(res => Swal.fire("Success!", res.detail, "success").then(() => refreshUserList()))
             .fail(() => Swal.fire("Error!", `Failed to ${action} user.`, "error"));
         });
     });
@@ -352,19 +457,6 @@ $(function () {
             .then(() => Swal.fire({ icon: "success", title: "Links copied!", showConfirmButton: false, timer: 1200 }));
     });
 
-    function filterUsers() {
-        const searchText = $("#searchInput").val().toLowerCase();
-        $("#userTable tbody tr.user-main-row").each(function () {
-            const username = $(this).find("td:eq(2)").text().toLowerCase();
-            const note = $(this).data("note").toLowerCase();
-            const isVisible = username.includes(searchText) || note.includes(searchText);
-            $(this).toggle(isVisible);
-            if (!isVisible) {
-                $(this).next('tr.user-details-row').hide();
-            }
-        });
-    }
-
     $('#userTable').on('click', '.toggle-details-btn', function() {
         const $this = $(this);
         const icon = $this.find('i');
@@ -390,8 +482,23 @@ $(function () {
         $('#addUserModal a[data-toggle="tab"]').first().tab('show');
     });
 
-    $("#searchButton").on("click", filterUsers);
-    $("#searchInput").on("keyup", filterUsers);
+    $("#searchButton").on("click", performSearch);
+    $("#searchInput").on("keyup", function (e) {
+        clearTimeout(searchTimeout);
+        const query = $(this).val().trim();
+
+        if (e.key === 'Enter') {
+            performSearch();
+            return;
+        }
+        
+        if (query === "") {
+            searchTimeout = setTimeout(restoreInitialView, 300);
+            return;
+        }
+
+        searchTimeout = setTimeout(performSearch, 500);
+    });
 
     function initializeLimitSelector() {
         const savedLimit = getCookie('limit') || '50';

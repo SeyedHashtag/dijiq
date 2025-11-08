@@ -66,3 +66,31 @@ async def users_root(
     limit: int = Cookie(default=50, ge=1)
 ):
     return await get_users_page(request, templates, 1, limit)
+
+@router.get("/search/", name="search_users")
+async def search_users(
+    request: Request,
+    q: str = Query(""),
+    templates: Jinja2Templates = Depends(get_templates)
+):
+    try:
+        if not q:
+            all_users_data = []
+        else:
+            all_users_data = cli_api.list_users() or []
+        
+        query = q.lower()
+        
+        filtered_users_data = [
+            user_data for user_data in all_users_data
+            if query in user_data.get('username', '').lower() or query in user_data.get('note', '').lower()
+        ]
+
+        users: list[User] = [User.from_dict(user_data.get('username', ''), user_data) for user_data in filtered_users_data]
+
+        return templates.TemplateResponse(
+            'users_rows.html',
+            {'request': request, 'users': users}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

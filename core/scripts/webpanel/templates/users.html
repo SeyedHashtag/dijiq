@@ -49,11 +49,12 @@
     data-user-uri-url-template="{{ url_for('show_user_uri_api', username='U') }}"
     data-bulk-uri-url="{{ url_for('show_multiple_user_uris_api') }}"
     data-users-base-url="{{ url_for('users') }}"
-    data-get-user-url-template="{{ url_for('get_user_api', username='U') }}">
+    data-get-user-url-template="{{ url_for('get_user_api', username='U') }}"
+    data-search-url="{{ url_for('search_users') }}">
     <div class="container-fluid">
         <div class="card">
             <div class="card-header">
-                <h3 class="card-title">User List {% if total_users is defined %}({{ total_users }}){% endif %}</h3>
+                <h3 class="card-title">User List {% if total_users is defined %}(<span id="user-total-count">{{ total_users }}</span>){% endif %}</h3>
                 <div class="card-tools d-flex align-items-center flex-wrap">
 
                     <!-- Mobile Filter Dropdown -->
@@ -117,11 +118,6 @@
                 </div>
             </div>
             <div class="card-body table-responsive p-0">
-                {% if not users %}
-                <div class="alert alert-warning m-3" role="alert">
-                    No users found.
-                </div>
-                {% else %}
                 <table class="table table-bordered table-hover" id="userTable">
                     <thead>
                         <tr>
@@ -143,151 +139,13 @@
                             <th class="d-md-none text-center">Details</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for user in users|sort(attribute='username', case_sensitive=false) %}
-                        <tr class="user-main-row" data-note="{{ user.note or '' }}">
-                            <td>
-                                <input type="checkbox" class="user-checkbox" value="{{ user.username }}">
-                            </td>
-                            <td>{{ loop.index + ((current_page - 1) * limit) }}</td>
-                            <td data-username="{{ user.username }}">{{ user.username }}</td>
-                            <td class="d-none d-md-table-cell">
-                                {% if user.status == "Online" %}
-                                    <i class="fas fa-circle text-success"></i> Online
-                                    {% if user.online_count and user.online_count > 0 %}
-                                        ({{ user.online_count }})
-                                    {% endif %}
-                                {% elif user.status == "Offline" %}
-                                    <i class="fas fa-circle text-secondary"></i> Offline
-                                {% elif user.status == "On-hold" %}
-                                    <i class="fas fa-circle text-warning"></i> On-hold
-                                {% elif user.status == "Conflict" %}
-                                    <i class="fas fa-circle text-danger"></i> Conflict
-                                {% else %}
-                                    <i class="fas fa-circle text-danger"></i> {{ user.status }}
-                                {% endif %}
-                            </td>
-                            <td class="d-none d-md-table-cell">{{ user.traffic_used }}</td>
-                            <td class="d-none d-md-table-cell">{{ user.expiry_date }}</td>
-                            <td class="d-none d-md-table-cell">{{ user.expiry_days }}</td>
-                            <td class="d-none d-md-table-cell">{{ user.day_usage }}</td>
-                            <td class="d-none d-md-table-cell">
-                                {% if user.enable %}
-                                <i class="fas fa-check-circle text-success"></i>
-                                {% else %}
-                                <i class="fas fa-times-circle text-danger"></i>
-                                {% endif %}
-                            </td>
-                            <td class="d-none d-md-table-cell note-cell">
-                                {% if user.note %}
-                                    <span title="{{ user.note }}">{{ user.note | truncate(20, True) }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="d-none d-md-table-cell unlimited-ip-cell requires-iplimit-service" style="display: none;">
-                                {% if user.unlimited_ip %}
-                                <i class="fas fa-shield-alt text-primary"></i>
-                                {% else %}
-                                <i class="fas fa-times-circle text-muted"></i>
-                                {% endif %}
-                            </td>
-                            <td class="d-none d-md-table-cell text-nowrap">
-                                <a href="#" class="config-link" data-toggle="modal" data-target="#qrcodeModal"
-                                    data-username="{{ user.username }}">
-                                    <i class="fas fa-qrcode"></i>
-                                </a>
-                            </td>
-                            <td class="d-none d-md-table-cell text-nowrap">
-                                <button type="button" class="btn btn-sm btn-info edit-user"
-                                    data-user="{{ user.username }}" data-toggle="modal"
-                                    data-target="#editUserModal">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-warning reset-user"
-                                    data-user="{{ user.username }}">
-                                    <i class="fas fa-undo"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-danger delete-user"
-                                    data-user="{{ user.username }}">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                            <td class="d-md-none text-center">
-                                <button type="button" class="btn btn-sm btn-secondary toggle-details-btn">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </td>
-                        </tr>
-                        <tr class="user-details-row d-md-none" style="display: none;">
-                            <td colspan="4">
-                                <div class="user-details-content p-2">
-                                    <p><strong>Status:</strong>
-                                        <span>
-                                        {% if user.status == "Online" %}
-                                            <i class="fas fa-circle text-success"></i> Online
-                                            {% if user.online_count and user.online_count > 0 %}
-                                                ({{ user.online_count }})
-                                            {% endif %}
-                                        {% elif user.status == "Offline" %}
-                                            <i class="fas fa-circle text-secondary"></i> Offline
-                                        {% elif user.status == "On-hold" %}
-                                            <i class="fas fa-circle text-warning"></i> On-hold
-                                        {% elif user.status == "Conflict" %}
-                                            <i class="fas fa-circle text-danger"></i> Conflict
-                                        {% else %}
-                                            <i class="fas fa-circle text-danger"></i> {{ user.status }}
-                                        {% endif %}
-                                        </span>
-                                    </p>
-                                    <p><strong>Traffic Usage:</strong> <span>{{ user.traffic_used }}</span></p>
-                                    <p><strong>Expiry Date:</strong> <span>{{ user.expiry_date }}</span></p>
-                                    <p><strong>Expiry Days:</strong> <span>{{ user.expiry_days }}</span></p>
-                                    <p><strong>Day Usage:</strong> <span>{{ user.day_usage }}</span></p>
-                                    <p><strong>Note:</strong> <span>{{ user.note or 'N/A' }}</span></p>
-                                    <p><strong>Enable:</strong>
-                                        <span>
-                                            {% if user.enable %}
-                                            <i class="fas fa-check-circle text-success"></i> Enabled
-                                            {% else %}
-                                            <i class="fas fa-times-circle text-danger"></i> Disabled
-                                            {% endif %}
-                                        </span>
-                                    </p>
-                                    <p class="requires-iplimit-service" style="display: none;"><strong>Unlimited IP:</strong>
-                                        <span>
-                                            {% if user.unlimited_ip %}
-                                            <i class="fas fa-shield-alt text-primary"></i> Yes
-                                            {% else %}
-                                            <i class="fas fa-times-circle text-muted"></i> No
-                                            {% endif %}
-                                        </span>
-                                    </p>
-                                    <div class="mt-2">
-                                        <strong>Configs:</strong>
-                                        <a href="#" class="btn btn-sm btn-outline-secondary config-link" data-toggle="modal" data-target="#qrcodeModal" data-username="{{ user.username }}">
-                                            <i class="fas fa-qrcode"></i> Show
-                                        </a>
-                                    </div>
-                                    <div class="mt-2 user-details-actions">
-                                        <strong>Actions:</strong>
-                                        <button type="button" class="btn btn-sm btn-info edit-user" data-user="{{ user.username }}" data-toggle="modal" data-target="#editUserModal">
-                                            <i class="fas fa-edit"></i> Edit
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-warning reset-user" data-user="{{ user.username }}">
-                                            <i class="fas fa-undo"></i> Reset
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-danger delete-user" data-user="{{ user.username }}">
-                                            <i class="fas fa-trash"></i> Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
+                    <tbody id="userTableBody">
+                        {% set offset = (current_page - 1) * limit %}
+                        {% include 'users_rows.html' %}
                     </tbody>
                 </table>
-                {% endif %}
             </div>
-            <div class="card-footer clearfix">
+            <div class="card-footer clearfix" id="paginationContainer">
                 <div class="row">
                     <div class="col-sm-12 col-md-5 d-flex align-items-center">
                         <div class="dataTables_info" role="status" aria-live="polite">
