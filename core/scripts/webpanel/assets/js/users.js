@@ -257,6 +257,7 @@ $(function () {
         const trafficText = dataRow.find("td:eq(4)").text();
         const expiryText = dataRow.find("td:eq(6)").text();
         const note = dataRow.data('note');
+        const statusText = dataRow.find("td:eq(3)").text().trim();
         
         $('#editPasswordError').text('');
         $('#editSubmitButton').prop('disabled', false);
@@ -264,7 +265,13 @@ $(function () {
         $("#originalUsername").val(user);
         $("#editUsername").val(user);
         $("#editTrafficLimit").val(parseFloat(trafficText.split('/')[1]) || 0);
-        $("#editExpirationDays").val(parseInt(expiryText) || 0);
+
+        if (statusText.includes("On-hold")) {
+            $("#editExpirationDays").val('').attr("placeholder", "Paused");
+        } else {
+            $("#editExpirationDays").val(parseInt(expiryText) || 0).attr("placeholder", "");
+        }
+        
         $("#editNote").val(note || '');
         $("#editBlocked").prop("checked", !dataRow.find("td:eq(8) i").hasClass("text-success"));
         $("#editUnlimitedIp").prop("checked", dataRow.find(".unlimited-ip-cell i").hasClass("text-primary"));
