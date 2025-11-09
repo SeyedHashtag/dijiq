@@ -1,19 +1,13 @@
-### 🚀 **[2.4.5] – IP Limiter Management & Cleanup Improvements**
+### 🌟 **[2.4.6] – Server-Side User Search & UI Improvements**
 
-*Released: 2025-11-07*
+*Released: 2025-11-09*
 
 #### ✨ **New Features**
 
-* **Web UI:** Added “Clean IP Limiter” button to the settings page for easy management.
-* **API:** Introduced `/api/limit/clean` endpoint to reset the IP limiter state remotely.
-* **CLI:** Added `clean` command to manage IP limiter directly from the terminal.
-
-#### 🧠 **Core Enhancements**
-
-* Implemented backend logic to fully reset and clean the IP limiter database.
-* Improved tracking and state handling for user IP connections.
+* 🔍 **Server-Side Search:** Implemented backend search for users, improving performance for large user lists.
+* 👤 **Default On-Hold Status:** New users are now created with `On-hold` status by default.
 
 #### 🐞 **Fixes**
 
-* Fixed issue where resetting a user didn’t properly clear usage fields.
-* Ensured all disconnected users have their IPs removed from the limiter state.
+* ⛔ **CLI Fix:** Prevent unintended `creation_date` from being set in `add_user` command.
+* 🧩 **Web Fix:** Hide expiration days for users with `On-hold` status in the edit modal for clarity.
