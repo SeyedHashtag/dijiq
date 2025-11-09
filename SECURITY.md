@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-We only support the latest [release]:white_check_mark: of Hysteria2 Panel . Users are strongly encouraged to keep their installations updated to the most recent version.
+We only support the latest [release]:white_check_mark: of Blitz Panel . Users are strongly encouraged to keep their installations updated to the most recent version.
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Hysteria2, please report it by [emailing].
+If you discover a security vulnerability in Blitz, please report it by [emailing].
 
 Please include the following information in your report:
 - A description of the vulnerability and its potential impact
