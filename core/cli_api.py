@@ -275,20 +275,20 @@ def add_user(username: str, traffic_limit: int, expiration_days: int, password: 
     '''
     command = ['python3', Command.ADD_USER.value, username, str(traffic_limit), str(expiration_days)]
 
+    final_password = password if password else generate_password()
+    command.append(final_password)
+    
+    if unlimited:
+        command.append('true')
+    
     if note:
-        final_password = password if password else generate_password()
-        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
-        unlimited_str = 'true' if unlimited else 'false'
-        command.extend([final_password, final_creation_date, unlimited_str, note])
-    elif unlimited:
-        final_password = password if password else generate_password()
-        final_creation_date = creation_date if creation_date else datetime.now().strftime('%Y-%m-%d')
-        command.extend([final_password, final_creation_date, 'true'])
-    elif creation_date:
-        final_password = password if password else generate_password()
-        command.extend([final_password, creation_date])
-    elif password:
-        command.append(password)
+        if not unlimited: command.append('false')
+        command.append(note)
+    
+    if creation_date:
+        if not unlimited: command.append('false')
+        if not note: command.append('')
+        command.append(creation_date)
         
     run_cmd(command)
 
