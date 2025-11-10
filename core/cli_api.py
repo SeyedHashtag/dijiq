@@ -746,6 +746,36 @@ def reset_webpanel_credentials(new_username: str | None = None, new_password: st
     
     run_cmd(cmd_args)
 
+def change_webpanel_expiration(expiration_minutes: int):
+    '''Changes the session expiration time for the WebPanel.'''
+    if not expiration_minutes:
+        raise InvalidInputError('Error: Expiration minutes must be provided.')
+    run_cmd(
+        ['bash', Command.SHELL_WEBPANEL.value, 'changeexp', str(expiration_minutes)]
+    )
+
+
+def change_webpanel_root_path(root_path: str | None = None):
+    '''Changes the root path for the WebPanel. A new random path is generated if not provided.'''
+    cmd_args = ['bash', Command.SHELL_WEBPANEL.value, 'changeroot']
+    if root_path:
+        cmd_args.append(root_path)
+    run_cmd(cmd_args)
+
+
+def change_webpanel_domain_port(domain: str | None = None, port: int | None = None):
+    '''Changes the domain and/or port for the WebPanel.'''
+    if not domain and not port:
+        raise InvalidInputError('Error: At least a new domain or new port must be provided.')
+    
+    cmd_args = ['bash', Command.SHELL_WEBPANEL.value, 'changedomain']
+    if domain:
+        cmd_args.extend(['-d', domain])
+    if port:
+        cmd_args.extend(['-p', str(port)])
+    
+    run_cmd(cmd_args)
+
 def get_services_status() -> dict[str, bool] | None:
     '''Gets the status of all project services.'''
     if res := run_cmd(['bash', Command.SERVICES_STATUS.value]):
