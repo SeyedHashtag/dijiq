@@ -733,6 +733,31 @@ def get_webpanel_api_token() -> str | None:
     '''Gets the API token of WebPanel.'''
     return run_cmd(['bash', Command.SHELL_WEBPANEL.value, 'api-token'])
 
+def get_webpanel_env_config() -> dict[str, Any]:
+    '''Retrieves the current configuration for the WebPanel service from its .env file.'''
+    try:
+        if not os.path.exists(WEBPANEL_ENV_FILE):
+            return {}
+        
+        env_vars = dotenv_values(WEBPANEL_ENV_FILE)
+        config = {}
+
+        config['DOMAIN'] = env_vars.get('DOMAIN')
+        config['ROOT_PATH'] = env_vars.get('ROOT_PATH')
+        
+        port_val = env_vars.get('PORT')
+        if port_val and port_val.isdigit():
+            config['PORT'] = int(port_val)
+        
+        exp_val = env_vars.get('EXPIRATION_MINUTES')
+        if exp_val and exp_val.isdigit():
+            config['EXPIRATION_MINUTES'] = int(exp_val)
+            
+        return config
+    except Exception as e:
+        print(f"Error reading WebPanel .env file: {e}")
+        return {}
+
 def reset_webpanel_credentials(new_username: str | None = None, new_password: str | None = None):
     '''Resets the WebPanel admin username and/or password.'''
     if not new_username and not new_password:
