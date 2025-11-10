@@ -719,49 +719,6 @@ def get_web_panel_services_status():
     except Exception as e:
         click.echo(f'{e}', err=True)
 
-@cli.command('change-webpanel-exp')
-@click.option('--minutes', '-m', required=True, help='New session expiration time in minutes', type=int)
-def change_webpanel_exp(minutes: int):
-    """Changes the session expiration time for the WebPanel."""
-    try:
-        cli_api.change_webpanel_expiration(minutes)
-        click.echo(f'WebPanel session expiration successfully updated to {minutes} minutes.')
-        click.echo('WebPanel service has been restarted.')
-    except Exception as e:
-        click.echo(f'{e}', err=True)
-
-
-@cli.command('change-webpanel-root')
-@click.option('--path', '-p', required=False, help='New root path. If not provided, a random one will be generated.', type=str)
-def change_webpanel_root(path: str | None):
-    """Changes the root path for the WebPanel."""
-    try:
-        cli_api.change_webpanel_root_path(path)
-        click.echo(f'WebPanel root path updated successfully.')
-        new_url = cli_api.get_webpanel_url()
-        click.echo(f'New URL is accessible on: {new_url}')
-        click.echo('WebPanel and Caddy services have been restarted.')
-    except Exception as e:
-        click.echo(f'{e}', err=True)
-
-
-@cli.command('change-webpanel-domain-port')
-@click.option('--domain', '-d', required=False, help='New domain for WebPanel', type=str)
-@click.option('--port', '-p', required=False, help='New port for WebPanel', type=int)
-def change_webpanel_domain_port(domain: str | None, port: int | None):
-    """Changes the domain and/or port for the WebPanel."""
-    try:
-        if not domain and not port:
-            raise click.UsageError('Error: You must provide either --domain or --port, or both.')
-        
-        cli_api.change_webpanel_domain_port(domain, port)
-        click.echo(f'WebPanel domain/port configuration updated successfully.')
-        new_url = cli_api.get_webpanel_url()
-        click.echo(f'New URL is accessible on: {new_url}')
-        click.echo('Caddy service has been restarted.')
-    except Exception as e:
-        click.echo(f'{e}', err=True)
-
 
 @cli.command('get-services-status')
 def get_services_status():

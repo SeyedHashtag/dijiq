@@ -99,14 +99,22 @@ EOL
 
 # Listen for incoming requests on the specified domain and port
 $DOMAIN:$PORT {
+    # Define a route to handle all requests starting with ROOT_PATH('/$ROOT_PATH/')
     route /$ROOT_PATH/* {
+        # We don't strip the ROOT_PATH('/$ROOT_PATH/') from the request
+        # uri strip_prefix /$ROOT_PATH
+
+        # We are proxying all requests under the ROOT_PATH to FastAPI at 127.0.0.1:28260
+        # FastAPI handles these requests because we set the 'root_path' parameter in the FastAPI instance.
         reverse_proxy http://127.0.0.1:28260
     }
     
+    # Any request that doesn't start with the ROOT_PATH('/$ROOT_PATH/') will be blocked and no response will be sent to the client
     @blocked {
         not path /$ROOT_PATH/*
     }
     
+    # Abort the request, effectively dropping the connection without a response for invalid paths
     abort @blocked
 }
 EOL
@@ -294,20 +302,30 @@ stop_decoy_site() {
     cat <<EOL > "$CADDY_CONFIG_FILE"
 # Global configuration
 {
+    # Disable admin panel of the Caddy
     admin off
+    # Disable automatic HTTP to HTTPS redirects so the Caddy won't listen on port 80 (We need this port for other parts of the project)
     auto_https disable_redirects
 }
 
 # Listen for incoming requests on the specified domain and port
 $DOMAIN:$PORT {
+    # Define a route to handle all requests starting with ROOT_PATH('/$ROOT_PATH/')
     route /$ROOT_PATH/* {
+        # We don't strip the ROOT_PATH('/$ROOT_PATH/') from the request
+        # uri strip_prefix /$ROOT_PATH
+
+        # We are proxying all requests under the ROOT_PATH to FastAPI at 127.0.0.1:28260
+        # FastAPI handles these requests because we set the 'root_path' parameter in the FastAPI instance.
         reverse_proxy http://127.0.0.1:28260
     }
     
+    # Any request that doesn't start with the ROOT_PATH('/$ROOT_PATH/') will be blocked and no response will be sent to the client
     @blocked {
         not path /$ROOT_PATH/*
     }
     
+    # Abort the request, effectively dropping the connection without a response for invalid paths
     abort @blocked
 }
 EOL
@@ -381,136 +399,6 @@ reset_credentials() {
     fi
 }
 
-change_expiration() {
-    local new_expiration=$1
-
-    if [ -z "$new_expiration" ]; then
-        echo -e "${red}Usage: $0 changeexp <NEW_EXPIRATION_MINUTES>${NC}"
-        exit 1
-    fi
-
-    if [ ! -f "$WEBPANEL_ENV_FILE" ]; then
-        echo -e "${red}Error: Web panel .env file not found. Is the web panel configured?${NC}"
-        exit 1
-    fi
-
-    echo "Updating session expiration to: $new_expiration minutes"
-    if sudo sed -i "s|^EXPIRATION_MINUTES=.*|EXPIRATION_MINUTES=$new_expiration|" "$WEBPANEL_ENV_FILE"; then
-        echo "Restarting web panel service to apply changes..."
-        if systemctl restart hysteria-webpanel.service; then
-            echo -e "${green}Web panel session expiration updated successfully.${NC}"
-        else
-            echo -e "${red}Failed to restart hysteria-webpanel service. Please restart it manually.${NC}"
-        fi
-    else
-        echo -e "${red}Failed to update expiration in $WEBPANEL_ENV_FILE${NC}"
-        exit 1
-    fi
-}
-
-change_root_path() {
-    local new_root_path=$1
-
-    if [ ! -f "$WEBPANEL_ENV_FILE" ]; then
-        echo -e "${red}Error: Web panel .env file not found. Is the web panel configured?${NC}"
-        exit 1
-    fi
-
-    if [ -z "$new_root_path" ]; then
-        echo "Generating a new random root path..."
-        new_root_path=$(openssl rand -hex 16)
-    fi
-
-    echo "Updating root path to: $new_root_path"
-    if sudo sed -i "s|^ROOT_PATH=.*|ROOT_PATH=$new_root_path|" "$WEBPANEL_ENV_FILE"; then
-        echo "Updating Caddy configuration..."
-        update_caddy_file
-        if [ $? -ne 0 ]; then
-            echo -e "${red}Error: Failed to update the Caddyfile.${NC}"
-            exit 1
-        fi
-
-        echo "Restarting services to apply changes..."
-        if systemctl restart hysteria-webpanel.service && systemctl restart hysteria-caddy.service; then
-            echo -e "${green}Web panel root path updated successfully.${NC}"
-            echo -n "New URL: "
-            show_webpanel_url
-        else
-            echo -e "${red}Failed to restart services. Please restart them manually.${NC}"
-        fi
-    else
-        echo -e "${red}Failed to update root path in $WEBPANEL_ENV_FILE${NC}"
-        exit 1
-    fi
-}
-
-change_port_domain() {
-    local new_domain=""
-    local new_port=""
-    local changes_made=false
-
-    if [ ! -f "$WEBPANEL_ENV_FILE" ]; then
-        echo -e "${red}Error: Web panel .env file not found. Is the web panel configured?${NC}"
-        exit 1
-    fi
-
-    OPTIND=1
-    while getopts ":d:p:" opt; do
-        case $opt in
-            d) new_domain="$OPTARG" ;;
-            p) new_port="$OPTARG" ;;
-            \?) echo -e "${red}Invalid option: -$OPTARG${NC}" >&2; exit 1 ;;
-            :) echo -e "${red}Option -$OPTARG requires an argument.${NC}" >&2; exit 1 ;;
-        esac
-    done
-
-    if [ -z "$new_domain" ] && [ -z "$new_port" ]; then
-        echo -e "${red}Error: At least one option (-d <new_domain> or -p <new_port>) must be provided.${NC}"
-        echo -e "${yellow}Usage: $0 changedomain [-d new_domain] [-p new_port]${NC}"
-        exit 1
-    fi
-
-    if [ -n "$new_domain" ]; then
-        echo "Updating domain to: $new_domain"
-        if sudo sed -i "s|^DOMAIN=.*|DOMAIN=$new_domain|" "$WEBPANEL_ENV_FILE"; then
-            changes_made=true
-        else
-            echo -e "${red}Failed to update domain in $WEBPANEL_ENV_FILE${NC}"
-            exit 1
-        fi
-    fi
-
-    if [ -n "$new_port" ]; then
-        echo "Updating port to: $new_port"
-        if sudo sed -i "s|^PORT=.*|PORT=$new_port|" "$WEBPANEL_ENV_FILE"; then
-            changes_made=true
-        else
-            echo -e "${red}Failed to update port in $WEBPANEL_ENV_FILE${NC}"
-            exit 1
-        fi
-    fi
-
-    if [ "$changes_made" = true ]; then
-        echo "Updating Caddy configuration..."
-        update_caddy_file
-        if [ $? -ne 0 ]; then
-            echo -e "${red}Error: Failed to update the Caddyfile.${NC}"
-            exit 1
-        fi
-
-        echo "Restarting Caddy service to apply changes..."
-        if systemctl restart hysteria-caddy.service; then
-            echo -e "${green}Web panel domain/port updated successfully.${NC}"
-            echo -n "New URL: "
-            show_webpanel_url
-        else
-            echo -e "${red}Failed to restart Caddy. Please restart it manually.${NC}"
-        fi
-    else
-        echo -e "${yellow}No changes were made.${NC}"
-    fi
-}
-
 show_webpanel_url() {
     source /etc/hysteria/core/scripts/webpanel/.env
     local webpanel_url="https://$DOMAIN:$PORT/$ROOT_PATH/"
@@ -524,18 +412,18 @@ show_webpanel_api_token() {
 
 stop_service() {
     echo "Stopping Caddy..."
-    systemctl disable hysteria-caddy.service > /dev/null 2>&1
-    systemctl stop hysteria-caddy.service > /dev/null 2>&1
+    systemctl disable hysteria-caddy.service
+    systemctl stop hysteria-caddy.service
     echo "Caddy stopped."
     
     echo "Stopping Hysteria web panel..."
-    systemctl disable hysteria-webpanel.service > /dev/null 2>&1
-    systemctl stop hysteria-webpanel.service > /dev/null 2>&1
+    systemctl disable hysteria-webpanel.service
+    systemctl stop hysteria-webpanel.service
     echo "Hysteria web panel stopped."
 
     systemctl daemon-reload
-    rm -f /etc/hysteria/core/scripts/webpanel/.env
-    rm -f "$CADDY_CONFIG_FILE"
+    rm /etc/hysteria/core/scripts/webpanel/.env
+    rm "$CADDY_CONFIG_FILE"
 }
 
 case "$1" in
@@ -563,16 +451,6 @@ case "$1" in
         shift 
         reset_credentials "$@"
         ;;
-    changeexp)
-        change_expiration "$2"
-        ;;
-    changeroot)
-        change_root_path "$2"
-        ;;
-    changedomain)
-        shift
-        change_port_domain "$@"
-        ;;
     url)
         show_webpanel_url
         ;;
@@ -580,15 +458,12 @@ case "$1" in
         show_webpanel_api_token
         ;;
     *)
-        echo -e "${red}Usage: $0 {start|stop|decoy|stopdecoy|resetcreds|changeexp|changeroot|changedomain|url|api-token} [options]${NC}"
+        echo -e "${red}Usage: $0 {start|stop|decoy|stopdecoy|url|api-token} [options]${NC}"
         echo -e "${yellow}start <DOMAIN> <PORT> [ADMIN_USERNAME] [ADMIN_PASSWORD] [EXPIRATION_MINUTES] [DEBUG] [DECOY_PATH]${NC}"
         echo -e "${yellow}stop${NC}"
         echo -e "${yellow}decoy <DOMAIN> <PATH_TO_DECOY_SITE>${NC}"
         echo -e "${yellow}stopdecoy${NC}"
-        echo -e "${yellow}resetcreds [-u new_username] [-p new_password]${NC}"
-        echo -e "${yellow}changeexp <NEW_EXPIRATION_MINUTES>${NC}"
-        echo -e "${yellow}changeroot [NEW_ROOT_PATH] # Generates random if not provided${NC}"
-        echo -e "${yellow}changedomain [-d new_domain] [-p new_port]${NC}"
+        echo -e "${yellow}  resetcreds [-u new_username] [-p new_password]${NC}"
         echo -e "${yellow}url${NC}"
         echo -e "${yellow}api-token${NC}"
         exit 1
