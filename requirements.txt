@@ -3,7 +3,7 @@ aiohttp==3.13.2
 aiofiles==25.1.0
 
 # CLI tools
-click==8.3.0
+click==8.3.1
 
 # Utilities
 psutil==7.1.3
