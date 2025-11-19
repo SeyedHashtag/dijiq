@@ -10,6 +10,7 @@ class User(BaseModel):
     expiry_date: str
     expiry_days: str
     day_usage: str
+    day_usage_formatted: str
     enable: bool
     unlimited_ip: bool
     online_count: int = 0
@@ -39,6 +40,7 @@ class User(BaseModel):
                 'expiry_date': 'N/A',
                 'expiry_days': 'N/A',
                 'day_usage': 'N/A',
+                'day_usage_formatted': 'N/A',
                 'enable': False,
                 'unlimited_ip': False,
                 'online_count': 0,
@@ -51,22 +53,32 @@ class User(BaseModel):
         day_usage = "On-hold"
         display_expiry_days = "On-hold"
         display_expiry_date = "On-hold"
+        day_usage_formatted = "On-hold"
 
         if creation_date_str:
             try:
                 creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
-                day_usage = str((datetime.now() - creation_date).days)
+                day_usage_num = (datetime.now() - creation_date).days
+                day_usage = str(day_usage_num)
 
                 if expiration_days <= 0:
                     display_expiry_days = "Unlimited"
                     display_expiry_date = "Unlimited"
+                    day_usage_formatted = f"{day_usage}/Unlimited (0%)"
                 else:
                     display_expiry_days = str(expiration_days)
                     expiry_dt_obj = creation_date + timedelta(days=expiration_days)
                     display_expiry_date = expiry_dt_obj.strftime("%Y-%m-%d")
+
+                    day_usage_percentage = 0
+                    if expiration_days > 0:
+                        capped_day_usage = max(0, min(day_usage_num, expiration_days))
+                        day_usage_percentage = int((capped_day_usage / expiration_days) * 100)
+                    day_usage_formatted = f"{day_usage}/{display_expiry_days} ({day_usage_percentage}%)"
             except (ValueError, TypeError):
                 display_expiry_date = "Error"
                 day_usage = "Error"
+                day_usage_formatted = "Error"
 
         used_bytes = user_data.get("download_bytes", 0) + user_data.get("upload_bytes", 0)
         quota_bytes = user_data.get('max_download_bytes', 0)
@@ -88,6 +100,7 @@ class User(BaseModel):
             'expiry_date': display_expiry_date,
             'expiry_days': display_expiry_days,
             'day_usage': day_usage,
+            'day_usage_formatted': day_usage_formatted,
             'enable': not user_data.get('blocked', False),
             'unlimited_ip': user_data.get('unlimited_user', False),
             'online_count': user_data.get('online_count', 0),
