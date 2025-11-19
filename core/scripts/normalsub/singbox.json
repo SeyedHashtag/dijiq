@@ -91,6 +91,9 @@
   "route": {
     "auto_detect_interface": true,
     "final": "proxy",
+    "default_domain_resolver": {
+      "server": "local-dns"
+    },
     "rule_set": [
       {
         "download_detour": "direct",
