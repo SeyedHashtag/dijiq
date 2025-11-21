@@ -13,15 +13,12 @@ if str(core_scripts_dir) not in sys.path:
 
 from paths import CONFIG_FILE, CLI_PATH 
 
+WARP_SCRIPT_PATH = Path(__file__).resolve().parent / "warp.py"
 TEMP_CONFIG = Path("/etc/hysteria/config_temp.json")
 
 
 def systemctl_active(service: str) -> bool:
     return subprocess.run(["systemctl", "is-active", "--quiet", service]).returncode == 0
-
-
-def run_shell(command: str):
-    subprocess.run(command, shell=True, check=False)
 
 
 def load_config(path: Path):
@@ -99,7 +96,7 @@ def restart_hysteria():
 def main():
     if systemctl_active("wg-quick@wgcf.service"):
         print("🧹 Uninstalling WARP...")
-        run_shell('bash -c "bash <(curl -fsSL https://raw.githubusercontent.com/ReturnFI/Warp/main/warp.sh) dwg"')
+        subprocess.run([sys.executable, str(WARP_SCRIPT_PATH), "uninstall"])
         config = load_config(CONFIG_FILE)
         if config:
             config = reset_acl_inline(config)

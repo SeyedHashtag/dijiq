@@ -10,6 +10,7 @@ if str(core_scripts_dir) not in sys.path:
 
 from paths import *
 
+WARP_SCRIPT_PATH = Path(__file__).resolve().parent / "warp.py"
 WARP_DEVICE = "wgcf"
 
 def is_service_active(service_name: str) -> bool:
@@ -18,8 +19,7 @@ def is_service_active(service_name: str) -> bool:
 
 def install_warp():
     print("Installing WARP...")
-    result = subprocess.run("bash <(curl -fsSL https://raw.githubusercontent.com/ReturnFI/Warp/main/warp.sh) wgx", 
-                             shell=True, executable="/bin/bash")
+    result = subprocess.run([sys.executable, str(WARP_SCRIPT_PATH), "install"])
     return result.returncode == 0
 
 
