@@ -9,14 +9,14 @@ install_dependencies() {
     sudo apt update -y > /dev/null 2>&1
 
     sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl > /dev/null 2>&1
-
-    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | sudo tee /etc/apt/trusted.gpg.d/caddy.asc > /dev/null 2>&1
-    echo "deb [signed-by=/etc/apt/trusted.gpg.d/caddy.asc] https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null 2>&1
-
-    sudo apt update -y > /dev/null 2>&1
-
     apt install libnss3-tools -y > /dev/null 2>&1
 
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg > /dev/null 2>&1
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null 2>&1
+    chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+
+    sudo apt update -y > /dev/null 2>&1
     sudo apt install -y caddy
     if [ $? -ne 0 ]; then
         echo -e "${red}Error: Failed to install Caddy. ${NC}"

@@ -23,8 +23,12 @@ install_caddy_if_needed() {
     echo -e "${yellow}Installing Caddy...${NC}"
     sudo apt update -y > /dev/null 2>&1
     sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl > /dev/null 2>&1
-    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | sudo tee /etc/apt/trusted.gpg.d/caddy-stable.asc > /dev/null 2>&1
-    echo "deb [signed-by=/etc/apt/trusted.gpg.d/caddy-stable.asc] https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null 2>&1
+
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg > /dev/null 2>&1
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null 2>&1
+    chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+
     sudo apt update -y > /dev/null 2>&1
     sudo apt install -y caddy
     if [ $? -ne 0 ]; then
