@@ -1,19 +1,21 @@
-# 📦 **Release 2.4.8 — Web Panel Config Manager & WARP Logging Upgrade**
+## 📦 **Release 2.4.9 — Smarter Upgrades & Cleaner UI**
 
 *Released: 2025-11-21*
 
-### 🛠️ **Web Panel Configuration Management**
+## 🛠️ **Fixes & Improvements**
 
-* ✨ Added new **configuration management functions** to the web panel
-* 🧩 Centralizes settings logic for easier maintenance
-* 🖥️ Prepares the panel for future advanced configuration features
-* 🔧 Improves backend–frontend consistency and reduces duplicated logic
+### 🔧 **Upgrade System Enhancements**
 
----
+* 🛠️ **Automatically fixes outdated Caddy repository URLs** to prevent installation/upgrade failures
+* 🔄 Ensures smoother system upgrades on all supported distros
 
-### 🐍 **WARP Logging Refactor**
+### 📦 **Dependency & Installation Updates**
 
-* 🔄 Replaced custom, ad-hoc logging with Python’s built-in **logging module**
-* 📘 Standardized log formats across WARP management functions
-* 🧹 Cleaned up unused code paths, improving readability and reliability
-* ⚙️ Better error visibility, structured logging, and easier debugging
+* 🆙 Updated **Caddy installation command** to follow the latest recommended upstream method
+* 🛡️ Improves reliability and compatibility for new deployments
+
+### 🎨 **Frontend Improvements**
+
+* ✨ Added **conditional rendering for URI cards** in the subpage UI
+* 📱 Prevents empty or irrelevant sections from appearing
+* 🧼 Creates a cleaner, more user-friendly interface
