@@ -107,37 +107,31 @@
                 </div>
             </section>
 
-            <section class="card uri-section {% if blocked %}blocked{% endif %}">
+            {% if local_uris and not blocked %}
+            <section class="card uri-section">
                 <div class="card-header">
                     <i class="fas fa-server"></i>
                     <h2>Manual Connection URIs</h2>
                 </div>
                 <div class="card-body">
-                    {% if blocked %}
-                        <div class="blocked-message">
-                             <i class="fas fa-ban"></i>
-                             <h3>Connections Disabled</h3>
-                             <p>{{ usage_raw }}</p>
+                    <div class="qr-grid">
+                    {% for item in local_uris %}
+                        <div class="qr-item">
+                            <h3 class="qr-title">{{ item.label }}</h3>
+                            {% if item.qrcode %}
+                                <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
+                                <button class="btn btn-secondary" onclick="copyToClipboard('{{ item.uri }}')">
+                                    <i class="fas fa-copy"></i> Copy URI
+                                </button>
+                            {% else %}
+                                <p class="uri-unavailable">URI not available</p>
+                            {% endif %}
                         </div>
-                    {% else %}
-                        <div class="qr-grid">
-                        {% for item in local_uris %}
-                            <div class="qr-item">
-                                <h3 class="qr-title">{{ item.label }}</h3>
-                                {% if item.qrcode %}
-                                    <img src="{{ item.qrcode }}" alt="{{ item.label }} QR Code" class="qrcode">
-                                    <button class="btn btn-secondary" onclick="copyToClipboard('{{ item.uri }}')">
-                                        <i class="fas fa-copy"></i> Copy URI
-                                    </button>
-                                {% else %}
-                                    <p class="uri-unavailable">URI not available</p>
-                                {% endif %}
-                            </div>
-                        {% endfor %}
-                        </div>
-                    {% endif %}
+                    {% endfor %}
+                    </div>
                 </div>
             </section>
+            {% endif %}
 
             {% if node_uris and not blocked %}
             <section class="card uri-section">
