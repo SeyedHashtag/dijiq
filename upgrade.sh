@@ -37,6 +37,32 @@ check_avx_support() {
     fi
 }
 
+# ========== Fix Caddy Repository ==========
+fix_caddy_repo() {
+    info "Checking Caddy repository configuration..."
+    local caddy_source_list="/etc/apt/sources.list.d/caddy-stable.list"
+    local old_caddy_key="/etc/apt/trusted.gpg.d/caddy-stable.asc"
+    
+    if [[ -f "$caddy_source_list" ]] && grep -q "caddy.asc" "$caddy_source_list"; then
+        warn "Outdated Caddy repository configuration detected. Fixing it..."
+        
+        if [[ -f "$old_caddy_key" ]]; then
+            rm -f "$old_caddy_key"
+            info "Removed old Caddy GPG key: $old_caddy_key"
+        fi
+        
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee "$caddy_source_list" > /dev/null
+        chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        chmod o+r "$caddy_source_list"
+        
+        info "Running apt update to apply repository changes..."
+        apt-get update -qq
+        success "Caddy repository configuration has been updated."
+    else
+        success "Caddy repository configuration is up-to-date."
+    fi
+}
 
 # ========== Install MongoDB ==========
 install_mongodb() {
@@ -156,6 +182,9 @@ done
 
 # ========== Check AVX Support Prerequisite ==========
 check_avx_support
+
+# ========== Fix Caddy Repo Prerequisite ==========
+fix_caddy_repo
 
 # ========== Install MongoDB Prerequisite ==========
 install_mongodb
