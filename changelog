@@ -1,29 +1,19 @@
-🎉 **Release 2.4.7 – WARP Installer Refactor & Config Improvements**
+# 📦 **Release 2.4.8 — Web Panel Config Manager & WARP Logging Upgrade**
 
 *Released: 2025-11-21*
 
-### 🔁 **Refactor**
+### 🛠️ **Web Panel Configuration Management**
 
-* 🐍 **Refactor(WARP):** Replaced the old bash-based WARP installer with a clean, robust **Python installer script**, improving maintainability, cross-platform compatibility, and readability. 🚀🐍
-
-### ⚙️ **Configuration Enhancements**
-
-* 🛡️ **fix(config):** Added **default domain resolver** to the Singbox 1.14 routing configuration for improved DNS reliability and smoother routing.
-  👉 Contribution by **@SeyedHashtag** 💡🙌
+* ✨ Added new **configuration management functions** to the web panel
+* 🧩 Centralizes settings logic for easier maintenance
+* 🖥️ Prepares the panel for future advanced configuration features
+* 🔧 Improves backend–frontend consistency and reduces duplicated logic
 
 ---
 
-## 📦 **Dependency Updates**
+### 🐍 **WARP Logging Refactor**
 
-Dependencies were updated to ensure better performance, security, and compatibility:
-
-* 📦 Bumped **click** → `8.3.1`
-* 📦 Bumped **fastapi** → `0.121.2`
-* 📦 Bumped **pymongo** → `4.15.4`
-* 📦 Bumped **pydantic-settings** → `2.12.0`
-* 📦 Bumped **hypercorn** → `0.18.0`
-
-
-## 🙌 **Special Thanks**
-
-💙 Special appreciation to **@SeyedHashtag** for contributing the DNS resolver configuration fix and supporting cleaner routing setups.
+* 🔄 Replaced custom, ad-hoc logging with Python’s built-in **logging module**
+* 📘 Standardized log formats across WARP management functions
+* 🧹 Cleaned up unused code paths, improving readability and reliability
+* ⚙️ Better error visibility, structured logging, and easier debugging
