@@ -1,13 +1,29 @@
-### 🌟 **[2.4.6] – Server-Side User Search & UI Improvements**
+🎉 **Release 2.4.7 – WARP Installer Refactor & Config Improvements**
 
-*Released: 2025-11-09*
+*Released: 2025-11-21*
 
-#### ✨ **New Features**
+### 🔁 **Refactor**
 
-* 🔍 **Server-Side Search:** Implemented backend search for users, improving performance for large user lists.
-* 👤 **Default On-Hold Status:** New users are now created with `On-hold` status by default.
+* 🐍 **Refactor(WARP):** Replaced the old bash-based WARP installer with a clean, robust **Python installer script**, improving maintainability, cross-platform compatibility, and readability. 🚀🐍
 
-#### 🐞 **Fixes**
+### ⚙️ **Configuration Enhancements**
 
-* ⛔ **CLI Fix:** Prevent unintended `creation_date` from being set in `add_user` command.
-* 🧩 **Web Fix:** Hide expiration days for users with `On-hold` status in the edit modal for clarity.
+* 🛡️ **fix(config):** Added **default domain resolver** to the Singbox 1.14 routing configuration for improved DNS reliability and smoother routing.
+  👉 Contribution by **@SeyedHashtag** 💡🙌
+
+---
+
+## 📦 **Dependency Updates**
+
+Dependencies were updated to ensure better performance, security, and compatibility:
+
+* 📦 Bumped **click** → `8.3.1`
+* 📦 Bumped **fastapi** → `0.121.2`
+* 📦 Bumped **pymongo** → `4.15.4`
+* 📦 Bumped **pydantic-settings** → `2.12.0`
+* 📦 Bumped **hypercorn** → `0.18.0`
+
+
+## 🙌 **Special Thanks**
+
+💙 Special appreciation to **@SeyedHashtag** for contributing the DNS resolver configuration fix and supporting cleaner routing setups.
