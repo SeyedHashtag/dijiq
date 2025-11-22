@@ -41,19 +41,28 @@ check_avx_support() {
 fix_caddy_repo() {
     info "Checking Caddy repository configuration..."
     local caddy_source_list="/etc/apt/sources.list.d/caddy-stable.list"
-    local old_caddy_key="/etc/apt/trusted.gpg.d/caddy-stable.asc"
-    
-    if [[ -f "$caddy_source_list" ]] && grep -q "caddy.asc" "$caddy_source_list"; then
+    local new_caddy_keyring="/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+    local old_caddy_key="/etc/apt/trusted.gpg.d/caddy.asc"
+
+    if [[ -f "$old_caddy_key" ]] || { [[ -f "$caddy_source_list" ]] && grep -q "caddy.asc" "$caddy_source_list"; }; then
         warn "Outdated Caddy repository configuration detected. Fixing it..."
         
         if [[ -f "$old_caddy_key" ]]; then
             rm -f "$old_caddy_key"
-            info "Removed old Caddy GPG key: $old_caddy_key"
+            info "Removed old Caddy GPG key."
         fi
         
-        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        rm -f "$new_caddy_keyring"
+        info "Downloading new Caddy GPG key..."
+        if ! curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o "$new_caddy_keyring"; then
+            error "Failed to download or process the Caddy GPG key."
+            exit 1
+        fi
+        
+        info "Updating Caddy sources list..."
         curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee "$caddy_source_list" > /dev/null
-        chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        
+        chmod o+r "$new_caddy_keyring"
         chmod o+r "$caddy_source_list"
         
         info "Running apt update to apply repository changes..."
