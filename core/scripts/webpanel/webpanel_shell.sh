@@ -6,10 +6,21 @@ CADDY_CONFIG_FILE="/etc/hysteria/core/scripts/webpanel/Caddyfile"
 WEBPANEL_ENV_FILE="/etc/hysteria/core/scripts/webpanel/.env"
 
 install_dependencies() {
-    sudo apt update -y > /dev/null 2>&1
+    if command -v caddy &> /dev/null; then
+        echo -e "${green}Caddy is already installed.${NC}"
+        if systemctl list-units --full -all | grep -q 'caddy.service'; then
+            if systemctl is-active --quiet caddy.service; then
+                echo -e "${yellow}Stopping and disabling default caddy.service...${NC}"
+                systemctl stop caddy > /dev/null 2>&1
+                systemctl disable caddy > /dev/null 2>&1
+            fi
+        fi
+        return 0
+    fi
 
-    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl > /dev/null 2>&1
-    apt install libnss3-tools -y > /dev/null 2>&1
+    echo -e "${yellow}Installing Caddy...${NC}"
+    sudo apt update -y > /dev/null 2>&1
+    sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl libnss3-tools > /dev/null 2>&1
 
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg > /dev/null 2>&1
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null 2>&1
@@ -22,10 +33,8 @@ install_dependencies() {
         echo -e "${red}Error: Failed to install Caddy. ${NC}"
         exit 1
     fi
-
     systemctl stop caddy > /dev/null 2>&1
     systemctl disable caddy > /dev/null 2>&1
-
     echo -e "${green}Caddy installed successfully. ${NC}"
 }
 
