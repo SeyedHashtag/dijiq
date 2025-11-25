@@ -130,9 +130,9 @@ def show_uri(args: argparse.Namespace) -> None:
         print("\033[0;31mError:\033[0m Database connection failed.")
         return
 
-    if not is_service_active("hysteria-server.service"):
-        print("\033[0;31mError:\033[0m Hysteria2 is not active.")
-        return
+    # if not is_service_active("hysteria-server.service"):
+    #     print("\033[0;31mError:\033[0m Hysteria2 is not active.")
+    #     return
     
     try:
         with open(CONFIG_FILE, 'r') as f:
