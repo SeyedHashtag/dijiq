@@ -1,7 +1,7 @@
 import json
 import datetime
 from telebot import types
-from utils.command import bot
+from utils.command import bot, ADMIN_USER_IDS
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
 from utils.payments import CryptomusPayment
@@ -21,6 +21,33 @@ def create_username_from_user_id(user_id):
     """Create a username using the required format: {telegram numeric id}t{exact date and time}"""
     time_str = format_datetime_string()
     return f"{user_id}t{time_str}"
+
+def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id):
+    """Send a notification to all admins about a successful payment"""
+    try:
+        notification_message = (
+            f"💰 <b>Payment Notification</b>\n\n"
+            f"✅ <b>Successful Payment Received</b>\n\n"
+            f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
+            f"📱 <b>Username:</b> <code>{username}</code>\n"
+            f"📊 <b>Plan Size:</b> {plan_gb} GB\n"
+            f"💵 <b>Amount:</b> ${price}\n"
+            f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>\n"
+            f"📅 <b>Timestamp:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        
+        # Send notification to all admins
+        for admin_id in ADMIN_USER_IDS:
+            try:
+                bot.send_message(
+                    admin_id,
+                    notification_message,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                print(f"Failed to send notification to admin {admin_id}: {str(e)}")
+    except Exception as e:
+        print(f"Error in send_admin_payment_notification: {str(e)}")
 
 @bot.message_handler(func=lambda message: any(
     message.text == translations["purchase_plan"] 
@@ -213,6 +240,7 @@ def handle_check_payment(call):
         user_id = payment_record.get('user_id')
         plan_gb = payment_record.get('plan_gb')
         days = payment_record.get('days')
+        price = payment_record.get('price')
         
         # Create a username based on user ID and current timestamp
         username = create_username_from_user_id(user_id)
@@ -222,6 +250,9 @@ def handle_check_payment(call):
         result = api_client.add_user(username, int(plan_gb), int(days))
         
         if result:
+            # Send admin notification about successful payment
+            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id)
+            
             # Get user URI from API
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
@@ -305,6 +336,7 @@ def process_payment_webhook(request_data):
                 user_id = payment_record.get('user_id')
                 plan_gb = payment_record.get('plan_gb')
                 days = payment_record.get('days')
+                price = payment_record.get('price')
 
                 # Create a username based on user ID and current timestamp
                 username = create_username_from_user_id(user_id)
@@ -314,6 +346,9 @@ def process_payment_webhook(request_data):
                 result = api_client.add_user(username, int(plan_gb), int(days))
 
                 if result:
+                    # Send admin notification about successful payment
+                    send_admin_payment_notification(user_id, username, plan_gb, price, record_key)
+                    
                     # Get subscription URL
                     sub_url = api_client.get_subscription_url(username)
 
