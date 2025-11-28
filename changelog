@@ -1,21 +1,28 @@
-## 📦 **Release 2.4.9 — Smarter Upgrades & Cleaner UI**
+## 🎉 **Release 2.4.10 — Better Upgrades, Cleaner UI & Support Link**
 
-*Released: 2025-11-21*
+*Released: 2025-11-28*
 
-## 🛠️ **Fixes & Improvements**
+### 💖 **Donation & Support**
 
-### 🔧 **Upgrade System Enhancements**
+* 🆕 Added **“Support Us”** link in the sidebar
+* 💸 Introduced a **donation modal** to help support project development
 
-* 🛠️ **Automatically fixes outdated Caddy repository URLs** to prevent installation/upgrade failures
-* 🔄 Ensures smoother system upgrades on all supported distros
+---
 
-### 📦 **Dependency & Installation Updates**
+### 🎨 **User Interface**
 
-* 🆙 Updated **Caddy installation command** to follow the latest recommended upstream method
-* 🛡️ Improves reliability and compatibility for new deployments
+* 🎨 Fixed **QR code type label colors** — now uses muted text for better readability
+* 🔍 Cleaned up **URI display** by commenting out broken `hysteria-server` service checks
 
-### 🎨 **Frontend Improvements**
+### 🔧 **Upgrade Improvements**
 
-* ✨ Added **conditional rendering for URI cards** in the subpage UI
-* 📱 Prevents empty or irrelevant sections from appearing
-* 🧼 Creates a cleaner, more user-friendly interface
+* 📦 Enhanced **Caddy installation process**
+* 🔁 Added handling for **existing Caddy services** to prevent conflicts
+* 🔐 Updated **Caddy repo & GPG key management** for compatibility with new upstream changes
+
+---
+
+## 📦 **Dependency Updates**
+
+* ⬆️ Bumped **pydantic** → `2.12.5`
+* ⬆️ Bumped **fastapi** → `0.122.0`
