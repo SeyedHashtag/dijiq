@@ -586,8 +586,9 @@ def singbox(action: str, domain: str, port: int):
               help='Action to perform: start, stop, or edit_subpath')
 @click.option('--domain', '-d', required=False, help='Domain name for SSL (for start action)', type=str)
 @click.option('--port', '-p', required=False, help='Port number for NormalSub service (for start action)', type=int)
-@click.option('--subpath', '-sp', required=False, help='New subpath (alphanumeric, for edit_subpath action)', type=str)
+@click.option('--subpath', '-sp', required=False, help="New subpath (e.g., 'path' or 'path/to/resource', for edit_subpath action)", type=str)
 def normalsub(action: str, domain: str, port: int, subpath: str):
+    """Manage the NormalSub service."""
     try:
         if action == 'start':
             if not domain or not port:

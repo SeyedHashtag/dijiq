@@ -142,9 +142,13 @@
                                             <div class='form-group'>
                                                 <label for='normal_subpath_input'>Subscription Path Segment:</label>
                                                 <input type='text' class='form-control' id='normal_subpath_input'
-                                                    placeholder='e.g., mysub (becomes /mysub/...)'>
+                                                    placeholder='e.g., mysub or path/to/resource'>
+                                                <small class="form-text text-muted">
+                                                    This path will be part of the URL. Do not use a leading or trailing slash.
+                                                    Example: <code>path/to/resource</code>
+                                                </small>
                                                 <div class="invalid-feedback">
-                                                    Please enter a valid subpath (alphanumeric characters only, e.g., mysub).
+                                                    Invalid format. Use alphanumeric segments separated by single slashes.
                                                 </div>
                                             </div>
                                             <button id="normal_subpath_save_btn" type='button' class='btn btn-primary'>

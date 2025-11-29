@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from typing import Any, Optional
 from dotenv import dotenv_values
+import re
 
 import traffic
 
@@ -661,8 +662,8 @@ def edit_normalsub_subpath(new_subpath: str):
     '''Edits the subpath for NormalSub service.'''
     if not new_subpath:
         raise InvalidInputError('Error: New subpath cannot be empty.')
-    if not new_subpath.isalnum():
-        raise InvalidInputError('Error: New subpath must contain only alphanumeric characters (a-z, A-Z, 0-9).')
+    if not re.match(r"^[a-zA-Z0-9]+(?:/[a-zA-Z0-9]+)*$", new_subpath):
+        raise InvalidInputError("Error: Invalid subpath format. Must be alphanumeric segments separated by single slashes (e.g., 'path' or 'path/to/resource').")
     
     run_cmd(['bash', Command.INSTALL_NORMALSUB.value, 'edit_subpath', new_subpath])
 

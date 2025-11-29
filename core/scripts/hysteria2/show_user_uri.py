@@ -206,7 +206,7 @@ def show_uri(args: argparse.Namespace) -> None:
     if args.normalsub and is_service_active("hysteria-normal-sub.service"):
         domain, port, subpath = get_normalsub_domain_and_port()
         if domain and port:
-            print(f"\nNormal-SUB Sublink:\nhttps://{domain}:{port}/{subpath}/sub/normal/{auth_password}#Hysteria2\n")
+            print(f"\nNormal-SUB Sublink:\nhttps://{domain}:{port}/{subpath}/{auth_password}#Hysteria2\n")
 
 def main():
     parser = argparse.ArgumentParser(description="Hysteria2 URI Generator")

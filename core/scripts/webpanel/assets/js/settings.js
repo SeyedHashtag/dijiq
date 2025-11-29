@@ -88,7 +88,8 @@ $(document).ready(function () {
 
     function isValidSubPath(subpath) {
         if (!subpath) return false;
-        return /^[a-zA-Z0-9]+$/.test(subpath);
+        const subpathRegex = /^[a-zA-Z0-9]+(?:\/[a-zA-Z0-9]+)*$/;
+        return subpathRegex.test(subpath);
     }
 
     function isValidIPorDomain(input) {

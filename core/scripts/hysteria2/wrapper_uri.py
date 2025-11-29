@@ -117,7 +117,7 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
             user_output["nodes"].append({"name": node_name, "uri": uri})
         
         if ns_domain and ns_port and ns_subpath:
-            user_output["normal_sub"] = f"https://{ns_domain}:{ns_port}/{ns_subpath}/sub/normal/{auth_password}#{username}"
+            user_output["normal_sub"] = f"https://{ns_domain}:{ns_port}/{ns_subpath}/{auth_password}#{username}"
 
         results.append(user_output)
         

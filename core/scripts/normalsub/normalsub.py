@@ -432,12 +432,12 @@ class HysteriaServer:
             self._noindex_middleware
         ])
 
-        safe_subpath = self.validate_and_escape_subpath(self.config.subpath)
+        safe_subpath = self.validate_subpath_for_routing(self.config.subpath)
 
         base_path = f'/{safe_subpath}'
-        self.app.router.add_get(f'{base_path}/sub/normal/style.css', self.handle_style)
-        self.app.router.add_get(f'{base_path}/sub/normal/script.js', self.handle_script)
-        self.app.router.add_get(f'{base_path}/sub/normal/{{password_token}}', self.handle)
+        self.app.router.add_get(f'{base_path}/style.css', self.handle_style)
+        self.app.router.add_get(f'{base_path}/script.js', self.handle_script)
+        self.app.router.add_get(f'{base_path}/{{password_token}}', self.handle)
         self.app.router.add_get(f'{base_path}/robots.txt', self.robots_handler)
         self.app.router.add_route('*', f'{base_path}/{{tail:.*}}', self.handle_404_subpath)
 
@@ -450,7 +450,7 @@ class HysteriaServer:
         subpath = os.getenv('SUBPATH', '').strip().strip("/")
         if not subpath or not self.is_valid_subpath(subpath):
             raise ValueError(
-                f"Invalid or empty SUBPATH: '{subpath}'. Subpath must be non-empty and contain only alphanumeric characters.")
+                f"Invalid or empty SUBPATH: '{subpath}'. Subpath must be valid segments separated by slashes (e.g., 'path' or 'path/to/resource').")
 
         sni_file = '/etc/hysteria/.configs.env'
         singbox_template_path = '/etc/hysteria/core/scripts/normalsub/singbox.json'
@@ -485,12 +485,12 @@ class HysteriaServer:
         return "bts.com"
 
     def is_valid_subpath(self, subpath: str) -> bool:
-        return bool(re.match(r"^[a-zA-Z0-9]+$", subpath))
+        return bool(re.match(r"^[a-zA-Z0-9]+(?:/[a-zA-Z0-9]+)*$", subpath))
 
-    def validate_and_escape_subpath(self, subpath: str) -> str:
+    def validate_subpath_for_routing(self, subpath: str) -> str:
         if not self.is_valid_subpath(subpath):
             raise ValueError(f"Invalid subpath: {subpath}")
-        return re.escape(subpath)
+        return subpath
 
     @middleware
     async def _rate_limit_middleware(self, request: web.Request, handler):
@@ -610,7 +610,7 @@ class HysteriaServer:
         if not Utils.is_valid_url(base_url):
             print(f"Warning: Constructed base URL '{base_url}' might be invalid. Check domain and port config.")
         
-        sub_link = f"{base_url}/{self.config.subpath}/sub/normal/{user_info.password}"
+        sub_link = f"{base_url}/{self.config.subpath}/{user_info.password}"
         sub_link_encoded = quote(sub_link, safe='')
         sublink_qrcode = Utils.generate_qrcode_base64(sub_link)
         
@@ -665,7 +665,7 @@ class HysteriaServer:
 
     def run(self):
         print(f"Starting Hysteria Normalsub server on {self.config.aiohttp_listen_address}:{self.config.aiohttp_listen_port}")
-        print(f"External access via Caddy should be at https://{self.config.domain}:{self.config.external_port}/{self.config.subpath}/sub/normal/<USER_PASSWORD>")
+        print(f"External access via Caddy should be at https://{self.config.domain}:{self.config.external_port}/{self.config.subpath}/<USER_PASSWORD>")
         web.run_app(
             self.app,
             host=self.config.aiohttp_listen_address,

@@ -6,7 +6,7 @@ class StartInputBody(BaseModel):
     port: int
 
 class EditSubPathInputBody(BaseModel):
-    subpath: str = Field(..., min_length=1, pattern=r"^[a-zA-Z0-9]+$", description="The new subpath, must be alphanumeric.")
+    subpath: str = Field(..., min_length=1, pattern=r"^[a-zA-Z0-9]+(?:/[a-zA-Z0-9]+)*$", description="The new subpath, must be alphanumeric.")
 
 class GetSubPathResponse(BaseModel):
     subpath: Optional[str] = Field(None, description="The current NormalSub subpath, or null if not set/found.")
