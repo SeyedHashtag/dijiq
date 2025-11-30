@@ -86,10 +86,10 @@ def main():
     action = sys.argv[1]
 
     if action == "1":
-        print("Enabling 'masquerade' with type string...")
+        # print("Enabling 'masquerade' with type string...")
         enable_masquerade()
     elif action == "2":
-        print("Removing 'masquerade' from config.json...")
+        # print("Removing 'masquerade' from config.json...")
         remove_masquerade()
     elif action == "status":
         get_status()
