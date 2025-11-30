@@ -400,8 +400,8 @@ def update_geo(country: str):
 
 @cli.command('masquerade')
 @click.option('--remove', '-r', is_flag=True, help="Remove 'masquerade' from config.json.")
-@click.option('--enable', '-e', metavar='<domain>', type=str, help="Enable 'masquerade' in config.json with the specified domain.")
-def masquerade(remove: bool, enable: str):
+@click.option('--enable', '-e', is_flag=True, help="Enable 'masquerade' in config.json.")
+def masquerade(remove: bool, enable: bool):
     '''Manage 'masquerade' in Hysteria2 configuration.'''
     try:
         if not remove and not enable:
@@ -410,7 +410,7 @@ def masquerade(remove: bool, enable: str):
             raise click.UsageError('Error: You cannot use both --remove and --enable at the same time')
 
         if enable:
-            cli_api.enable_hysteria2_masquerade(enable)
+            cli_api.enable_hysteria2_masquerade()
             click.echo('Masquerade enabled successfully.')
         elif remove:
             cli_api.disable_hysteria2_masquerade()

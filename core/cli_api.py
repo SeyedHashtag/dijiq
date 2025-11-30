@@ -229,10 +229,9 @@ def check_hysteria2_obfs():
     result = subprocess.run(["python3", Command.MANAGE_OBFS.value, "--check"], check=True, capture_output=True, text=True)
     return result.stdout.strip()
 
-def enable_hysteria2_masquerade(domain: str):
+def enable_hysteria2_masquerade():
     '''Enables masquerade for Hysteria2.'''
-    run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '1', domain])
-
+    run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '1'])
 
 def disable_hysteria2_masquerade():
     '''Disables masquerade for Hysteria2.'''

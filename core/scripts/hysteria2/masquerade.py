@@ -14,31 +14,35 @@ def is_masquerade_enabled():
         print(f"Error reading config: {e}")
         return False
 
-def enable_masquerade(domain: str):
-    if is_masquerade_enabled():
-        print("Masquerade is already enabled.")
-        sys.exit(0)
-
-    url = f"https://{domain}"
+def enable_masquerade():
     try:
         with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
 
+        if "masquerade" in config:
+            print("Masquerade is already enabled.")
+            sys.exit(0)
+
+        if "obfs" in config:
+            print("Error: Cannot enable masquerade when 'obfs' is configured.")
+            sys.exit(1)
+
         config["masquerade"] = {
-            "type": "proxy",
-            "proxy": {
-                "url": url,
-                "rewriteHost": True
-            },
-            "listenHTTP": ":80",
-            "listenHTTPS": ":443",
-            "forceHTTPS": True
+            "type": "string",
+            "string": {
+                "content": "HTTP 502: Bad Gateway",
+                "headers": {
+                    "Content-Type": "text/plain; charset=utf-8",
+                    "Server": "Caddy"
+                },
+                "statusCode": 502
+            }
         }
 
         with open(CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
 
-        print(f"Masquerade enabled with URL: {url}")
+        print("Masquerade enabled with a Caddy-like 502 Bad Gateway response.")
         subprocess.run(["python3", CLI_PATH, "restart-hysteria2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     except Exception as e:
@@ -68,20 +72,16 @@ def remove_masquerade():
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 masquerade.py {1|2} [domain]")
-        print("1: Enable Masquerade [domain]")
+        print("Usage: python3 masquerade.py {1|2}")
+        print("1: Enable Masquerade")
         print("2: Remove Masquerade")
         sys.exit(1)
 
     action = sys.argv[1]
 
     if action == "1":
-        if len(sys.argv) < 3:
-            print("Error: Missing domain argument for enabling masquerade.")
-            sys.exit(1)
-        domain = sys.argv[2]
-        print(f"Enabling 'masquerade' with URL: {domain}...")
-        enable_masquerade(domain)
+        print("Enabling 'masquerade' with type string...")
+        enable_masquerade()
     elif action == "2":
         print("Removing 'masquerade' from config.json...")
         remove_masquerade()
