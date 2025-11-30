@@ -401,20 +401,23 @@ def update_geo(country: str):
 @cli.command('masquerade')
 @click.option('--remove', '-r', is_flag=True, help="Remove 'masquerade' from config.json.")
 @click.option('--enable', '-e', is_flag=True, help="Enable 'masquerade' in config.json.")
-def masquerade(remove: bool, enable: bool):
+@click.option('--status', '-s', is_flag=True, help="Get 'masquerade' status.")
+def masquerade(remove: bool, enable: bool, status: bool):
     '''Manage 'masquerade' in Hysteria2 configuration.'''
     try:
-        if not remove and not enable:
-            raise click.UsageError('Error: You must use either --remove or --enable')
-        if remove and enable:
-            raise click.UsageError('Error: You cannot use both --remove and --enable at the same time')
+        if sum([remove, enable, status]) != 1:
+            raise click.UsageError('Error: You must use exactly one of --remove, --enable, or --status.')
 
         if enable:
-            cli_api.enable_hysteria2_masquerade()
-            click.echo('Masquerade enabled successfully.')
+            response = cli_api.enable_hysteria2_masquerade()
+            click.echo(response)
         elif remove:
-            cli_api.disable_hysteria2_masquerade()
-            click.echo('Masquerade disabled successfully.')
+            response = cli_api.disable_hysteria2_masquerade()
+            click.echo(response)
+        elif status:
+            response = cli_api.get_hysteria2_masquerade_status()
+            click.echo(response)
+            
     except Exception as e:
         click.echo(f'{e}', err=True)
 

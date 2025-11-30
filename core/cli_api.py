@@ -231,11 +231,15 @@ def check_hysteria2_obfs():
 
 def enable_hysteria2_masquerade():
     '''Enables masquerade for Hysteria2.'''
-    run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '1'])
+    return run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '1'])
 
 def disable_hysteria2_masquerade():
     '''Disables masquerade for Hysteria2.'''
-    run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '2'])
+    return run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, '2'])
+
+def get_hysteria2_masquerade_status():
+    '''Gets the current masquerade status for Hysteria2.'''
+    return run_cmd(['python3', Command.MASQUERADE_SCRIPT.value, 'status'])
 
 
 def get_hysteria2_config_file() -> dict[str, Any]:

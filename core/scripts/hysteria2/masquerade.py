@@ -10,9 +10,14 @@ def is_masquerade_enabled():
         with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
         return "masquerade" in config
-    except Exception as e:
-        print(f"Error reading config: {e}")
+    except Exception:
         return False
+
+def get_status():
+    if is_masquerade_enabled():
+        print("Enabled")
+    else:
+        print("Disabled")
 
 def enable_masquerade():
     try:
@@ -72,9 +77,10 @@ def remove_masquerade():
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 masquerade.py {1|2}")
+        print("Usage: python3 masquerade.py {1|2|status}")
         print("1: Enable Masquerade")
         print("2: Remove Masquerade")
+        print("status: Get current status")
         sys.exit(1)
 
     action = sys.argv[1]
@@ -85,8 +91,10 @@ def main():
     elif action == "2":
         print("Removing 'masquerade' from config.json...")
         remove_masquerade()
+    elif action == "status":
+        get_status()
     else:
-        print("Invalid option. Use 1 to enable or 2 to disable masquerade.")
+        print("Invalid option. Use 1, 2, or status.")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -63,7 +63,6 @@ hysteria2_add_user_handler() {
     done
 
     read -p "Enter the traffic limit (in GB): " traffic_limit_GB
-
     read -p "Enter the expiration days: " expiration_days
     
     local unlimited_arg=""
@@ -926,23 +925,24 @@ geo_update_handler() {
 
 masquerade_handler() {
     while true; do
+        status=$(python3 $CLI_PATH masquerade -s)
+        
+        echo "--------------------------"
+        if [ "$status" == "Enabled" ]; then
+            echo -e "Masquerade Status: ${green}${status}${NC}"
+        else
+            echo -e "Masquerade Status: ${red}${status}${NC}"
+        fi
+        echo "--------------------------"
+
         echo -e "${cyan}1.${NC} Enable Masquerade"
-        echo -e "${red}2.${NC} Remove Masquerade"
+        echo -e "${cyan}2.${NC} Remove Masquerade"
         echo "0. Back"
         read -p "Choose an option: " option
 
         case $option in
             1)
-                if systemctl is-active --quiet hysteria-webpanel.service; then
-                    echo -e "${red}Error:${NC} Masquerade cannot be enabled because hysteria-webpanel.service is running."
-                else
-                    read -p "Enter the URL for rewriteHost: " url
-                    if [ -z "$url" ]; then
-                        echo "Error: URL cannot be empty. Please try again."
-                    else
-                        python3 $CLI_PATH masquerade -e "$url"
-                    fi
-                fi
+                python3 $CLI_PATH masquerade -e
                 ;;
             2)
                 python3 $CLI_PATH masquerade -r
