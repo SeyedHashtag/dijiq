@@ -21,3 +21,6 @@ class GetSniResponse(BaseModel):
 
 class GetObfsResponse(BaseModel):
     obfs: str
+    
+class GetMasqueradeStatusResponse(BaseModel):
+    status: str

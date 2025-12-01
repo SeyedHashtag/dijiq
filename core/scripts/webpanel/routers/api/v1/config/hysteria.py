@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
-from ..schema.config.hysteria import ConfigFile, GetPortResponse, GetSniResponse, GetObfsResponse
+from ..schema.config.hysteria import ConfigFile, GetPortResponse, GetSniResponse, GetObfsResponse, GetMasqueradeStatusResponse
 from ..schema.response import DetailResponse, IPLimitConfig, SetupDecoyRequest, DecoyStatusResponse, IPLimitConfigResponse
 from fastapi.responses import FileResponse
 import shutil
@@ -230,8 +230,8 @@ async def check_obfs():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error checking OBFS status: {str(e)}')
 
-@router.get('/enable-masquerade/{domain}', response_model=DetailResponse, summary='Enable Hysteria2 masquerade')
-async def enable_masquerade(domain: str):
+@router.get('/enable-masquerade', response_model=DetailResponse, summary='Enable Hysteria2 masquerade')
+async def enable_masquerade():
     """
     Enables Hysteria2 masquerade for the given domain.
 
@@ -245,8 +245,8 @@ async def enable_masquerade(domain: str):
         HTTPException: if an error occurs while enabling Hysteria2 masquerade.
     """
     try:
-        cli_api.enable_hysteria2_masquerade(domain)
-        return DetailResponse(detail='Hysteria2 masquerade enabled successfully.')
+        response = cli_api.enable_hysteria2_masquerade()
+        return DetailResponse(detail=response)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
 
@@ -268,6 +268,13 @@ async def disable_masquerade():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
 
+@router.get('/check-masquerade', response_model=GetMasqueradeStatusResponse, summary='Check Hysteria2 Masquerade Status')
+async def check_masquerade():
+    try:
+        status_message = cli_api.get_hysteria2_masquerade_status()
+        return GetMasqueradeStatusResponse(status=status_message)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error checking Masquerade status: {str(e)}')
 
 @router.get('/file', response_model=ConfigFile, summary='Get Hysteria2 configuration file')
 async def get_file():
