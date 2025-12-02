@@ -44,7 +44,8 @@ class APIClient:
         data = {
             "username": username,
             "traffic_limit": traffic_limit,
-            "expiration_days": expiration_days
+            "expiration_days": expiration_days,
+            "unlimited": True
         }
         
         post_headers = self.headers.copy()
