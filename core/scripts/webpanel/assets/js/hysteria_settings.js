@@ -7,6 +7,9 @@ $(document).ready(function () {
         checkObfs: contentSection.dataset.checkObfsUrl,
         enableObfs: contentSection.dataset.enableObfsUrl,
         disableObfs: contentSection.dataset.disableObfsUrl,
+        checkMasquerade: contentSection.dataset.checkMasqueradeUrl,
+        enableMasquerade: contentSection.dataset.enableMasqueradeUrl,
+        disableMasquerade: contentSection.dataset.disableMasqueradeUrl,
         setPortTemplate: contentSection.dataset.setPortUrlTemplate,
         setSniTemplate: contentSection.dataset.setSniUrlTemplate,
         updateGeoTemplate: contentSection.dataset.updateGeoUrlTemplate
@@ -23,10 +26,10 @@ $(document).ready(function () {
         return /^[0-9]+$/.test(port) && parseInt(port) > 0 && parseInt(port) <= 65535;
     }
 
-    function confirmAction(actionName, callback) {
+    function confirmAction(title, text, callback) {
         Swal.fire({
-            title: `Are you sure?`,
-            text: `Do you really want to ${actionName}?`,
+            title: title,
+            text: text,
             icon: "warning",
             showCancelButton: true,
             confirmButtonColor: "#3085d6",
@@ -53,13 +56,12 @@ $(document).ready(function () {
                 }
             },
             success: function (response) {
-                Swal.fire("Success!", successMessage, "success").then(() => {
-                    if (showReload) {
+                const message = typeof response.detail === 'string' ? response.detail : successMessage;
+                Swal.fire("Success!", message, "success").then(() => {
+                    if (showReload && !postSuccessCallback) {
                         location.reload();
-                    } else {
-                        if (postSuccessCallback) {
-                            postSuccessCallback(response);
-                        }
+                    } else if (postSuccessCallback) {
+                        postSuccessCallback(response);
                     }
                 });
             },
@@ -83,7 +85,6 @@ $(document).ready(function () {
                     }
                 }
                 Swal.fire("Error!", errorMessage, "error");
-                console.error("AJAX Error:", status, error, xhr.responseText);
             },
             complete: function() {
                 if (buttonSelector) {
@@ -118,95 +119,122 @@ $(document).ready(function () {
     }
 
     function initUI() {
-        $.ajax({
-            url: API_URLS.getPort,
-            type: "GET",
-            success: function (data) {
-                $("#hysteria_port").val(data.port || "");
-            },
-            error: function (xhr, status, error) {
-                console.error("Failed to fetch port:", error, xhr.responseText);
-            }
-        });
-
-        $.ajax({
-            url: API_URLS.getSni,
-            type: "GET",
-            success: function (data) {
-                $("#sni_domain").val(data.sni || "");
-            },
-            error: function (xhr, status, error) {
-                console.error("Failed to fetch SNI domain:", error, xhr.responseText);
-            }
-        });
+        $.get(API_URLS.getPort, data => $("#hysteria_port").val(data.port || ""));
+        $.get(API_URLS.getSni, data => $("#sni_domain").val(data.sni || ""));
     }
 
-    function fetchObfsStatus() {
-        $.ajax({
-            url: API_URLS.checkObfs,
-            type: "GET",
-            success: function (data) {
-                updateObfsUI(data.obfs);
-            },
-            error: function (xhr, status, error) {
-                $("#obfs_status_message").html('<span class="text-danger">Failed to fetch OBFS status.</span>');
-                console.error("Failed to fetch OBFS status:", error, xhr.responseText);
-                 $("#obfs_enable_btn").hide();
-                $("#obfs_disable_btn").hide();
-            }
+    function fetchAllStatuses() {
+        Promise.all([
+            $.ajax({ url: API_URLS.checkObfs, type: "GET" }),
+            $.ajax({ url: API_URLS.checkMasquerade, type: "GET" })
+        ]).then(([obfsResponse, masqueradeResponse]) => {
+            const obfsStatus = obfsResponse.obfs;
+            const masqueradeStatus = masqueradeResponse.status;
+            
+            const isObfsActive = obfsStatus === "OBFS is active.";
+            const isMasqueradeActive = masqueradeStatus === "Enabled";
+
+            updateObfsUI(obfsStatus, isMasqueradeActive);
+            updateMasqueradeUI(masqueradeStatus, isObfsActive);
+
+        }).catch(error => {
+            console.error("Failed to fetch statuses:", error);
+            $("#obfs_status_message").html('<span class="text-danger">Failed to fetch status.</span>');
+            $("#masquerade_status_message").html('<span class="text-danger">Failed to fetch status.</span>');
         });
     }
+    
+    function updateObfsUI(statusMessage, isMasqueradeEnabled) {
+        const container = $("#obfs_status_container");
+        const msgElement = $("#obfs_status_message");
+        const enableBtn = $("#obfs_enable_btn");
+        const disableBtn = $("#obfs_disable_btn");
 
-    function updateObfsUI(statusMessage) {
-        $("#obfs_status_message").text(statusMessage);
-        if (statusMessage === "OBFS is active.") {
-            $("#obfs_enable_btn").hide();
-            $("#obfs_disable_btn").show();
-            $("#obfs_status_container").removeClass("border-danger border-warning alert-danger alert-warning").addClass("border-success alert-success");
+        container.removeClass("border-success alert-success border-warning alert-warning border-danger alert-danger border-info alert-info");
+        enableBtn.hide();
+        disableBtn.hide();
+
+        if (isMasqueradeEnabled) {
+            msgElement.text("Cannot be managed while Masquerade is active.");
+            container.addClass("border-info alert-info");
+        } else if (statusMessage === "OBFS is active.") {
+            msgElement.text(statusMessage);
+            disableBtn.show();
+            container.addClass("border-success alert-success");
         } else if (statusMessage === "OBFS is not active.") {
-            $("#obfs_enable_btn").show();
-            $("#obfs_disable_btn").hide();
-            $("#obfs_status_container").removeClass("border-success border-danger alert-success alert-danger").addClass("border-warning alert-warning");
+            msgElement.text(statusMessage);
+            enableBtn.show();
+            container.addClass("border-warning alert-warning");
         } else {
-            $("#obfs_enable_btn").hide();
-            $("#obfs_disable_btn").hide();
-            $("#obfs_status_container").removeClass("border-success border-warning alert-success alert-warning").addClass("border-danger alert-danger");
+            msgElement.html(`<span class="text-danger">${statusMessage}</span>`);
+            container.addClass("border-danger alert-danger");
+        }
+    }
+
+    function updateMasqueradeUI(statusMessage, isObfsEnabled) {
+        const container = $("#masquerade_status_container");
+        const msgElement = $("#masquerade_status_message");
+        const enableBtn = $("#masquerade_enable_btn");
+        const disableBtn = $("#masquerade_disable_btn");
+        
+        container.removeClass("border-success alert-success border-warning alert-warning border-danger alert-danger border-info alert-info");
+        enableBtn.hide();
+        disableBtn.hide();
+
+        if (isObfsEnabled) {
+            msgElement.text("Cannot be managed while OBFS is active.");
+            container.addClass("border-info alert-info");
+        } else if (statusMessage === "Enabled") {
+            msgElement.text(statusMessage);
+            disableBtn.show();
+            container.addClass("border-success alert-success");
+        } else if (statusMessage === "Disabled") {
+            msgElement.text(statusMessage);
+            enableBtn.show();
+            container.addClass("border-warning alert-warning");
+        } else {
+            msgElement.html(`<span class="text-danger">${statusMessage}</span>`);
+            container.addClass("border-danger alert-danger");
         }
     }
 
     function enableObfs() {
-        confirmAction("enable OBFS", function () {
-            sendRequest(
-                API_URLS.enableObfs,
-                "GET",
-                null,
-                "OBFS enabled successfully!",
-                "#obfs_enable_btn",
-                false,
-                fetchObfsStatus
-            );
-        });
+        confirmAction(
+            "Enable OBFS?", 
+            "This will require all users to update their configuration files to reconnect.", 
+            () => sendRequest(API_URLS.enableObfs, "GET", null, "OBFS enabled successfully!", "#obfs_enable_btn", false, fetchAllStatuses)
+        );
     }
 
     function disableObfs() {
-        confirmAction("disable OBFS", function () {
-            sendRequest(
-                API_URLS.disableObfs,
-                "GET",
-                null,
-                "OBFS disabled successfully!",
-                "#obfs_disable_btn",
-                false,
-                fetchObfsStatus
-            );
-        });
+        confirmAction(
+            "Disable OBFS?", 
+            "This will disconnect all current users. They must update their configurations to reconnect.", 
+            () => sendRequest(API_URLS.disableObfs, "GET", null, "OBFS disabled successfully!", "#obfs_disable_btn", false, fetchAllStatuses)
+        );
+    }
+
+    function enableMasquerade() {
+        confirmAction(
+            "Enable Masquerade?", 
+            "This will enable the string masquerade mode.", 
+            () => sendRequest(API_URLS.enableMasquerade, "GET", null, "Masquerade enabled successfully!", "#masquerade_enable_btn", false, fetchAllStatuses)
+        );
+    }
+
+    function disableMasquerade() {
+        confirmAction(
+            "Disable Masquerade?", 
+            "This will disable the masquerade feature.", 
+            () => sendRequest(API_URLS.disableMasquerade, "GET", null, "Masquerade disabled successfully!", "#masquerade_disable_btn", false, fetchAllStatuses)
+        );
     }
 
     function changePort() {
         if (!validateForm('port_form')) return;
         const port = $("#hysteria_port").val();
         const url = API_URLS.setPortTemplate.replace("PORT_PLACEHOLDER", port);
-        confirmAction("change the port", function () {
+        confirmAction("Are you sure?", "Do you really want to change the port?", () => {
             sendRequest(url, "GET", null, "Port changed successfully!", "#port_change");
         });
     }
@@ -215,7 +243,7 @@ $(document).ready(function () {
         if (!validateForm('sni_form')) return;
         const domain = $("#sni_domain").val();
         const url = API_URLS.setSniTemplate.replace("SNI_PLACEHOLDER", domain);
-        confirmAction("change the SNI", function () {
+        confirmAction("Are you sure?", "Do you really want to change the SNI?", () => {
             sendRequest(url, "GET", null, "SNI changed successfully!", "#sni_change");
         });
     }
@@ -225,42 +253,29 @@ $(document).ready(function () {
         const buttonId = `#geo_update_${country}`;
         const url = API_URLS.updateGeoTemplate.replace('COUNTRY_PLACEHOLDER', country);
 
-        confirmAction(`update the Geo files for ${countryName}`, function () {
-            sendRequest(
-                url,
-                "GET",
-                null,
-                `Geo files for ${countryName} updated successfully!`,
-                buttonId,
-                false,
-                null
-            );
-        });
+        confirmAction(
+            "Update Geo Files?", 
+            `Do you really want to update the Geo files for ${countryName}?`, 
+            () => sendRequest(url, "GET", null, `Geo files for ${countryName} updated successfully!`, buttonId, false, null)
+        );
     }
 
     initUI();
-    fetchObfsStatus();
+    fetchAllStatuses();
 
     $("#port_change").on("click", changePort);
     $("#sni_change").on("click", changeSNI);
     $("#obfs_enable_btn").on("click", enableObfs);
     $("#obfs_disable_btn").on("click", disableObfs);
-    $("#geo_update_iran").on("click", function() { updateGeo('iran'); });
-    $("#geo_update_china").on("click", function() { updateGeo('china'); });
-    $("#geo_update_russia").on("click", function() { updateGeo('russia'); });
+    $("#masquerade_enable_btn").on("click", enableMasquerade);
+    $("#masquerade_disable_btn").on("click", disableMasquerade);
+    $("#geo_update_iran").on("click", () => updateGeo('iran'));
+    $("#geo_update_china").on("click", () => updateGeo('china'));
+    $("#geo_update_russia").on("click", () => updateGeo('russia'));
 
-    $('#sni_domain').on('input', function () {
-        if (isValidDomain($(this).val())) {
-            $(this).removeClass('is-invalid');
-        } else if ($(this).val().trim() !== "") {
-            $(this).addClass('is-invalid');
-        } else {
-             $(this).removeClass('is-invalid');
-        }
-    });
-
-    $('#hysteria_port').on('input', function () {
-         if (isValidPort($(this).val())) {
+    $('#sni_domain, #hysteria_port').on('input', function () {
+        const validator = $(this).attr('id') === 'sni_domain' ? isValidDomain : isValidPort;
+        if (validator($(this).val())) {
             $(this).removeClass('is-invalid');
         } else if ($(this).val().trim() !== "") {
             $(this).addClass('is-invalid');

@@ -19,6 +19,9 @@
     data-check-obfs-url="{{ url_for('check_obfs') }}"
     data-enable-obfs-url="{{ url_for('enable_obfs') }}"
     data-disable-obfs-url="{{ url_for('disable_obfs') }}"
+    data-check-masquerade-url="{{ url_for('check_masquerade') }}"
+    data-enable-masquerade-url="{{ url_for('enable_masquerade') }}"
+    data-disable-masquerade-url="{{ url_for('disable_masquerade') }}"
     data-set-port-url-template="{{ url_for('set_port_api', port='PORT_PLACEHOLDER') }}"
     data-set-sni-url-template="{{ url_for('set_sni_api', sni='SNI_PLACEHOLDER') }}"
     data-update-geo-url-template="{{ url_for('update_geo', country='COUNTRY_PLACEHOLDER') }}"
@@ -63,22 +66,57 @@
             </div>
             <div class="col-md-6 mb-4">
                 <div class="card card-outline card-secondary h-100">
-                    <div class="card-header"><h3 class="card-title"><i class="fas fa-user-secret"></i> OBFS</h3></div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <h5>OBFS Status</h5>
-                            <div id="obfs_status_container" class="p-3 border rounded">
-                                <span id="obfs_status_message">Loading OBFS status...</span>
+                    <div class="card-header p-0">
+                        <ul class="nav nav-tabs" id="obfs-masquerade-tabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="obfs-tab" data-toggle="tab" href="#obfs-content" role="tab" aria-controls="obfs-content" aria-selected="true"><i class="fas fa-user-secret"></i> OBFS</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="masquerade-tab" data-toggle="tab" href="#masquerade-content" role="tab" aria-controls="masquerade-content" aria-selected="false"><i class="fas fa-theater-masks"></i> Masquerade</a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body tab-content" id="obfs-masquerade-tabs-content">
+                        <div class="tab-pane fade show active" id="obfs-content" role="tabpanel" aria-labelledby="obfs-tab">
+                            <div class="mb-3">
+                                <h5>OBFS Status</h5>
+                                <div id="obfs_status_container" class="p-3 border rounded">
+                                    <span id="obfs_status_message">Loading OBFS status...</span>
+                                </div>
                             </div>
+                            <div class="alert alert-warning" role="alert">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>Warning:</strong> <small>Changing this setting requires users to update their client configurations.</small>
+                            </div>
+                            <button id="obfs_enable_btn" type='button' class='btn btn-success' style="display: none;">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Enable OBFS
+                            </button>
+                            <button id="obfs_disable_btn" type='button' class='btn btn-danger' style="display: none;">
+                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Disable OBFS
+                            </button>
                         </div>
-                        <button id="obfs_enable_btn" type='button' class='btn btn-success' style="display: none;">
-                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
-                            Enable OBFS
-                        </button>
-                        <button id="obfs_disable_btn" type='button' class='btn btn-danger' style="display: none;">
-                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
-                            Disable OBFS
-                        </button>
+                        <div class="tab-pane fade" id="masquerade-content" role="tabpanel" aria-labelledby="masquerade-tab">
+                            <div class="mb-3">
+                                <h5>Masquerade Status</h5>
+                                <div id="masquerade_status_container" class="p-3 border rounded">
+                                    <span id="masquerade_status_message">Loading Masquerade status...</span>
+                                </div>
+                            </div>
+                             <div class="alert alert-info" role="alert">
+                               <i class="fas fa-info-circle"></i>
+                                <strong>Note:</strong> <small>Masquerade cannot be active at the same time as OBFS.</small>
+                            </div>
+                            <button id="masquerade_enable_btn" type='button' class='btn btn-success' style="display: none;">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Enable Masquerade
+                            </button>
+                            <button id="masquerade_disable_btn" type='button' class='btn btn-danger' style="display: none;">
+                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                                Disable Masquerade
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
