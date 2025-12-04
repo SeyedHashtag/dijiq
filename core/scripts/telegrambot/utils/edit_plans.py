@@ -32,7 +32,7 @@ def create_plans_markup():
     # Create plan list text
     plans_text = "📋 Current Plans:\n\n"
     for i, (gb, details) in enumerate(sorted_plans, 1):
-        unlimited_text = " (Unlimited)" if details.get("unlimited") else ""
+        unlimited_text = " (Unlimited)" if details.get("unlimited") else " (Single User)"
         plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d{unlimited_text}\n"
     
     # Create numbered buttons
@@ -81,7 +81,7 @@ def handle_plan_select(call):
                 types.InlineKeyboardButton("⬅️ Back", callback_data="back_to_plans")
             )
             
-            unlimited_text = "Yes" if plan.get("unlimited") else "No"
+            unlimited_text = "Yes" if plan.get("unlimited") else "Single User"
             bot.edit_message_text(
                 f"📦 Plan {gb}GB:\n\n"
                 f"💰 Price: ${plan['price']}\n"
