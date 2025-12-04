@@ -40,12 +40,12 @@ class APIClient:
             print(f"Error fetching users: {e}")
             return None
     
-    def add_user(self, username, traffic_limit, expiration_days):
+    def add_user(self, username, traffic_limit, expiration_days, unlimited=False):
         data = {
             "username": username,
             "traffic_limit": traffic_limit,
             "expiration_days": expiration_days,
-            "unlimited": True
+            "unlimited": unlimited
         }
         
         post_headers = self.headers.copy()
@@ -158,19 +158,48 @@ def process_add_user_step3(message, username, traffic_limit):
 
     try:
         expiration_days = int(message.text.strip())
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("✅ Yes", callback_data=f"unlimited_user_choice:yes:{username}:{traffic_limit}:{expiration_days}"),
+                   types.InlineKeyboardButton("❌ No", callback_data=f"unlimited_user_choice:no:{username}:{traffic_limit}:{expiration_days}"))
+        bot.reply_to(message, "Should this user have unlimited access?", reply_markup=markup)
+
+    except ValueError:
+        bot.reply_to(message, "Invalid expiration days. Please enter a number:", reply_markup=create_cancel_markup(back_step=process_add_user_step2))
+        bot.register_next_step_handler(message, process_add_user_step3, username, traffic_limit)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("unlimited_user_choice:"))
+def process_add_user_step4(call):
+    try:
+        bot.answer_callback_query(call.id)
+        _, choice, username, traffic_limit, expiration_days = call.data.split(':')
+        traffic_limit, expiration_days = int(traffic_limit), int(expiration_days)
+        
+        unlimited = choice == 'yes'
+        
         api_client = APIClient()
         
-        bot.send_chat_action(message.chat.id, 'typing')
-        result = api_client.add_user(username, traffic_limit, expiration_days)
+        bot.send_chat_action(call.message.chat.id, 'typing')
+        result = api_client.add_user(username, traffic_limit, expiration_days, unlimited)
 
         if not result:
-            bot.reply_to(message, "Failed to add user. Please check API connection and try again.", reply_markup=create_main_markup())
+            bot.edit_message_text(
+                "Failed to add user. Please check API connection and try again.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=create_main_markup()
+            )
             return
 
         # Get user URI from API
         user_uri_data = api_client.get_user_uri(username)
         if not user_uri_data or 'normal_sub' not in user_uri_data:
-            bot.reply_to(message, f"User '{username}' created successfully, but failed to get subscription URI. Check API configuration.", reply_markup=create_main_markup())
+            bot.edit_message_text(
+                f"User '{username}' created successfully, but failed to get subscription URI. Check API configuration.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=create_main_markup()
+            )
             return
 
         sub_url = user_uri_data['normal_sub']
@@ -182,13 +211,19 @@ def process_add_user_step3(message, username, traffic_limit):
         bio.seek(0)
         
         # Create success message
+        unlimited_text = "Yes" if unlimited else "No"
         success_message = f"User '{username}' added successfully!\n"
         success_message += f"Traffic limit: {traffic_limit} GB\n"
-        success_message += f"Expiration days: {expiration_days}\n\n"
-        success_message += f"Subscription URL: `{sub_url}`"
+        success_message += f"Expiration days: {expiration_days}\n"
+        success_message += f"Unlimited Access: {unlimited_text}\n\n"
+        success_message += f"Subscription URL: {sub_url}"
         
-        bot.send_photo(message.chat.id, photo=bio, caption=success_message, parse_mode="Markdown", reply_markup=create_main_markup())
+        bot.send_photo(call.message.chat.id, photo=bio, caption=success_message, parse_mode="Markdown", reply_markup=create_main_markup())
 
-    except ValueError:
-        bot.reply_to(message, "Invalid expiration days. Please enter a number:", reply_markup=create_cancel_markup(back_step=process_add_user_step2))
-        bot.register_next_step_handler(message, process_add_user_step3, username, traffic_limit)
+    except Exception as e:
+        bot.edit_message_text(
+            f"? Error adding user: {str(e)}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=create_main_markup()
+        )

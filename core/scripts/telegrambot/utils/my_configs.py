@@ -31,30 +31,50 @@ def my_configs(message):
     
     # Look for usernames that match this user's Telegram ID pattern
     user_configs = []
-    
+
     try:
         # The pattern is {telegram_id}t{timestamp}
         pattern = f"^{user_id}t"
-        
-        for username, user_data in users.items():
-            if username and re.match(pattern, username):
-                user_configs.append((username, user_data))
-        
-        # Check if we found any configs for this user
-        if not user_configs:
-            # Also check for test configs: test{telegram_id}t{timestamp}
-            test_pattern = f"^test{user_id}t"
-            
+
+        # Handle both list and dictionary responses from API
+        if isinstance(users, dict):
+            # If users is a dictionary, iterate through items
             for username, user_data in users.items():
-                if username and re.match(test_pattern, username):
-                    user_configs.append((username, user_data))            
+                if username and re.match(pattern, username):
+                    user_configs.append((username, user_data))
+
+            # Check if we found any configs for this user
             if not user_configs:
-                language = get_user_language(user_id)
-                bot.reply_to(
-                    message, 
-                    get_message_text(language, "no_active_configs")
-                )
-                return
+                # Also check for test configs: test{telegram_id}t{timestamp}
+                test_pattern = f"^test{user_id}t"
+
+                for username, user_data in users.items():
+                    if username and re.match(test_pattern, username):
+                        user_configs.append((username, user_data))
+        elif isinstance(users, list):
+            # If users is a list, iterate through items
+            for user in users:
+                username = user.get('username')
+                if username and re.match(pattern, username):
+                    user_configs.append((username, user))
+
+            # Check if we found any configs for this user
+            if not user_configs:
+                # Also check for test configs: test{telegram_id}t{timestamp}
+                test_pattern = f"^test{user_id}t"
+
+                for user in users:
+                    username = user.get('username')
+                    if username and re.match(test_pattern, username):
+                        user_configs.append((username, user))
+
+        if not user_configs:
+            language = get_user_language(user_id)
+            bot.reply_to(
+                message,
+                get_message_text(language, "no_active_configs")
+            )
+            return
     except Exception as e:
         bot.reply_to(message, f"⚠️ Error processing user data: {str(e)}")
         return
@@ -101,8 +121,17 @@ def handle_show_config(call):
             return
         
         # Find the specific user data
-        if username in users:
-            user_data = users[username]
+        user_data = None
+        if isinstance(users, dict):
+            if username in users:
+                user_data = users[username]
+        elif isinstance(users, list):
+            for user in users:
+                if user.get('username') == username:
+                    user_data = user
+                    break
+
+        if user_data:
             # Show the config
             display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
         else:
@@ -147,13 +176,17 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
             traffic_message = (
                 f"🔼 Upload: {upload_gb:.2f} GB\n"
                 f"🔽 Download: {download_gb:.2f} GB\n"
-                f"📊 Total Usage: {total_usage_gb:.2f} GB / {max_traffic_gb:.2f} GB\n"
-                f"🌐 Status: {status}"
+                f"📊 Total Usage: {total_usage_gb:.2f} GB"
             )
+            if max_traffic_gb > 0:
+                traffic_message += f" / {max_traffic_gb:.2f} GB"
+            traffic_message += f"\n🌐 Status: {status}"
+
+        traffic_limit_display = f"{max_traffic_gb:.2f} GB" if max_traffic_gb > 0 else "Unlimited"
         
         formatted_details = (
             f"\n🆔 Username: {username}\n"
-            f"📊 Traffic Limit: {max_traffic_gb:.2f} GB\n"
+            f"📊 Traffic Limit: {traffic_limit_display}\n"
             f"📅 Days Remaining: {expiration_days}\n"
             f"⏳ Creation Date: {account_creation_date}\n"
             f"💡 Status: {'❌ Blocked/Expired' if is_blocked else '✅ Active'}\n\n"

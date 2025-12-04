@@ -32,7 +32,8 @@ def create_plans_markup():
     # Create plan list text
     plans_text = "📋 Current Plans:\n\n"
     for i, (gb, details) in enumerate(sorted_plans, 1):
-        plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d\n"
+        unlimited_text = " (Unlimited)" if details.get("unlimited") else ""
+        plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d{unlimited_text}\n"
     
     # Create numbered buttons
     buttons = []
@@ -80,10 +81,12 @@ def handle_plan_select(call):
                 types.InlineKeyboardButton("⬅️ Back", callback_data="back_to_plans")
             )
             
+            unlimited_text = "Yes" if plan.get("unlimited") else "No"
             bot.edit_message_text(
                 f"📦 Plan {gb}GB:\n\n"
                 f"💰 Price: ${plan['price']}\n"
-                f"📅 Days: {plan['days']}\n\n"
+                f"📅 Days: {plan['days']}\n"
+                f"♾️ Unlimited Users: {unlimited_text}\n\n"
                 "Select an action:",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -200,26 +203,47 @@ def process_new_plan_days(message, gb, price):
         if days <= 0:
             raise ValueError("Days must be greater than 0")
         
-        plans = load_plans()
-        plans[str(gb)] = {"price": price, "days": days}
-        save_plans(plans)
-        
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("✅ Yes", callback_data=f"unlimited_choice:yes:{gb}:{price}:{days}"),
+                   types.InlineKeyboardButton("❌ No", callback_data=f"unlimited_choice:no:{gb}:{price}:{days}"))
+        bot.reply_to(message, "Is this plan for unlimited users?", reply_markup=markup)
+
+    except ValueError as e:
         bot.reply_to(
             message,
-            f"✅ New plan added successfully:\n{gb}GB - ${price} - {days} days",
+            f"❌ Error: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
+        )
+@bot.callback_query_handler(func=lambda call: call.data.startswith("unlimited_choice:"))
+def process_unlimited_choice(call):
+    try:
+        bot.answer_callback_query(call.id)
+        _, choice, gb, price, days = call.data.split(':')
+        gb, price, days = int(gb), float(price), int(days)
+        
+        unlimited = choice == 'yes'
+        
+        plans = load_plans()
+        plans[str(gb)] = {"price": price, "days": days, "unlimited": unlimited}
+        save_plans(plans)
+        
+        unlimited_text = "Yes" if unlimited else "No"
+        bot.edit_message_text(
+            f"? New plan added successfully:\n{gb}GB -  -  days\nUnlimited Users: {unlimited_text}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
         )
         
         markup, plans_text, _ = create_plans_markup()
         plans_text += "\nSelect a plan number to edit:"
         bot.send_message(
-            message.chat.id,
+            call.message.chat.id,
             plans_text,
             reply_markup=markup
         )
-    except ValueError as e:
+    except Exception as e:
         bot.reply_to(
-            message,
-            f"❌ Error: {str(e)}",
+            call.message,
+            f"? Error: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )

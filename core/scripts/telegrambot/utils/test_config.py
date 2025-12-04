@@ -118,7 +118,7 @@ def handle_confirm_test_config(call):
     )
 
     api_client = APIClient()
-    result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS)
+    result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
 
     if result:
         # Mark the test config as used (save username as well)
@@ -140,6 +140,7 @@ def handle_confirm_test_config(call):
                 f"📊 Test Plan Details:\n"
                 f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
                 f"- 🔹 Duration: {TEST_DAYS} days\n"
+                f"- 🔹 Unlimited Devices: Yes\n"
                 f"- 🔹 Username: `{username}`\n\n"
                 f"Subscription URL: `{sub_url}`\n\n"
                 f"Scan the QR code to configure your VPN client."

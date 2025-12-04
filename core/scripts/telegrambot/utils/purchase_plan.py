@@ -62,7 +62,8 @@ def purchase_plan(message):
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     for gb, details in sorted_plans:
-        button_text = f"{gb} GB - ${details['price']} - {details['days']} days"
+        unlimited_text = " (Unlimited Users)" if details.get("unlimited") else ""
+        button_text = f"{gb} GB - ${details['price']} - {details['days']} days{unlimited_text}"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"purchase:{gb}"))
     
     bot.reply_to(
@@ -85,7 +86,9 @@ def handle_purchase_selection(call):
             message = f"📋 Plan Details:\n\n"
             message += f"📊 Data: {plan_gb} GB\n"
             message += f"💰 Price: ${plan['price']}\n"
-            message += f"📅 Duration: {plan['days']} days\n\n"
+            message += f"📅 Duration: {plan['days']} days\n"
+            unlimited_text = "Yes" if plan.get("unlimited") else "No"
+            message += f"♾️ Unlimited Users: {unlimited_text}\n\n"
             message += "Proceed with payment?"
             
             markup = types.InlineKeyboardMarkup(row_width=2)
