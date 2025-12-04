@@ -73,7 +73,7 @@ def get_user_ids(filter_type):
                         user_ids.add(telegram_id)
                     elif filter_type == 'active' and not details.get('blocked', False):
                         user_ids.add(telegram_id)
-                    elif filter_type == 'expired' and details.get('blocked', True):
+                    elif filter_type == 'expired' and details.get('blocked', False):
                         user_ids.add(telegram_id)
         
         return list(user_ids)
