@@ -18,7 +18,6 @@ check_services() {
     done
 }
 
-# OPTION HANDLERS (ONLY NEEDED ONE)
 hysteria2_install_handler() {
     if systemctl is-active --quiet hysteria-server.service; then
         echo "The hysteria-server.service is currently active."
@@ -660,7 +659,6 @@ normalsub_handler() {
                         echo "Error: SUBPATH must include at least one uppercase letter, one lowercase letter, and one number."
                     else
                         python3 $CLI_PATH normal-sub -a edit_subpath -sp "$subpath"
-                        # echo "SUBPATH updated successfully!"
                         break
                     fi
                 done
@@ -984,7 +982,7 @@ ip_limit_handler() {
                 else
                     while true; do
                         read -e -p "Enter Block Duration (seconds, default: 60): " block_duration
-                        block_duration=${block_duration:-60} # Default to 60 if empty
+                        block_duration=${block_duration:-60}
                         if ! [[ "$block_duration" =~ ^[0-9]+$ ]]; then
                             echo "Invalid Block Duration. Please enter a number."
                         else
@@ -994,7 +992,7 @@ ip_limit_handler() {
 
                     while true; do
                         read -e -p "Enter Max IPs per User (default: 1): " max_ips
-                        max_ips=${max_ips:-1} # Default to 1 if empty
+                        max_ips=${max_ips:-1}
                         if ! [[ "$max_ips" =~ ^[0-9]+$ ]]; then
                             echo "Invalid Max IPs. Please enter a number."
                         else
@@ -1059,7 +1057,6 @@ ip_limit_handler() {
     done
 }
 
-# Function to display the main menu
 display_main_menu() {
     clear
     tput setaf 7 ; tput setab 4 ; tput bold
@@ -1092,7 +1089,6 @@ display_main_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle main menu options
 main_menu() {
     clear
     local choice
@@ -1112,7 +1108,6 @@ main_menu() {
     done
 }
 
-# Function to display the Blitz menu
 display_hysteria2_menu() {
     clear
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
@@ -1138,7 +1133,6 @@ display_hysteria2_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle Hysteria2 menu options
 hysteria2_menu() {
     clear
     local choice
@@ -1164,7 +1158,6 @@ hysteria2_menu() {
     done
 }
 
-# Function to get Advance menu
 display_advance_menu() {
     clear
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
@@ -1193,7 +1186,6 @@ display_advance_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle Advance menu options
 advance_menu() {
     clear
     local choice
@@ -1226,6 +1218,5 @@ advance_menu() {
         read -rp "Press Enter to continue..."
     done
 }
-# Main function to run the script
 define_colors
 main_menu
