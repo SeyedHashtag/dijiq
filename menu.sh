@@ -857,7 +857,6 @@ webpanel_handler() {
     done
 }
 
-
 obfs_handler() {
     while true; do
         echo -e "${cyan}1.${NC} Remove Obfs"
@@ -867,10 +866,15 @@ obfs_handler() {
 
         case $option in
             1)
-            python3 $CLI_PATH manage_obfs -r
+                python3 $CLI_PATH manage_obfs -r
                 ;;
             2)
-            python3 $CLI_PATH manage_obfs -g
+                status=$(python3 $CLI_PATH masquerade -s)
+                if [[ "$status" == "Enabled" ]]; then
+                    echo -e "${red}Error:${NC} Cannot use Obfs when masquerade is enabled."
+                else
+                    python3 $CLI_PATH manage_obfs -g
+                fi
                 ;;
             0)
                 break
