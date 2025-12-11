@@ -101,7 +101,7 @@ hysteria2_edit_user_handler() {
         done
     }
 
-    prompt_for_input "Enter the username you want to edit: " '^[a-zA-Z0-9]+$' '' username
+    prompt_for_input "Enter the username you want to edit: " '^[a-zA-Z0-9_-]+$' '' username
 
     user_exists_output=$(python3 $CLI_PATH get-user -u "$username" 2>&1)
     if [[ -z "$user_exists_output" ]]; then
@@ -109,7 +109,7 @@ hysteria2_edit_user_handler() {
         return 1
     fi
 
-    prompt_for_input "Enter the new username (leave empty to keep the current username): " '^[a-zA-Z0-9]*$' '' new_username
+    prompt_for_input "Enter the new username (leave empty to keep the current username): " '^[a-zA-Z0-9_-]*$' '' new_username
 
     prompt_for_input "Enter the new traffic limit (in GB) (leave empty to keep the current limit): " '^[0-9]*$' '' new_traffic_limit_GB
 
