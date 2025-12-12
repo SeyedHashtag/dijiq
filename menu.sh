@@ -50,7 +50,7 @@ hysteria2_add_user_handler() {
     while true; do
         read -p "Enter the username: " username
 
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             if [[ -n $(python3 $CLI_PATH get-user -u "$username" 2>/dev/null) ]]; then
                 echo -e "${red}Error:${NC} Username already exists. Please choose another username."
             else
@@ -74,10 +74,9 @@ hysteria2_add_user_handler() {
         esac
     done
 
-    password=$(pwgen -s 32 1)
     creation_date=$(date +%Y-%m-%d)
 
-    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --password "$password" --creation-date "$creation_date" $unlimited_arg
+    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --creation-date "$creation_date" $unlimited_arg
 }
 
 hysteria2_edit_user_handler() {
