@@ -6,6 +6,8 @@ import json
 from typing import Any, Optional
 from dotenv import dotenv_values
 import re
+import secrets
+import string
 
 import traffic
 
@@ -121,16 +123,13 @@ def run_cmd(command: list[str]) -> str:
 
 def generate_password() -> str:
     '''
-    Generates a random password using pwgen for user.
-    Could raise subprocess.CalledProcessError
+    Generates a secure, random alphanumeric password.
     '''
     try:
-        return subprocess.check_output(['pwgen', '-s', '32', '1'], shell=False).decode().strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        try:
-            return subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], shell=False).decode().strip()
-        except Exception as e:
-            raise PasswordGenerationError(f"Failed to generate password: {e}")
+        alphabet = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(alphabet) for _ in range(32))
+    except Exception as e:
+        raise PasswordGenerationError(f"Failed to generate password using secrets module: {e}")
 
 # endregion
 
