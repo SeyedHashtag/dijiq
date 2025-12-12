@@ -36,7 +36,7 @@ install_hysteria() {
     fi
     
     echo "Generating passwords and UUID..."
-    obfspassword=$(pwgen -s 32 1)
+    obfspassword=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 32)
     UUID=$(cat /proc/sys/kernel/random/uuid)
     
     chown hysteria:hysteria /etc/hysteria/ca.key /etc/hysteria/ca.crt
