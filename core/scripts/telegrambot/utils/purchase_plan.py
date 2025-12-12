@@ -4,7 +4,7 @@ from telebot import types
 from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
-from utils.payments import CryptomusPayment
+from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record, update_payment_status, get_payment_record, load_payments
 from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
@@ -135,15 +135,15 @@ def handle_confirm_purchase(call):
         env_path = os.path.join(os.path.dirname(__file__), '.env')
         load_dotenv(env_path)
 
-        cryptomus_configured = all(os.getenv(key) for key in ['CRYPTOMUS_MERCHANT_ID', 'CRYPTOMUS_API_KEY'])
+        crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
         card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
 
         # Create a markup for payment method selection
         markup = types.InlineKeyboardMarkup(row_width=1)
         can_proceed = False
 
-        if cryptomus_configured:
-            markup.add(types.InlineKeyboardButton("💳 Cryptomus", callback_data=f"payment_method:cryptomus:{plan_gb}"))
+        if crypto_configured:
+            markup.add(types.InlineKeyboardButton("💳 Crypto", callback_data=f"payment_method:crypto:{plan_gb}"))
             can_proceed = True
         
         if card_to_card_configured:
@@ -159,7 +159,7 @@ def handle_confirm_purchase(call):
             return
 
         # If there's more than one payment method, let the user choose
-        if cryptomus_configured and card_to_card_configured:
+        if crypto_configured and card_to_card_configured:
             bot.edit_message_text(
                 "Please select your preferred payment method:",
                 chat_id=call.message.chat.id,
@@ -167,8 +167,8 @@ def handle_confirm_purchase(call):
                 reply_markup=markup
             )
         # If only one is available, proceed directly
-        elif cryptomus_configured:
-            handle_payment_method_selection(call, f"payment_method:cryptomus:{plan_gb}")
+        elif crypto_configured:
+            handle_payment_method_selection(call, f"payment_method:crypto:{plan_gb}")
         elif card_to_card_configured:
             handle_payment_method_selection(call, f"payment_method:card_to_card:{plan_gb}")
 
@@ -184,8 +184,8 @@ def handle_payment_method_selection(call, data=None):
         
         _, method, plan_gb = callback_data.split(':')
 
-        if method == 'cryptomus':
-            handle_cryptomus_payment(call, plan_gb)
+        if method == 'crypto':
+            handle_crypto_payment(call, plan_gb)
         elif method == 'card_to_card':
             handle_card_to_card_payment(call, plan_gb)
         else:
@@ -194,14 +194,14 @@ def handle_payment_method_selection(call, data=None):
     except Exception as e:
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
-def handle_cryptomus_payment(call, plan_gb):
+def handle_crypto_payment(call, plan_gb):
     try:
         plans = load_plans()
         user_id = call.from_user.id
         
         if plan_gb in plans:
             plan = plans[plan_gb]
-            payment_handler = CryptomusPayment()
+            payment_handler = CryptoPayment()
             
             payment_response = payment_handler.create_payment(
                 plan['price'],
@@ -480,7 +480,7 @@ def handle_check_payment(call):
         bot.answer_callback_query(call.id, text="Payment record not found!")
         return
     
-    payment_handler = CryptomusPayment()
+    payment_handler = CryptoPayment()
     payment_status_response = payment_handler.check_payment_status(payment_id)
     
     if "error" in payment_status_response:

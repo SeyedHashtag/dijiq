@@ -13,7 +13,7 @@ def create_cancel_markup():
 
 def create_payment_method_selection_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(types.KeyboardButton("💳 Cryptomus"), types.KeyboardButton("💳 Card to Card (Iran)"))
+    markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Card to Card (Iran)"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -31,23 +31,23 @@ def process_payment_method_selection(message):
         bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
         return
 
-    if message.text == "💳 Cryptomus":
-        setup_cryptomus(message)
+    if message.text == "💳 Crypto":
+        setup_crypto(message)
     elif message.text == "💳 Card to Card (Iran)":
         setup_card_to_card(message)
     else:
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
-def setup_cryptomus(message):
+def setup_crypto(message):
     load_dotenv(env_path)
     
-    current_merchant_id = os.getenv('CRYPTOMUS_MERCHANT_ID')
-    current_api_key = os.getenv('CRYPTOMUS_API_KEY')
+    current_merchant_id = os.getenv('CRYPTO_MERCHANT_ID')
+    current_api_key = os.getenv('CRYPTO_API_KEY')
     
-    status_text = "Current Cryptomus Settings:\n"
+    status_text = "Current Crypto Settings:\n"
     status_text += f"Merchant ID: {'✅ Configured' if current_merchant_id else '❌ Not configured'}\n"
     status_text += f"API Key: {'✅ Configured' if current_api_key else '❌ Not configured'}\n\n"
-    status_text += "Please enter your Cryptomus Merchant ID:"
+    status_text += "Please enter your Crypto Merchant ID:"
     
     msg = bot.reply_to(
         message, 
@@ -74,7 +74,7 @@ def process_merchant_id(message):
 
     msg = bot.reply_to(
         message,
-        "Now enter your Cryptomus API Key:",
+        "Now enter your Crypto API Key:",
         reply_markup=create_cancel_markup()
     )
     bot.register_next_step_handler(msg, process_api_key, merchant_id)
@@ -100,19 +100,19 @@ def process_api_key(message, merchant_id):
             with open(env_path, 'w') as f:
                 pass
         load_dotenv(env_path)
-        set_key(env_path, 'CRYPTOMUS_MERCHANT_ID', merchant_id)
-        set_key(env_path, 'CRYPTOMUS_API_KEY', api_key)
+        set_key(env_path, 'CRYPTO_MERCHANT_ID', merchant_id)
+        set_key(env_path, 'CRYPTO_API_KEY', api_key)
         load_dotenv(env_path)
         
         bot.reply_to(
             message,
-            "✅ Cryptomus credentials have been updated successfully!",
+            "✅ Crypto credentials have been updated successfully!",
             reply_markup=create_main_markup(is_admin=True)
         )
     except Exception as e:
         bot.reply_to(
             message,
-            f"❌ Error updating Cryptomus credentials: {str(e)}",
+            f"❌ Error updating Crypto credentials: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )
 

@@ -8,10 +8,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class CryptomusPayment:
+class CryptoPayment:
     def __init__(self):
-        self.merchant_id = os.getenv('CRYPTOMUS_MERCHANT_ID')
-        self.payment_api_key = os.getenv('CRYPTOMUS_API_KEY')
+        self.merchant_id = os.getenv('CRYPTO_MERCHANT_ID')
+        self.payment_api_key = os.getenv('CRYPTO_API_KEY')
         self.base_url = "https://api.heleket.com/v1/payment"
 
     def _check_credentials(self):
