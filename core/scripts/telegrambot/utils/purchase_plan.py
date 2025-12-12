@@ -1,7 +1,7 @@
 import json
 import datetime
 from telebot import types
-from utils.command import bot, ADMIN_USER_IDS
+from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
 from utils.payments import CryptomusPayment
@@ -11,6 +11,9 @@ from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode
 import io
+import os
+from dotenv import load_dotenv
+import uuid
 
 def format_datetime_string():
     """Generate a datetime string in the format required for username"""
@@ -123,6 +126,78 @@ def handle_confirm_purchase(call):
         plan_gb = call.data.split(':')[1]
         plans = load_plans()
         user_id = call.from_user.id
+
+        if plan_gb not in plans:
+            bot.answer_callback_query(call.id, text="Plan not found!")
+            return
+
+        # Load environment variables to check for available payment methods
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        load_dotenv(env_path)
+
+        cryptomus_configured = all(os.getenv(key) for key in ['CRYPTOMUS_MERCHANT_ID', 'CRYPTOMUS_API_KEY'])
+        card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
+
+        # Create a markup for payment method selection
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        can_proceed = False
+
+        if cryptomus_configured:
+            markup.add(types.InlineKeyboardButton("💳 Cryptomus", callback_data=f"payment_method:cryptomus:{plan_gb}"))
+            can_proceed = True
+        
+        if card_to_card_configured:
+            markup.add(types.InlineKeyboardButton("📄 Card to Card (Iran)", callback_data=f"payment_method:card_to_card:{plan_gb}"))
+            can_proceed = True
+
+        if not can_proceed:
+            bot.edit_message_text(
+                "No payment methods are currently configured. Please contact support.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            return
+
+        # If there's more than one payment method, let the user choose
+        if cryptomus_configured and card_to_card_configured:
+            bot.edit_message_text(
+                "Please select your preferred payment method:",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
+        # If only one is available, proceed directly
+        elif cryptomus_configured:
+            handle_payment_method_selection(call, f"payment_method:cryptomus:{plan_gb}")
+        elif card_to_card_configured:
+            handle_payment_method_selection(call, f"payment_method:card_to_card:{plan_gb}")
+
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('payment_method:'))
+def handle_payment_method_selection(call, data=None):
+    try:
+        # If data is passed directly, use it; otherwise, use call.data
+        callback_data = data if data else call.data
+        
+        _, method, plan_gb = callback_data.split(':')
+
+        if method == 'cryptomus':
+            handle_cryptomus_payment(call, plan_gb)
+        elif method == 'card_to_card':
+            handle_card_to_card_payment(call, plan_gb)
+        else:
+            bot.answer_callback_query(call.id, text="Invalid payment method!")
+
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+def handle_cryptomus_payment(call, plan_gb):
+    try:
+        plans = load_plans()
+        user_id = call.from_user.id
         
         if plan_gb in plans:
             plan = plans[plan_gb]
@@ -143,81 +218,258 @@ def handle_confirm_purchase(call):
                 return
             
             # Extract payment data
-            try:
-                payment_data = payment_response.get('result', {})
-                payment_id = payment_data.get('uuid')
-                payment_url = payment_data.get('url')
-                # The gateway echoes back the order_id we sent when creating the invoice.
-                # Store it so webhook callbacks that send order_id can be matched to our records.
-                gateway_order_id = payment_data.get('order_id')
-                
-                if not payment_id or not payment_url:
-                    bot.edit_message_text(
-                        "❌ Invalid payment response from payment gateway.",
-                        chat_id=call.message.chat.id,
-                        message_id=call.message.message_id
-                    )
-                    return
-                
-                # Save payment record
-                payment_record = {
-                    'user_id': user_id,
-                    'plan_gb': plan_gb,
-                    'price': plan['price'],
-                    'days': plan['days'],
-                    'payment_id': payment_id,
-                    # gateway_order_id holds the order_id we generated and passed to the gateway
-                    'order_id': gateway_order_id,
-                    'status': 'pending'
-                }
-                add_payment_record(payment_id, payment_record)
-                
-                # Create QR code for payment URL
-                qr = qrcode.make(payment_url)
-                bio = io.BytesIO()
-                qr.save(bio, 'PNG')
-                bio.seek(0)
-                
-                # Send payment instructions with QR code
-                payment_message = (
-                    f"💰 Payment Instructions\n\n"
-                    f"1. Scan the QR code or click the link below\n"
-                    f"2. Complete the payment of ${plan['price']}\n"
-                    f"3. Your config will be created automatically once payment is confirmed\n\n"
-                    f"Payment Link: {payment_url}\n\n"
-                    f"Payment ID: `{payment_id}`"
-                )
-                
-                markup = types.InlineKeyboardMarkup()
-                markup.add(
-                    types.InlineKeyboardButton("🔗 Payment Link", url=payment_url),
-                    types.InlineKeyboardButton("🔄 Check Status", callback_data=f"check_payment:{payment_id}")
-                )
-                
-                # Send the QR code with payment instructions
-                bot.delete_message(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id
-                )
-                
-                bot.send_photo(
-                    call.message.chat.id,
-                    photo=bio,
-                    caption=payment_message,
-                    reply_markup=markup,
-                    parse_mode="Markdown"
-                )
-                
-            except Exception as e:
+            payment_data = payment_response.get('result', {})
+            payment_id = payment_data.get('uuid')
+            payment_url = payment_data.get('url')
+            gateway_order_id = payment_data.get('order_id')
+            
+            if not payment_id or not payment_url:
                 bot.edit_message_text(
-                    f"❌ Error processing payment: {str(e)}",
+                    "❌ Invalid payment response from payment gateway.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id
                 )
+                return
+            
+            # Save payment record
+            payment_record = {
+                'user_id': user_id,
+                'plan_gb': plan_gb,
+                'price': plan['price'],
+                'days': plan['days'],
+                'payment_id': payment_id,
+                'order_id': gateway_order_id,
+                'status': 'pending'
+            }
+            add_payment_record(payment_id, payment_record)
+            
+            # Create QR code for payment URL
+            qr = qrcode.make(payment_url)
+            bio = io.BytesIO()
+            qr.save(bio, 'PNG')
+            bio.seek(0)
+            
+            # Send payment instructions
+            payment_message = (
+                f"💰 Payment Instructions\n\n"
+                f"1. Scan the QR code or click the link below\n"
+                f"2. Complete the payment of ${plan['price']}\n"
+                f"3. Your config will be created automatically once payment is confirmed\n\n"
+                f"Payment Link: {payment_url}\n\n"
+                f"Payment ID: `{payment_id}`"
+            )
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("🔗 Payment Link", url=payment_url),
+                types.InlineKeyboardButton("🔄 Check Status", callback_data=f"check_payment:{payment_id}")
+            )
+            
+            bot.delete_message(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            
+            bot.send_photo(
+                call.message.chat.id,
+                photo=bio,
+                caption=payment_message,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
         else:
             bot.answer_callback_query(call.id, text="Plan not found!")
     except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error processing payment: {str(e)}")
+
+def handle_card_to_card_payment(call, plan_gb):
+    try:
+        user_id = call.from_user.id
+        
+        # Load environment variables to get the card number
+        env_path = os.path.join(os.path.dirname(__file__), '.env')
+        load_dotenv(env_path)
+        card_number = os.getenv('CARD_TO_CARD_NUMBER')
+
+        if not card_number:
+            bot.edit_message_text(
+                "Card to Card payment is not configured. Please contact support.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            return
+
+        plans = load_plans()
+        plan = plans[plan_gb]
+        price = plan['price']
+
+        message = (
+            f"📄 Card to Card Payment\n\n"
+            f"Please transfer `${price}` to the following card number:\n\n"
+            f"`{card_number}`\n\n"
+            f"After the transfer, please send a photo of the receipt."
+        )
+
+        bot.edit_message_text(
+            message,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown"
+        )
+
+        bot.register_next_step_handler(call.message, process_receipt_photo, plan_gb, price)
+
+    except Exception as e:
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+
+def process_receipt_photo(message, plan_gb, price):
+    try:
+        user_id = message.from_user.id
+        
+        if not message.photo:
+            bot.reply_to(message, "Please upload a photo of the receipt.")
+            bot.register_next_step_handler(message, process_receipt_photo, plan_gb, price)
+            return
+
+        # Get the file ID of the largest photo
+        file_id = message.photo[-1].file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        # Generate a unique payment ID
+        payment_id = str(uuid.uuid4())
+        
+        # Ensure the uploads directory exists
+        uploads_dir = 'uploads'
+        if not os.path.exists(uploads_dir):
+            os.makedirs(uploads_dir)
+
+        # Save the photo
+        photo_path = os.path.join(uploads_dir, f"{payment_id}.jpg")
+        with open(photo_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+
+        # Save payment record
+        plans = load_plans()
+        plan = plans[plan_gb]
+        payment_record = {
+            'user_id': user_id,
+            'plan_gb': plan_gb,
+            'price': price,
+            'days': plan['days'],
+            'payment_id': payment_id,
+            'status': 'pending_approval',
+            'receipt_path': photo_path
+        }
+        add_payment_record(payment_id, payment_record)
+
+        # Send notification to admins
+        notification_message = (
+            f"⏳ New Pending Payment\n\n"
+            f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
+            f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
+            f"📊 <b>Plan:</b> {plan_gb} GB\n"
+            f"💵 <b>Amount:</b> ${price}\n"
+            f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
+        )
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_approval:approve:{payment_id}"),
+            types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_approval:reject:{payment_id}")
+        )
+
+        for admin_id in ADMIN_USER_IDS:
+            try:
+                with open(photo_path, 'rb') as photo:
+                    bot.send_photo(
+                        admin_id,
+                        photo,
+                        caption=notification_message,
+                        reply_markup=markup,
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                print(f"Failed to send notification to admin {admin_id}: {str(e)}")
+
+        bot.reply_to(message, "Your receipt has been submitted for approval. You will be notified once it is processed.")
+
+    except Exception as e:
+        bot.reply_to(message, f"An error occurred: {str(e)}")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
+def handle_admin_approval(call):
+    try:
+        user_id = call.from_user.id
+        if not is_admin(user_id):
+            bot.answer_callback_query(call.id, text="You are not authorized to perform this action.")
+            return
+
+        _, action, payment_id = call.data.split(':')
+        
+        payment_record = get_payment_record(payment_id)
+        if not payment_record:
+            bot.answer_callback_query(call.id, text="Payment record not found!")
+            return
+
+        if payment_record['status'] != 'pending_approval':
+            bot.answer_callback_query(call.id, text=f"This payment has already been processed and has a status of '{payment_record['status']}'.")
+            return
+
+        if action == 'approve':
+            # Provision the service
+            user_to_notify = payment_record['user_id']
+            plan_gb = payment_record['plan_gb']
+            days = payment_record['days']
+            username = create_username_from_user_id(user_to_notify)
+            
+            api_client = APIClient()
+            result = api_client.add_user(username, int(plan_gb), int(days))
+
+            if result:
+                update_payment_status(payment_id, 'completed')
+                user_uri_data = api_client.get_user_uri(username)
+                
+                if user_uri_data and 'normal_sub' in user_uri_data:
+                    sub_url = user_uri_data['normal_sub']
+                    qr = qrcode.make(sub_url)
+                    bio = io.BytesIO()
+                    qr.save(bio, 'PNG')
+                    bio.seek(0)
+                    
+                    success_message = (
+                        f"✅ Your payment has been approved and your plan is active!\n\n"
+                        f"📊 Plan: {plan_gb} GB\n"
+                        f"📅 Duration: {days} days\n"
+                        f"📱 Username: `{username}`\n\n"
+                        f"Subscription URL: `{sub_url}`"
+                    )
+                    
+                    bot.send_photo(
+                        user_to_notify,
+                        photo=bio,
+                        caption=success_message,
+                        parse_mode="Markdown"
+                    )
+                else:
+                    bot.send_message(user_to_notify, "✅ Your payment was approved, but there was an error retrieving your subscription URL. Please contact support.")
+
+                bot.edit_message_caption(caption=f"✅ Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            else:
+                bot.answer_callback_query(call.id, text="Failed to create user. Please check the logs.")
+                bot.send_message(user_to_notify, "❌ Your payment was approved, but there was an error creating your account. Please contact support.")
+
+        elif action == 'reject':
+            update_payment_status(payment_id, 'rejected')
+            user_to_notify = payment_record['user_id']
+            bot.send_message(user_to_notify, "❌ Your payment has been rejected. Please contact support if you believe this is an error.")
+            bot.edit_message_caption(caption=f"❌ Payment {payment_id} rejected by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"An error occurred: {str(e)}")
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
 def handle_check_payment(call):
