@@ -14,6 +14,7 @@ def create_cancel_markup():
 def create_payment_method_selection_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Card to Card (Iran)"))
+    markup.row(types.KeyboardButton("💱 Exchange Rate"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -35,6 +36,8 @@ def process_payment_method_selection(message):
         setup_crypto(message)
     elif message.text == "💳 Card to Card (Iran)":
         setup_card_to_card(message)
+    elif message.text == "💱 Exchange Rate":
+        setup_exchange_rate(message)
     else:
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
@@ -164,5 +167,67 @@ def process_card_to_card_number(message):
         bot.reply_to(
             message,
             f"❌ Error updating Card to Card number: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+
+def setup_exchange_rate(message):
+    load_dotenv(env_path)
+    current_exchange_rate = os.getenv('EXCHANGE_RATE')
+    
+    status_text = "Current Exchange Rate Settings:\n"
+    status_text += f"Exchange Rate (USD to Toman): {current_exchange_rate if current_exchange_rate else '❌ Not configured'}\n\n"
+    status_text += "Please enter the exchange rate (e.g., 100 for 1 USD = 100 Tomans):"
+    
+    msg = bot.reply_to(
+        message,
+        status_text,
+        reply_markup=create_cancel_markup()
+    )
+    bot.register_next_step_handler(msg, process_exchange_rate)
+
+
+def process_exchange_rate(message):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    exchange_rate = message.text.strip()
+    
+    if not exchange_rate:
+        msg = bot.reply_to(
+            message,
+            "Exchange rate cannot be empty. Please enter a valid exchange rate:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_exchange_rate)
+        return
+
+    if not exchange_rate.isdigit():
+        msg = bot.reply_to(
+            message,
+            "Exchange rate must be a number. Please enter a valid exchange rate:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_exchange_rate)
+        return
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+        load_dotenv(env_path)
+        set_key(env_path, 'EXCHANGE_RATE', exchange_rate)
+        load_dotenv(env_path)
+        
+        bot.reply_to(
+            message,
+            "✅ Exchange rate has been updated successfully!",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"❌ Error updating exchange rate: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )

@@ -290,6 +290,7 @@ def handle_card_to_card_payment(call, plan_gb):
         env_path = os.path.join(os.path.dirname(__file__), '.env')
         load_dotenv(env_path)
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
+        exchange_rate = os.getenv('EXCHANGE_RATE', '1')
 
         if not card_number:
             bot.edit_message_text(
@@ -302,8 +303,11 @@ def handle_card_to_card_payment(call, plan_gb):
         plans = load_plans()
         plan = plans[plan_gb]
         price = plan['price']
+        
+        # Convert price to tomans using the exchange rate
+        price_in_tomans = int(price) * int(exchange_rate)
 
-        message = get_message_text(language, "card_to_card_payment").format(price=price, card_number=card_number)
+        message = get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number)
 
         bot.edit_message_text(
             message,
