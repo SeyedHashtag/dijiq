@@ -309,11 +309,15 @@ def handle_card_to_card_payment(call, plan_gb):
 
         message = get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number)
 
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
+
         bot.edit_message_text(
             message,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=markup
         )
 
         bot.register_next_step_handler(call.message, process_receipt_photo, plan_gb, price)
