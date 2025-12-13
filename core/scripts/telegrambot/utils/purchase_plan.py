@@ -308,7 +308,7 @@ def handle_card_to_card_payment(call, plan_gb):
         price = plan['price']
         
         # Convert price to tomans using the exchange rate
-        price_in_tomans = int(price) * int(exchange_rate)
+        price_in_tomans = float(price) * float(exchange_rate)
 
         message = get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number)
 
