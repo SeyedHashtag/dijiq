@@ -25,7 +25,7 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         )
         markup.row(
             language_translations.get("support", "📞 Support"), 
-            language_translations.get("language", "🌐 Language")
+            language_translations.get("language", "🌐 Language/زبان")
         )
     return markup
 
