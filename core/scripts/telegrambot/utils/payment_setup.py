@@ -4,7 +4,9 @@ from utils.common import create_main_markup
 import os
 from dotenv import load_dotenv, set_key
 
-env_path = os.path.join(os.path.dirname(__file__), '.env')
+# FIX: Go up one level ('..') to find the root .env file
+# This prevents creating a duplicate .env inside your handlers/utils folder
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 def create_cancel_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -42,7 +44,7 @@ def process_payment_method_selection(message):
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
 def setup_crypto(message):
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
     
     current_merchant_id = os.getenv('CRYPTO_MERCHANT_ID')
     current_api_key = os.getenv('CRYPTO_API_KEY')
@@ -102,10 +104,13 @@ def process_api_key(message, merchant_id):
         if not os.path.exists(env_path):
             with open(env_path, 'w') as f:
                 pass
-        load_dotenv(env_path)
+        
+        # Write to file
         set_key(env_path, 'CRYPTO_MERCHANT_ID', merchant_id)
         set_key(env_path, 'CRYPTO_API_KEY', api_key)
-        load_dotenv(env_path)
+        
+        # Reload immediately with override=True so the bot uses new values
+        load_dotenv(env_path, override=True)
         
         bot.reply_to(
             message,
@@ -120,7 +125,7 @@ def process_api_key(message, merchant_id):
         )
 
 def setup_card_to_card(message):
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
     current_card_number = os.getenv('CARD_TO_CARD_NUMBER')
     
     status_text = "Current Card to Card Settings:\n"
@@ -154,9 +159,9 @@ def process_card_to_card_number(message):
         if not os.path.exists(env_path):
             with open(env_path, 'w') as f:
                 pass
-        load_dotenv(env_path)
+        
         set_key(env_path, 'CARD_TO_CARD_NUMBER', card_number)
-        load_dotenv(env_path)
+        load_dotenv(env_path, override=True)
         
         bot.reply_to(
             message,
@@ -172,7 +177,7 @@ def process_card_to_card_number(message):
 
 
 def setup_exchange_rate(message):
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
     current_exchange_rate = os.getenv('EXCHANGE_RATE')
     
     status_text = "Current Exchange Rate Settings:\n"
@@ -216,9 +221,9 @@ def process_exchange_rate(message):
         if not os.path.exists(env_path):
             with open(env_path, 'w') as f:
                 pass
-        load_dotenv(env_path)
+        
         set_key(env_path, 'EXCHANGE_RATE', exchange_rate)
-        load_dotenv(env_path)
+        load_dotenv(env_path, override=True)
         
         bot.reply_to(
             message,
