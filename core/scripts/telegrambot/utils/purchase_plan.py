@@ -15,6 +15,9 @@ import os
 from dotenv import load_dotenv
 import uuid
 
+# New: Global dictionary for user states
+user_data = {}
+
 def format_datetime_string():
     """Generate a datetime string in the format required for username"""
     now = datetime.datetime.now()
@@ -30,7 +33,6 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
     try:
         for admin_id in ADMIN_USER_IDS:
             admin_language = get_user_language(admin_id)
-            
             notification_message = (
                 f"💰 <b>{get_message_text(admin_language, 'payment_notification_title')}</b>\n\n"
                 f"✅ <b>{get_message_text(admin_language, 'successful_payment_received')}</b>\n\n"
@@ -42,7 +44,6 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
                 f"🔑 <b>{get_message_text(admin_language, 'payment_id_label')}:</b> <code>{payment_id}</code>\n"
                 f"📅 <b>{get_message_text(admin_language, 'timestamp')}:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
-            
             try:
                 bot.send_message(
                     admin_id,
@@ -55,21 +56,18 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
         print(f"Error in send_admin_payment_notification: {str(e)}")
 
 @bot.message_handler(func=lambda message: any(
-    message.text == get_button_text(get_user_language(message.from_user.id), "purchase_plan")
-    for lang in BUTTON_TRANSLATIONS
+    message.text == get_button_text(get_user_language(message.from_user.id), "purchase_plan") for lang in BUTTON_TRANSLATIONS
 ))
 def purchase_plan(message):
     user_id = message.from_user.id
     language = get_user_language(user_id)
     plans = load_plans()
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
-    
     markup = types.InlineKeyboardMarkup(row_width=1)
     for gb, details in sorted_plans:
         unlimited_text = get_message_text(language, "unlimited_users") if details.get("unlimited") else get_message_text(language, "single_user")
         button_text = f"{gb} GB - ${details['price']} - {details['days']} " + get_message_text(language, "days") + f"{unlimited_text}"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"purchase:{gb}"))
-    
     bot.reply_to(
         message,
         get_message_text(language, "select_plan"),
@@ -84,10 +82,8 @@ def handle_purchase_selection(call):
         language = get_user_language(user_id)
         plan_gb = call.data.split(':')[1]
         plans = load_plans()
-        
         if plan_gb in plans:
             plan = plans[plan_gb]
-            
             unlimited_text = "Yes" if plan.get("unlimited") else "No"
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
@@ -95,13 +91,11 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "duration").format(days=plan['days'])
             message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
             message += get_message_text(language, "proceed_with_payment")
-            
             markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(
                 types.InlineKeyboardButton(get_button_text(language, "confirm"), callback_data=f"confirm_purchase:{plan_gb}"),
                 types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase")
             )
-            
             bot.edit_message_text(
                 message,
                 chat_id=call.message.chat.id,
@@ -124,6 +118,9 @@ def handle_cancel_purchase(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
     )
+    # New: Clear user state if it exists (prevents lingering receipt waiting mode)
+    if user_id in user_data:
+        del user_data[user_id]
     bot.send_message(
         chat_id=call.message.chat.id,
         text=get_message_text(language, "purchase_canceled")
@@ -136,28 +133,21 @@ def handle_confirm_purchase(call):
         language = get_user_language(user_id)
         plan_gb = call.data.split(':')[1]
         plans = load_plans()
-
         if plan_gb not in plans:
             bot.answer_callback_query(call.id, text=get_message_text(language, "plan_not_found"))
             return
-
         env_path = os.path.join(os.path.dirname(__file__), '.env')
         load_dotenv(env_path)
-
         crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
         card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
-
         markup = types.InlineKeyboardMarkup(row_width=1)
         can_proceed = False
-
         if crypto_configured:
             markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"payment_method:crypto:{plan_gb}"))
             can_proceed = True
-        
         if card_to_card_configured:
             markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"payment_method:card_to_card:{plan_gb}"))
             can_proceed = True
-
         if not can_proceed:
             bot.edit_message_text(
                 get_message_text(language, "no_payment_methods"),
@@ -165,7 +155,6 @@ def handle_confirm_purchase(call):
                 message_id=call.message.message_id
             )
             return
-
         if crypto_configured and card_to_card_configured:
             bot.edit_message_text(
                 get_message_text(language, "select_payment_method"),
@@ -177,12 +166,10 @@ def handle_confirm_purchase(call):
             handle_payment_method_selection(call, f"payment_method:crypto:{plan_gb}")
         elif card_to_card_configured:
             handle_payment_method_selection(call, f"payment_method:card_to_card:{plan_gb}")
-
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
         bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
-
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('payment_method:'))
 def handle_payment_method_selection(call, data=None):
@@ -190,16 +177,13 @@ def handle_payment_method_selection(call, data=None):
         user_id = call.from_user.id
         language = get_user_language(user_id)
         callback_data = data if data else call.data
-        
         _, method, plan_gb = callback_data.split(':')
-
         if method == 'crypto':
             handle_crypto_payment(call, plan_gb)
         elif method == 'card_to_card':
             handle_card_to_card_payment(call, plan_gb)
         else:
             bot.answer_callback_query(call.id, text=get_message_text(language, "invalid_payment_method"))
-
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
@@ -210,17 +194,12 @@ def handle_crypto_payment(call, plan_gb):
         user_id = call.from_user.id
         language = get_user_language(user_id)
         plans = load_plans()
-        
         if plan_gb in plans:
             plan = plans[plan_gb]
             payment_handler = CryptoPayment()
-            
             payment_response = payment_handler.create_payment(
-                plan['price'],
-                plan_gb,
-                user_id
+                plan['price'], plan_gb, user_id
             )
-            
             if "error" in payment_response:
                 bot.edit_message_text(
                     get_message_text(language, "error_creating_payment").format(error=payment_response['error']),
@@ -228,12 +207,10 @@ def handle_crypto_payment(call, plan_gb):
                     message_id=call.message.message_id
                 )
                 return
-            
             payment_data = payment_response.get('result', {})
             payment_id = payment_data.get('uuid')
             payment_url = payment_data.get('url')
             gateway_order_id = payment_data.get('order_id')
-            
             if not payment_id or not payment_url:
                 bot.edit_message_text(
                     get_message_text(language, "invalid_payment_response"),
@@ -241,7 +218,6 @@ def handle_crypto_payment(call, plan_gb):
                     message_id=call.message.message_id
                 )
                 return
-            
             payment_record = {
                 'user_id': user_id,
                 'plan_gb': plan_gb,
@@ -252,25 +228,20 @@ def handle_crypto_payment(call, plan_gb):
                 'status': 'pending'
             }
             add_payment_record(payment_id, payment_record)
-            
             qr = qrcode.make(payment_url)
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
-            
             payment_message = get_message_text(language, "payment_instructions").format(price=plan['price'], payment_url=payment_url, payment_id=payment_id)
-            
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton(get_button_text(language, "payment_link"), url=payment_url),
                 types.InlineKeyboardButton(get_button_text(language, "check_status"), callback_data=f"check_payment:{payment_id}")
             )
-            
             bot.delete_message(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id
             )
-            
             bot.send_photo(
                 call.message.chat.id,
                 photo=bio,
@@ -289,12 +260,10 @@ def handle_card_to_card_payment(call, plan_gb):
     try:
         user_id = call.from_user.id
         language = get_user_language(user_id)
-        
         env_path = os.path.join(os.path.dirname(__file__), '.env')
         load_dotenv(env_path)
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
         exchange_rate = os.getenv('EXCHANGE_RATE', '1')
-
         if not card_number:
             bot.edit_message_text(
                 get_message_text(language, "card_to_card_not_configured"),
@@ -302,19 +271,14 @@ def handle_card_to_card_payment(call, plan_gb):
                 message_id=call.message.message_id
             )
             return
-
         plans = load_plans()
         plan = plans[plan_gb]
         price = plan['price']
-        
         # Convert price to tomans using the exchange rate
         price_in_tomans = float(price) * float(exchange_rate)
-
         message = get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number)
-
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
-
         bot.edit_message_text(
             message,
             chat_id=call.message.chat.id,
@@ -322,39 +286,32 @@ def handle_card_to_card_payment(call, plan_gb):
             parse_mode="Markdown",
             reply_markup=markup
         )
-
-        bot.register_next_step_handler(call.message, process_receipt_photo, plan_gb, price)
-
+        # New: Set user state instead of registering next_step_handler
+        user_data[user_id] = {
+            'state': 'waiting_receipt',
+            'plan_gb': plan_gb,
+            'price': price
+        }
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
         bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
-
+# Modified: Remove photo check and re-registration; assume called only on photos
 def process_receipt_photo(message, plan_gb, price):
     try:
         user_id = message.from_user.id
         language = get_user_language(user_id)
-        
-        if not message.photo:
-            bot.reply_to(message, get_message_text(language, "upload_receipt"))
-            bot.register_next_step_handler(message, process_receipt_photo, plan_gb, price)
-            return
-
         file_id = message.photo[-1].file_id
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
-
         payment_id = str(uuid.uuid4())
-        
         uploads_dir = 'uploads'
         if not os.path.exists(uploads_dir):
             os.makedirs(uploads_dir)
-
         photo_path = os.path.join(uploads_dir, f"{payment_id}.jpg")
         with open(photo_path, 'wb') as new_file:
             new_file.write(downloaded_file)
-
         plans = load_plans()
         plan = plans[plan_gb]
         payment_record = {
@@ -367,7 +324,6 @@ def process_receipt_photo(message, plan_gb, price):
             'receipt_path': photo_path
         }
         add_payment_record(payment_id, payment_record)
-
         notification_message = (
             f"⏳ New Pending Payment\n\n"
             f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
@@ -376,13 +332,11 @@ def process_receipt_photo(message, plan_gb, price):
             f"💵 <b>Amount:</b> ${price}\n"
             f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
         )
-        
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_approval:approve:{payment_id}"),
             types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_approval:reject:{payment_id}")
         )
-
         for admin_id in ADMIN_USER_IDS:
             try:
                 with open(photo_path, 'rb') as photo:
@@ -395,14 +349,30 @@ def process_receipt_photo(message, plan_gb, price):
                     )
             except Exception as e:
                 print(f"Failed to send notification to admin {admin_id}: {str(e)}")
-
         bot.reply_to(message, get_message_text(language, "receipt_submitted"))
-
+        # New: Clear state after processing
+        if user_id in user_data:
+            del user_data[user_id]
     except Exception as e:
         user_id = message.from_user.id
         language = get_user_language(user_id)
         bot.reply_to(message, get_message_text(language, "error_occurred").format(error=str(e)))
 
+# New: State-aware handler for photos
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    user_id = message.from_user.id
+    if user_id in user_data and user_data[user_id]['state'] == 'waiting_receipt':
+        plan_gb = user_data[user_id]['plan_gb']
+        price = user_data[user_id]['price']
+        process_receipt_photo(message, plan_gb, price)
+    # Optional: Handle non-state photos if needed (e.g., ignore or reply)
+
+# New: Handler for text messages while waiting for receipt (reminds without looping)
+@bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id]['state'] == 'waiting_receipt')
+def handle_text_while_waiting(message):
+    language = get_user_language(message.from_user.id)
+    bot.reply_to(message, get_message_text(language, "upload_receipt"))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
 def handle_admin_approval(call):
@@ -412,41 +382,32 @@ def handle_admin_approval(call):
         if not is_admin(user_id):
             bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"))
             return
-
         _, action, payment_id = call.data.split(':')
-        
         payment_record = get_payment_record(payment_id)
         if not payment_record:
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
             return
-
         if payment_record['status'] != 'pending_approval':
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
             return
-
         if action == 'approve':
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
             plan_gb = payment_record['plan_gb']
             days = payment_record['days']
             username = create_username_from_user_id(user_to_notify)
-            
             api_client = APIClient()
             result = api_client.add_user(username, int(plan_gb), int(days))
-
             if result:
                 update_payment_status(payment_id, 'completed')
                 user_uri_data = api_client.get_user_uri(username)
-                
                 if user_uri_data and 'normal_sub' in user_uri_data:
                     sub_url = user_uri_data['normal_sub']
                     qr = qrcode.make(sub_url)
                     bio = io.BytesIO()
                     qr.save(bio, 'PNG')
                     bio.seek(0)
-                    
                     success_message = get_message_text(user_language, "payment_approved").format(plan_gb=plan_gb, days=days, username=username, sub_url=sub_url)
-                    
                     bot.send_photo(
                         user_to_notify,
                         photo=bio,
@@ -455,24 +416,20 @@ def handle_admin_approval(call):
                     )
                 else:
                     bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_no_url"))
-
                 bot.edit_message_caption(caption=f"✅ Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
             else:
                 bot.answer_callback_query(call.id, text=get_message_text(language, "failed_to_create_user"))
                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_user_error"))
-
         elif action == 'reject':
             update_payment_status(payment_id, 'rejected')
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
             bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
             bot.edit_message_caption(caption=f"❌ Payment {payment_id} rejected by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
         bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
-
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
 def handle_check_payment(call):
@@ -480,35 +437,26 @@ def handle_check_payment(call):
     language = get_user_language(user_id)
     payment_id = call.data.split(':')[1]
     payment_record = get_payment_record(payment_id)
-    
     if not payment_record:
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
         return
-    
     payment_handler = CryptoPayment()
     payment_status_response = payment_handler.check_payment_status(payment_id)
-    
     if "error" in payment_status_response:
         bot.answer_callback_query(call.id, text=get_message_text(language, "error_checking_payment").format(error=payment_status_response['error']))
         return
-    
     payment_status_data = payment_status_response.get('result', {})
     status = payment_status_data.get('status') or payment_status_data.get('payment_status') or payment_status_data.get('paymentStatus')
-    
     if status and status.lower() == 'paid':
         user_id = payment_record.get('user_id')
         plan_gb = payment_record.get('plan_gb')
         days = payment_record.get('days')
         price = payment_record.get('price')
-        
         username = create_username_from_user_id(user_id)
-        
         api_client = APIClient()
         result = api_client.add_user(username, int(plan_gb), int(days))
-        
         if result:
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
-            
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
                 sub_url = user_uri_data['normal_sub']
@@ -517,9 +465,7 @@ def handle_check_payment(call):
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
                 bio.seek(0)
-
                 success_message = get_message_text(language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
-                
                 bot.send_photo(
                     call.message.chat.id,
                     photo=bio,
@@ -542,19 +488,17 @@ def handle_check_payment(call):
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_pending"))
     else:
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_status").format(status=status or 'unknown'))
-        try:
-            import logging
-            logging.getLogger('dijiq.payments').debug(f"Check payment response for {payment_id}: {payment_status_response}")
-        except Exception:
-            pass
+    try:
+        import logging
+        logging.getLogger('dijiq.payments').debug(f"Check payment response for {payment_id}: {payment_status_response}")
+    except Exception:
+        pass
 
 def process_payment_webhook(request_data):
     try:
         status = request_data.get('status') or request_data.get('payment_status') or request_data.get('paymentStatus')
-
         payments = load_payments()
         record_key = None
-
         if request_data.get('uuid'):
             record_key = request_data.get('uuid')
         elif request_data.get('order_id'):
@@ -563,10 +507,8 @@ def process_payment_webhook(request_data):
                 if v.get('order_id') == incoming_order or v.get('payment_id') == incoming_order:
                     record_key = k
                     break
-
         if not record_key:
             return False
-
         if status and status.lower() == 'paid':
             payment_record = get_payment_record(record_key)
             if payment_record and payment_record.get('status') != 'completed':
@@ -575,40 +517,30 @@ def process_payment_webhook(request_data):
                 plan_gb = payment_record.get('plan_gb')
                 days = payment_record.get('days')
                 price = payment_record.get('price')
-
                 username = create_username_from_user_id(user_id)
-
                 api_client = APIClient()
                 result = api_client.add_user(username, int(plan_gb), int(days))
-
                 if result:
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method)
-                    
                     sub_url = api_client.get_subscription_url(username)
-
                     update_payment_status(record_key, 'completed')
-
                     success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
-                    
                     bot.send_message(
                         user_id,
                         success_message,
                         parse_mode="Markdown"
                     )
-
                     if sub_url:
                         qr = qrcode.make(sub_url)
                         bio = io.BytesIO()
                         qr.save(bio, 'PNG')
                         bio.seek(0)
-
                         bot.send_photo(
                             user_id,
                             photo=bio,
                             caption=get_message_text(user_language, "scan_qr_code")
                         )
-
                     return True
                 else:
                     bot.send_message(
@@ -617,7 +549,7 @@ def process_payment_webhook(request_data):
                         parse_mode="Markdown"
                     )
                     return False
-
+            return False
         return False
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
