@@ -120,10 +120,13 @@ def handle_cancel_purchase(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
     bot.answer_callback_query(call.id)
-    bot.edit_message_text(
-        get_message_text(language, "purchase_canceled"),
+    bot.delete_message(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
+    )
+    bot.send_message(
+        chat_id=call.message.chat.id,
+        text=get_message_text(language, "purchase_canceled")
     )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_purchase:'))
