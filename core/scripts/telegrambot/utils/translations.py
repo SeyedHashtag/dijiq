@@ -14,7 +14,7 @@ DEFAULT_LANGUAGE = "en"
 BUTTON_TRANSLATIONS = {
     "en": {
         "my_configs": "📱 My Configs",
-        "purchase_plan": "💰 pay with crypto or cash",
+        "purchase_plan": "💰 Purchase Plan",
         "downloads": "⬇️ Downloads",
         "test_config": "🎁 Test Config",
         "support": "📞 Support",
@@ -28,7 +28,7 @@ BUTTON_TRANSLATIONS = {
     },
     "fa": {
         "my_configs": "📱 پیکربندی‌های من",
-        "purchase_plan": "💰 پرداخت با رمزارز یا تومان",
+        "purchase_plan": "💰 خرید طرح",
         "downloads": "⬇️ دانلودها",
         "test_config": "🎁 پیکربندی آزمایشی",
         "support": "📞 پشتیبانی",
@@ -42,7 +42,7 @@ BUTTON_TRANSLATIONS = {
     },
     "tk": {
         "my_configs": "📱 Meniň sazlamalarym",
-        "purchase_plan": "💰 Kripto bilen töle",
+        "purchase_plan": "💰 Meýilnama satyn al",
         "downloads": "⬇️ Ýüklemeler",
         "test_config": "🎁 Synag sazlamalary",
         "support": "📞 Goldaw",
