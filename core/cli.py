@@ -26,8 +26,8 @@ def cli():
 @click.option('--sni', '-s', required=False, default='bts.com', help='SNI for Hysteria2 (default: bts.com)', type=str)
 def install_hysteria2(port: int, sni: str):
     try:
-        cli_api.install_hysteria2(port, sni)
-        click.echo(f'Hysteria2 installed successfully on port {port} with SNI {sni}.')
+        output = cli_api.install_hysteria2(port, sni)
+        click.echo(output)
     except Exception as e:
         click.echo(f'{e}', err=True)
 

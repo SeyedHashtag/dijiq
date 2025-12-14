@@ -138,11 +138,11 @@ def generate_password() -> str:
 # region Hysteria
 
 
-def install_hysteria2(port: int, sni: str):
+def install_hysteria2(port: int, sni: str) -> str:
     '''
     Installs Hysteria2 on the given port and uses the provided or default SNI value.
     '''
-    run_cmd(['bash', Command.INSTALL_HYSTERIA2.value, str(port), sni])
+    return run_cmd(['bash', Command.INSTALL_HYSTERIA2.value, str(port), sni])
 
 
 def uninstall_hysteria2():
