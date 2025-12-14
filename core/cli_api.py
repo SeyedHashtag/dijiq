@@ -121,6 +121,38 @@ def run_cmd(command: list[str]) -> str:
         raise CommandExecutionError(f"OS error while trying to run command '{' '.join(command)}': {e}")
 
 
+def run_cmd_and_stream(command: list[str]):
+    '''
+    Runs a command, streams its combined stdout/stderr, and raises an exception on failure.
+    '''
+    if DEBUG:
+        print(f"Executing command: {' '.join(command)}")
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        if process.stdout:
+            for line in iter(process.stdout.readline, ''):
+                print(line, end='')
+            process.stdout.close()
+        
+        return_code = process.wait()
+
+        if return_code != 0:
+            raise CommandExecutionError(f"Process failed with exit code {return_code}")
+
+    except FileNotFoundError as e:
+        raise ScriptNotFoundError(f"Script or command not found: {command[0]}. Original error: {e}")
+    except OSError as e: 
+        raise CommandExecutionError(f"OS error while trying to run command '{' '.join(command)}': {e}")
+
+
 def generate_password() -> str:
     '''
     Generates a secure, random alphanumeric password.
@@ -138,11 +170,11 @@ def generate_password() -> str:
 # region Hysteria
 
 
-def install_hysteria2(port: int, sni: str) -> str:
+def install_hysteria2(port: int, sni: str):
     '''
-    Installs Hysteria2 on the given port and uses the provided or default SNI value.
+    Installs Hysteria2 and streams the output of the installation script.
     '''
-    return run_cmd(['bash', Command.INSTALL_HYSTERIA2.value, str(port), sni])
+    run_cmd_and_stream(['bash', Command.INSTALL_HYSTERIA2.value, str(port), sni])
 
 
 def uninstall_hysteria2():
@@ -388,7 +420,6 @@ def kick_users_by_name(usernames: list[str]):
     except subprocess.CalledProcessError as e:
         raise CommandExecutionError(f"Failed to execute kick user script: {e}")
         
-# TODO: it's better to return json
 def show_user_uri(username: str, qrcode: bool, ipv: int, all: bool, singbox: bool, normalsub: bool) -> str | None:
     '''
     Displays the URI for a user, with options for QR code and other formats.
