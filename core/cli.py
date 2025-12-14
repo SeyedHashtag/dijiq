@@ -26,10 +26,9 @@ def cli():
 @click.option('--sni', '-s', required=False, default='bts.com', help='SNI for Hysteria2 (default: bts.com)', type=str)
 def install_hysteria2(port: int, sni: str):
     try:
-        output = cli_api.install_hysteria2(port, sni)
-        click.echo(output)
+        cli_api.install_hysteria2(port, sni)
     except Exception as e:
-        click.echo(f'{e}', err=True)
+        click.echo(f'\nAn error occurred during installation: {e}', err=True)
 
 
 @cli.command('uninstall-hysteria2')
