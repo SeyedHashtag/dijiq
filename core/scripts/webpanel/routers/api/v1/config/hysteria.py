@@ -29,6 +29,22 @@ async def update():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
 
+@router.post('/restart', response_model=DetailResponse, summary='Restart Hysteria2 Service')
+async def restart_service():
+    """
+    Restarts the Hysteria2 service.
+
+    Returns:
+        A DetailResponse with a message indicating the service was restarted successfully.
+
+    Raises:
+        HTTPException: if an error occurs while restarting the service.
+    """
+    try:
+        cli_api.restart_hysteria2()
+        return DetailResponse(detail='Hysteria2 service restarted successfully.')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Error: {str(e)}')
 
 @router.get('/get-port', response_model=GetPortResponse, summary='Get Hysteria2 port')
 async def get_port_api():
