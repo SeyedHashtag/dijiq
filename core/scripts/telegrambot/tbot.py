@@ -18,9 +18,22 @@ def monitoring_thread():
         monitor_system_resources()
         time.sleep(60)
 
+def payment_monitoring_thread():
+    """Background thread to check pending payments periodically"""
+    while True:
+        try:
+            from utils.purchase_plan import check_pending_payments
+            check_pending_payments()
+        except Exception as e:
+            print(f"Error in payment monitoring: {e}")
+        # Check every 5 minutes
+        time.sleep(300)
+
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
     monitor_thread.start()
     version_thread = threading.Thread(target=version_monitoring, daemon=True)
     version_thread.start()
+    payment_thread = threading.Thread(target=payment_monitoring_thread, daemon=True)
+    payment_thread.start()
     bot.polling(none_stop=True)

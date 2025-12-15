@@ -554,3 +554,79 @@ def process_payment_webhook(request_data):
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
         return False
+
+def check_pending_payments():
+    try:
+        payments = load_payments()
+        payment_handler = CryptoPayment()
+        
+        for payment_id, record in payments.items():
+            if record.get('status') == 'pending':
+                # Check if payment is not too old (e.g., > 24 hours) to avoid spamming API for abandoned orders
+                created_at_str = record.get('created_at')
+                if created_at_str:
+                    try:
+                        created_at = datetime.datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
+                        if datetime.datetime.now() - created_at > datetime.timedelta(hours=24):
+                            continue
+                    except ValueError:
+                        pass
+
+                # Check status
+                try:
+                    response = payment_handler.check_payment_status(payment_id)
+                    if "error" in response:
+                        continue
+                        
+                    result = response.get('result', {})
+                    status = result.get('status') or result.get('payment_status') or result.get('paymentStatus')
+                    
+                    if status and status.lower() == 'paid':
+                        # Process payment
+                        user_id = record.get('user_id')
+                        plan_gb = record.get('plan_gb')
+                        days = record.get('days')
+                        price = record.get('price')
+                        
+                        username = create_username_from_user_id(user_id)
+                        api_client = APIClient()
+                        add_result = api_client.add_user(username, int(plan_gb), int(days))
+                        
+                        if add_result:
+                            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
+                            user_uri_data = api_client.get_user_uri(username)
+                            
+                            update_payment_status(payment_id, 'completed')
+                            
+                            user_language = get_user_language(user_id)
+                            
+                            if user_uri_data and 'normal_sub' in user_uri_data:
+                                sub_url = user_uri_data['normal_sub']
+                                qr = qrcode.make(sub_url)
+                                bio = io.BytesIO()
+                                qr.save(bio, 'PNG')
+                                bio.seek(0)
+                                success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
+                                try:
+                                    bot.send_photo(
+                                        user_id,
+                                        photo=bio,
+                                        caption=success_message,
+                                        parse_mode="Markdown"
+                                    )
+                                except Exception as e:
+                                    print(f"Failed to send success message to user {user_id}: {e}")
+                            else:
+                                try:
+                                    bot.send_message(
+                                        user_id,
+                                        get_message_text(user_language, "payment_completed_no_url"),
+                                        parse_mode="Markdown"
+                                    )
+                                except Exception as e:
+                                    print(f"Failed to send success message to user {user_id}: {e}")
+                except Exception as e:
+                    print(f"Error checking pending payment {payment_id}: {e}")
+                    
+    except Exception as e:
+        print(f"Error in check_pending_payments: {e}")
