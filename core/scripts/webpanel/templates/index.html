@@ -15,7 +15,8 @@
 
 <section class="content" 
          data-server-status-url="{{ url_for('server_status_api') }}" 
-         data-services-status-url="{{ url_for('server_services_status_api') }}">
+         data-services-status-url="{{ url_for('server_services_status_api') }}"
+         data-restart-hysteria-url="{{ url_for('restart_service') }}">
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-3 col-sm-6 col-12">
@@ -151,6 +152,9 @@
                     <div class="icon">
                         <i class="fas fa-bolt"></i>
                     </div>
+                    <a href="#" id="restart-hysteria2-btn" class="small-box-footer" style="display: none;">
+                        Restart Service <i class="fas fa-sync-alt ml-1"></i>
+                    </a>
                 </div>
             </div>
             <div class="col-lg-3 col-6">
