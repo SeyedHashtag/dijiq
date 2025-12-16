@@ -3,6 +3,7 @@
 import os
 import sys
 import requests
+import subprocess
 from pathlib import Path
 from init_paths import *
 from paths import *
@@ -21,8 +22,34 @@ def version_greater_equal(version1, version2):
         elif version1_parts[i] < version2_parts[i]:
             return False
     
-    # If we get here, they're equal
     return True
+
+def check_core_version():
+    try:
+        service_active = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "hysteria-server.service"]
+        ).returncode == 0
+
+        if service_active:
+            result = subprocess.run(
+                ["hysteria", "version"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            output = result.stdout
+            version_line = next(
+                (line for line in output.splitlines() if line.startswith("Version:")), None
+            )
+            
+            if version_line:
+                version = version_line.split()[1]
+                print(f"Hysteria2 Core Version: {version}")
+
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    except Exception as e:
+        print(f"Error checking Hysteria2 Core version: {e}", file=sys.stderr)
 
 def check_version():
     try:
@@ -48,6 +75,7 @@ def show_version():
             local_version = f.read().strip()
         
         print(f"Panel Version: {local_version}")
+        check_core_version()
     except Exception as e:
         print(f"Error showing version: {e}", file=sys.stderr)
         sys.exit(1)
