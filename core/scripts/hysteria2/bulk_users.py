@@ -2,10 +2,10 @@
 
 import init_paths
 import sys
-import os
-import subprocess
 import argparse
 import re
+import secrets
+import string
 from db.database import db
 
 def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unlimited_user):
@@ -44,16 +44,8 @@ def add_bulk_users(traffic_gb, expiration_days, count, prefix, start_number, unl
     if count > new_users_count:
         print(f"Warning: {count - new_users_count} user(s) already exist. Skipping them.")
 
-    try:
-        password_process = subprocess.run(['pwgen', '-s', '32', str(new_users_count)], capture_output=True, text=True, check=True)
-        passwords = password_process.stdout.strip().split('\n')
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        print("Warning: 'pwgen' not found or failed. Falling back to UUID for password generation.")
-        passwords = [subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], text=True).strip() for _ in range(new_users_count)]
-
-    if len(passwords) < new_users_count:
-        print("Error: Could not generate enough passwords.")
-        return 1
+    alphabet = string.ascii_letters + string.digits
+    passwords = [''.join(secrets.choice(alphabet) for _ in range(32)) for _ in range(new_users_count)]
 
     users_to_insert = []
     for i, username in enumerate(new_usernames):

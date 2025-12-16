@@ -27,9 +27,8 @@ def cli():
 def install_hysteria2(port: int, sni: str):
     try:
         cli_api.install_hysteria2(port, sni)
-        click.echo(f'Hysteria2 installed successfully on port {port} with SNI {sni}.')
     except Exception as e:
-        click.echo(f'{e}', err=True)
+        click.echo(f'\nAn error occurred during installation: {e}', err=True)
 
 
 @cli.command('uninstall-hysteria2')

@@ -43,6 +43,7 @@ class ServerServicesStatusResponse(BaseModel):
 
 class VersionInfoResponse(BaseModel):
     current_version: str
+    core_version: Optional[str] = None
 
 
 class VersionCheckResponse(BaseModel):

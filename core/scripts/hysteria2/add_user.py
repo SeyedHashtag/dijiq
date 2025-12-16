@@ -3,8 +3,9 @@
 import init_paths
 import sys
 import os
-import subprocess
 import re
+import secrets
+import string
 from datetime import datetime
 from db.database import db
 
@@ -27,15 +28,8 @@ def add_user(username, traffic_gb, expiration_days, password=None, unlimited_use
     username_lower = username.lower()
 
     if not password:
-        try:
-            password_process = subprocess.run(['pwgen', '-s', '32', '1'], capture_output=True, text=True, check=True)
-            password = password_process.stdout.strip()
-        except FileNotFoundError:
-            try:
-                password = subprocess.check_output(['cat', '/proc/sys/kernel/random/uuid'], text=True).strip()
-            except Exception:
-                print("Error: Failed to generate password. Please install 'pwgen' or ensure /proc access.")
-                return 1
+        alphabet = string.ascii_letters + string.digits
+        password = ''.join(secrets.choice(alphabet) for _ in range(32))
 
     if not re.match(r"^[a-zA-Z0-9_]+$", username):
         print("Error: Username can only contain letters, numbers, and underscores.")

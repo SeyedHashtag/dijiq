@@ -45,7 +45,7 @@ update_env_file() {
     local external_port=$2
     local aiohttp_listen_address=$3
     local aiohttp_listen_port=$4
-    local subpath_val=$(pwgen -s 32 1)
+    local subpath_val=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 32)
 
     cat <<EOL > "$NORMALSUB_ENV_FILE"
 HYSTERIA_DOMAIN=$domain

@@ -53,6 +53,15 @@ function updateServiceBox(serviceName, status) {
         statusBox.classList.remove('bg-success');
         statusBox.classList.add('bg-danger');
     }
+
+    if (serviceName === 'hysteria2') {
+        const restartBtn = document.getElementById('restart-hysteria2-btn');
+        if (status === true) {
+            restartBtn.style.display = 'none';
+        } else {
+            restartBtn.style.display = 'block';
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -69,5 +78,49 @@ document.addEventListener('DOMContentLoaded', function () {
         ipAddressesDiv.style.filter = isBlurred ? 'none' : 'blur(5px)';
         toggleIpBtn.querySelector('i').classList.toggle('fa-eye');
         toggleIpBtn.querySelector('i').classList.toggle('fa-eye-slash');
+    });
+
+    const restartBtn = document.getElementById('restart-hysteria2-btn');
+    const restartUrl = document.querySelector('.content').dataset.restartHysteriaUrl;
+
+    restartBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        
+        restartBtn.innerHTML = 'Restarting... <i class="fas fa-sync-alt fa-spin ml-1"></i>';
+        restartBtn.style.pointerEvents = 'none';
+
+        fetch(restartUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.detail || 'Unknown error'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            Swal.fire({
+                icon: 'success',
+                title: 'Success',
+                text: data.detail,
+                timer: 2000,
+                showConfirmButton: false
+            });
+            setTimeout(updateServiceStatuses, 1000);
+        })
+        .catch(error => {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: `Failed to restart Hysteria2: ${error.message}`
+            });
+        })
+        .finally(() => {
+            restartBtn.innerHTML = 'Restart Service <i class="fas fa-sync-alt ml-1"></i>';
+            restartBtn.style.pointerEvents = 'auto';
+        });
     });
 });

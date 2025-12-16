@@ -24,9 +24,9 @@ SyslogIdentifier=hysteria-scheduler
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable hysteria-scheduler.service
-    systemctl start hysteria-scheduler.service
+    systemctl daemon-reload >/dev/null 2>&1
+    systemctl enable hysteria-scheduler.service >/dev/null 2>&1
+    systemctl start hysteria-scheduler.service >/dev/null 2>&1
     (crontab -l | grep -v "hysteria2_venv.*traffic-status" | grep -v "hysteria2_venv.*backup-hysteria") | crontab -
 }
 
@@ -60,9 +60,9 @@ SyslogIdentifier=hysteria-Auth
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable hysteria-auth.service
-    systemctl start hysteria-auth.service
+    systemctl daemon-reload >/dev/null 2>&1
+    systemctl enable hysteria-auth.service >/dev/null 2>&1
+    systemctl start hysteria-auth.service >/dev/null 2>&1
 }
 
 check_auth_server_service() {

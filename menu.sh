@@ -8,7 +8,7 @@ check_services() {
     for service in "${services[@]}"; do
         service_base_name=$(basename "$service" .service)
 
-        display_name=$(echo "$service_base_name" | sed -E 's/([^-]+)-?/\u\1/g') 
+        display_name=$(echo "$service_base_name" | sed -E 's/([^-]+)-?/\u\1/g')
 
         if systemctl is-active --quiet "$service"; then
             echo -e "${NC}${display_name}:${green} Active${NC}"
@@ -18,7 +18,6 @@ check_services() {
     done
 }
 
-# OPTION HANDLERS (ONLY NEEDED ONE)
 hysteria2_install_handler() {
     if systemctl is-active --quiet hysteria-server.service; then
         echo "The hysteria-server.service is currently active."
@@ -29,7 +28,7 @@ hysteria2_install_handler() {
     while true; do
         read -p "Enter the SNI (default: bts.com): " sni
         sni=${sni:-bts.com}
-        
+
         read -p "Enter the port number you want to use: " port
         if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
             echo "Invalid port number. Please enter a number between 1 and 65535."
@@ -38,7 +37,7 @@ hysteria2_install_handler() {
         fi
     done
 
-    
+
     python3 $CLI_PATH install-hysteria2 --port "$port" --sni "$sni"
 
     cat <<EOF > /etc/hysteria/.configs.env
@@ -51,7 +50,7 @@ hysteria2_add_user_handler() {
     while true; do
         read -p "Enter the username: " username
 
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             if [[ -n $(python3 $CLI_PATH get-user -u "$username" 2>/dev/null) ]]; then
                 echo -e "${red}Error:${NC} Username already exists. Please choose another username."
             else
@@ -64,7 +63,7 @@ hysteria2_add_user_handler() {
 
     read -p "Enter the traffic limit (in GB): " traffic_limit_GB
     read -p "Enter the expiration days: " expiration_days
-    
+
     local unlimited_arg=""
     while true; do
         read -p "Exempt user from IP limit checks (unlimited IP)? (y/n) [n]: " unlimited_choice
@@ -74,11 +73,10 @@ hysteria2_add_user_handler() {
             *) echo -e "${red}Error:${NC} Please answer 'y' or 'n'." ;;
         esac
     done
-    
-    password=$(pwgen -s 32 1)
+
     creation_date=$(date +%Y-%m-%d)
 
-    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --password "$password" --creation-date "$creation_date" $unlimited_arg
+    python3 $CLI_PATH add-user --username "$username" --traffic-limit "$traffic_limit_GB" --expiration-days "$expiration_days" --creation-date "$creation_date" $unlimited_arg
 }
 
 hysteria2_edit_user_handler() {
@@ -102,7 +100,7 @@ hysteria2_edit_user_handler() {
         done
     }
 
-    prompt_for_input "Enter the username you want to edit: " '^[a-zA-Z0-9]+$' '' username
+    prompt_for_input "Enter the username you want to edit: " '^[a-zA-Z0-9_-]+$' '' username
 
     user_exists_output=$(python3 $CLI_PATH get-user -u "$username" 2>&1)
     if [[ -z "$user_exists_output" ]]; then
@@ -110,7 +108,7 @@ hysteria2_edit_user_handler() {
         return 1
     fi
 
-    prompt_for_input "Enter the new username (leave empty to keep the current username): " '^[a-zA-Z0-9]*$' '' new_username
+    prompt_for_input "Enter the new username (leave empty to keep the current username): " '^[a-zA-Z0-9_-]*$' '' new_username
 
     prompt_for_input "Enter the new traffic limit (in GB) (leave empty to keep the current limit): " '^[0-9]*$' '' new_traffic_limit_GB
 
@@ -231,24 +229,24 @@ hysteria2_get_user_handler() {
 
 hysteria2_list_users_handler() {
     users_json=$(python3 $CLI_PATH list-users 2>/dev/null)
-    
+
     if [ $? -ne 0 ] || [ -z "$users_json" ]; then
         echo -e "${red}Error:${NC} Failed to list users."
         return 1
     fi
-    
+
     user_count=$(echo "$users_json" | jq 'length')
-    
+
     if [ "$user_count" -eq 0 ]; then
         echo -e "${red}Error:${NC} No users found."
         return 1
     fi
-    
+
     printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
         "Username" "Traffic(GB)" "Expiry(Days)" "Created" "Password" "Blocked" "Status" "Down(MB)" "Up(MB)"
-    
-    echo "$users_json" | jq -r '.[] | 
-        [.username, 
+
+    echo "$users_json" | jq -r '.[] |
+        [.username,
          (if .max_download_bytes == 0 then "Unlimited" else (.max_download_bytes / 1073741824 | tostring) end),
          (if .expiration_days == 0 then "Never" else (.expiration_days | tostring) end),
          (.account_creation_date // "N/A"),
@@ -257,7 +255,7 @@ hysteria2_list_users_handler() {
          .status,
          ((.download_bytes // 0) / 1048576 | floor),
          ((.upload_bytes // 0) / 1048576 | floor),
-         .online_count] | 
+         .online_count] |
         @tsv' | \
     while IFS=$'\t' read -r username traffic expiry created password blocked status down up online; do
         printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
@@ -293,7 +291,7 @@ hysteria2_show_user_uri_handler() {
     done
 
     flags=""
-    
+
     if check_service_active "hysteria-singbox.service"; then
         flags+=" -s"
     fi
@@ -439,12 +437,12 @@ warp_configure_handler() {
     if systemctl is-active --quiet "$service_name"; then
         echo -e "${cyan}=== WARP Status ===${NC}"
         status_json=$(python3 $CLI_PATH warp-status)
-        
+
         all_traffic=$(echo "$status_json" | grep -o '"all_traffic_via_warp": *[^,}]*' | cut -d':' -f2 | tr -d ' "')
         popular_sites=$(echo "$status_json" | grep -o '"popular_sites_via_warp": *[^,}]*' | cut -d':' -f2 | tr -d ' "')
         domestic_sites_via_warp=$(echo "$status_json" | grep -o '"domestic_sites_via_warp": *[^,}]*' | cut -d':' -f2 | tr -d ' "')
         block_adult=$(echo "$status_json" | grep -o '"block_adult_content": *[^,}]*' | cut -d':' -f2 | tr -d ' "')
-        
+
         display_status() {
             local label="$1"
             local status_val="$2"
@@ -454,15 +452,15 @@ warp_configure_handler() {
                 echo -e "  ${red}✗${NC} $label: ${red}Disabled${NC}"
             fi
         }
-        
+
         display_status "All Traffic via WARP" "$all_traffic"
         display_status "Popular Sites via WARP" "$popular_sites"
         display_status "Domestic Sites via WARP" "$domestic_sites_via_warp"
         display_status "Block Adult Content" "$block_adult"
-        
+
         echo -e "${cyan}==================${NC}"
         echo
-        
+
         echo "Configure WARP Options (Toggle):"
         echo "1. All traffic via WARP"
         echo "2. Popular sites via WARP"
@@ -477,43 +475,43 @@ warp_configure_handler() {
         read -p "Select an option to toggle: " option
 
         case $option in
-            1) 
+            1)
                 target_state=$([ "$all_traffic" = "true" ] && echo "off" || echo "on")
                 python3 $CLI_PATH configure-warp --set-all "$target_state" ;;
-            2) 
+            2)
                 target_state=$([ "$popular_sites" = "true" ] && echo "off" || echo "on")
                 python3 $CLI_PATH configure-warp --set-popular-sites "$target_state" ;;
-            3) 
+            3)
                 target_state=$([ "$domestic_sites_via_warp" = "true" ] && echo "off" || echo "on")
                 python3 $CLI_PATH configure-warp --set-domestic-sites "$target_state" ;;
-            4) 
+            4)
                 target_state=$([ "$block_adult" = "true" ] && echo "off" || echo "on")
                 python3 $CLI_PATH configure-warp --set-block-adult-sites "$target_state" ;;
-            5) 
+            5)
                 current_ip=$(python3 $CLI_PATH warp-status | grep -o '"ip": *"[^"]*"' | cut -d':' -f2- | tr -d '" ')
-                if [ -z "$current_ip" ]; then 
+                if [ -z "$current_ip" ]; then
                     current_ip=$(curl -s --interface wgcf --connect-timeout 1 http://v4.ident.me || echo "N/A")
                 fi
                 cd /etc/warp/ && wgcf status
                 echo
-                echo -e "${yellow}Warp IP:${NC} ${cyan}${current_ip}${NC}" 
+                echo -e "${yellow}Warp IP:${NC} ${cyan}${current_ip}${NC}"
                 ;;
             6)
                 old_ip=$(curl -s --interface wgcf --connect-timeout 1 http://v4.ident.me || echo "N/A")
                 echo -e "${yellow}Current IP:${NC} ${cyan}$old_ip${NC}"
                 echo "Restarting $service_name to attempt IP change..."
                 systemctl restart "$service_name"
-                
+
                 echo -n "Waiting for service to restart"
                 for i in {1..5}; do
                     echo -n "."
                     sleep 1
                 done
                 echo
-                
+
                 new_ip=$(curl -s --interface wgcf --connect-timeout 1 http://v4.ident.me || echo "N/A")
                 echo -e "${yellow}New IP:${NC} ${green}$new_ip${NC}"
-                
+
                 if [ "$old_ip" != "N/A" ] && [ "$new_ip" != "N/A" ] && [ "$old_ip" != "$new_ip" ]; then
                     echo -e "${green}✓ IP address changed successfully${NC}"
                 elif [ "$old_ip" = "$new_ip" ] && [ "$old_ip" != "N/A" ]; then
@@ -525,18 +523,18 @@ warp_configure_handler() {
             7)
                 echo -e "${yellow}Switching to WARP Plus...${NC}"
                 read -p "Enter your WARP Plus license key: " warp_key
-                
+
                 if [ -z "$warp_key" ]; then
                     echo -e "${red}Error: WARP Plus key is required.${NC}"
                 else
                     echo "Stopping WARP service..."
                     systemctl stop "$service_name" 2>/dev/null
-                    
+
                     cd /etc/warp/ || { echo -e "${red}Failed to change directory to /etc/warp/${NC}"; return 1; }
-                    
+
                     echo "Updating WARP Plus configuration..."
                     WGCF_LICENSE_KEY="$warp_key" wgcf update
-                    
+
                     if [ $? -eq 0 ]; then
                         echo "Starting WARP service..."
                         systemctl start "$service_name"
@@ -552,17 +550,17 @@ warp_configure_handler() {
                 echo -e "${yellow}Switching to Normal WARP...${NC}"
                 echo "This will create a new WARP account. Continue? (y/N)"
                 read -p "" confirm
-                
+
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
                     echo "Stopping WARP service..."
                     systemctl stop "$service_name" 2>/dev/null
-                    
+
                     cd /etc/warp/ || { echo -e "${red}Failed to change directory to /etc/warp/${NC}"; return 1; }
-                    
+
                     echo "Creating new WARP account..."
                     rm -f wgcf-account.toml
                     yes | wgcf register
-                    
+
                     if [ $? -eq 0 ]; then
                         echo "Starting WARP service..."
                         systemctl start "$service_name"
@@ -694,7 +692,6 @@ normalsub_handler() {
                         echo "Error: SUBPATH must include at least one uppercase letter, one lowercase letter, and one number."
                     else
                         python3 $CLI_PATH normal-sub -a edit_subpath -sp "$subpath"
-                        # echo "SUBPATH updated successfully!"
                         break
                     fi
                 done
@@ -762,12 +759,24 @@ webpanel_handler() {
                     done
 
                     while true; do
-                        read -e -p "Enter the admin password: " admin_password
+                        read -sp "Enter the admin password: " admin_password
+                        echo ""
                         if [ -z "$admin_password" ]; then
                             echo "Admin password cannot be empty. Please try again."
-                        else
+                            continue
+                        fi
+                        local check_password
+                        read -sp "Enter the admin password again: " check_password
+                        echo ""
+                        if [ -z "$check_password" ]; then
+                            echo "Admin password cannot be empty. Please try again."
+                            continue
+                        fi
+                        if [ "$check_password" == "$admin_password" ]; then
+                            echo "Password is set!"
                             break
                         fi
+                        echo "Passwords did NOT match. Please try again."
                     done
 
                     python3 $CLI_PATH webpanel -a start -d "$domain" -p "$port" -au "$admin_username" -ap "$admin_password"
@@ -807,20 +816,20 @@ webpanel_handler() {
                         if [ -n "$new_password" ]; then
                              cmd_args+=("-p" "$new_password")
                         fi
-                        
+
                         if [ -z "$new_username" ]; then
                              cmd_args=()
                              if [ -n "$new_password" ]; then
                                 cmd_args+=("-p" "$new_password")
                              fi
                         fi
-                        
+
                         echo "Attempting to reset credentials..."
                         python3 "$CLI_PATH" reset-webpanel-creds "${cmd_args[@]}"
                     fi
                 fi
                 ;;
-            6) 
+            6)
                 if ! systemctl is-active --quiet hysteria-webpanel.service; then
                      echo -e "${red}WebPanel service is not running. Cannot perform this action.${NC}"
                 else
@@ -842,7 +851,7 @@ webpanel_handler() {
                     fi
                 fi
                 ;;
-            7) 
+            7)
                 if ! systemctl is-active --quiet hysteria-webpanel.service; then
                      echo -e "${red}WebPanel service is not running. Cannot perform this action.${NC}"
                 else
@@ -855,7 +864,7 @@ webpanel_handler() {
                     python3 "$CLI_PATH" change-webpanel-root "${cmd_args[@]}"
                 fi
                 ;;
-            8) 
+            8)
                 if ! systemctl is-active --quiet hysteria-webpanel.service; then
                      echo -e "${red}WebPanel service is not running. Cannot perform this action.${NC}"
                 else
@@ -881,7 +890,6 @@ webpanel_handler() {
     done
 }
 
-
 obfs_handler() {
     while true; do
         echo -e "${cyan}1.${NC} Remove Obfs"
@@ -891,10 +899,15 @@ obfs_handler() {
 
         case $option in
             1)
-            python3 $CLI_PATH manage_obfs -r
+                python3 $CLI_PATH manage_obfs -r
                 ;;
             2)
-            python3 $CLI_PATH manage_obfs -g
+                status=$(python3 $CLI_PATH masquerade -s)
+                if [[ "$status" == "Enabled" ]]; then
+                    echo -e "${red}Error:${NC} Cannot use Obfs when masquerade is enabled."
+                else
+                    python3 $CLI_PATH manage_obfs -g
+                fi
                 ;;
             0)
                 break
@@ -960,7 +973,7 @@ geo_update_handler() {
 masquerade_handler() {
     while true; do
         status=$(python3 $CLI_PATH masquerade -s)
-        
+
         echo "--------------------------"
         if [ "$status" == "Enabled" ]; then
             echo -e "Masquerade Status: ${green}${status}${NC}"
@@ -1006,7 +1019,7 @@ ip_limit_handler() {
                 else
                     while true; do
                         read -e -p "Enter Block Duration (seconds, default: 60): " block_duration
-                        block_duration=${block_duration:-60} # Default to 60 if empty
+                        block_duration=${block_duration:-60}
                         if ! [[ "$block_duration" =~ ^[0-9]+$ ]]; then
                             echo "Invalid Block Duration. Please enter a number."
                         else
@@ -1016,7 +1029,7 @@ ip_limit_handler() {
 
                     while true; do
                         read -e -p "Enter Max IPs per User (default: 1): " max_ips
-                        max_ips=${max_ips:-1} # Default to 1 if empty
+                        max_ips=${max_ips:-1}
                         if ! [[ "$max_ips" =~ ^[0-9]+$ ]]; then
                             echo "Invalid Max IPs. Please enter a number."
                         else
@@ -1081,7 +1094,6 @@ ip_limit_handler() {
     done
 }
 
-# Function to display the main menu
 display_main_menu() {
     clear
     tput setaf 7 ; tput setab 4 ; tput bold
@@ -1101,7 +1113,7 @@ display_main_menu() {
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
 
         check_services
-        
+
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
     echo -e "${yellow}                   ☼ Main Menu ☼                   ${NC}"
 
@@ -1114,7 +1126,6 @@ display_main_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle main menu options
 main_menu() {
     clear
     local choice
@@ -1134,7 +1145,6 @@ main_menu() {
     done
 }
 
-# Function to display the Blitz menu
 display_hysteria2_menu() {
     clear
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
@@ -1160,7 +1170,6 @@ display_hysteria2_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle Hysteria2 menu options
 hysteria2_menu() {
     clear
     local choice
@@ -1186,7 +1195,6 @@ hysteria2_menu() {
     done
 }
 
-# Function to get Advance menu
 display_advance_menu() {
     clear
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
@@ -1215,7 +1223,6 @@ display_advance_menu() {
     echo -ne "${yellow}➜ Enter your option: ${NC}"
 }
 
-# Function to handle Advance menu options
 advance_menu() {
     clear
     local choice
@@ -1248,6 +1255,5 @@ advance_menu() {
         read -rp "Press Enter to continue..."
     done
 }
-# Main function to run the script
 define_colors
 main_menu

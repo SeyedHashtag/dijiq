@@ -32,29 +32,53 @@ def get_interface_addresses():
     ipv4_address = ""
     ipv6_address = ""
 
-    interfaces = subprocess.check_output(["ip", "-o", "link", "show"]).decode()
-    interfaces = [
-        line.split(": ")[1]
-        for line in interfaces.strip().splitlines()
-        if not re.match(r"^(lo|wgcf|warp)$", line.split(": ")[1])
-    ]
+    try:
+        interfaces_output = subprocess.check_output(["ip", "-o", "link", "show"], stderr=subprocess.DEVNULL).decode()
+        interface_lines = interfaces_output.strip().splitlines()
+        candidate_interfaces = []
+        for line in interface_lines:
+            parts = line.split(': ')
+            if len(parts) > 1:
+                iface_name = parts[1].split('@')[0]
+                if iface_name not in ["lo", "wgcf", "warp"]:
+                    candidate_interfaces.append(iface_name)
 
-    for iface in interfaces:
+        for iface in candidate_interfaces:
+            try:
+                if not ipv4_address:
+                    ipv4_output = subprocess.check_output(["ip", "-o", "-4", "addr", "show", iface], stderr=subprocess.DEVNULL).decode()
+                    for line in ipv4_output.strip().splitlines():
+                        addr = line.split()[3].split("/")[0]
+                        if not re.match(r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1]))", addr):
+                            ipv4_address = addr
+                            break
+                if not ipv6_address:
+                    ipv6_output = subprocess.check_output(["ip", "-o", "-6", "addr", "show", iface], stderr=subprocess.DEVNULL).decode()
+                    for line in ipv6_output.strip().splitlines():
+                        addr = line.split()[3].split("/")[0]
+                        if not re.match(r"^(::1|fe80:)", addr):
+                            ipv6_address = addr
+                            break
+            except subprocess.CalledProcessError:
+                continue
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    if not ipv4_address:
         try:
-            ipv4 = subprocess.check_output(["ip", "-o", "-4", "addr", "show", iface]).decode()
-            for line in ipv4.strip().splitlines():
-                addr = line.split()[3].split("/")[0]
-                if not re.match(r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1]))", addr):
-                    ipv4_address = addr
-                    break
-            ipv6 = subprocess.check_output(["ip", "-o", "-6", "addr", "show", iface]).decode()
-            for line in ipv6.strip().splitlines():
-                addr = line.split()[3].split("/")[0]
-                if not re.match(r"^(::1|fe80:)", addr):
-                    ipv6_address = addr
-                    break
-        except subprocess.CalledProcessError:
-            continue
+            ipv4_address = subprocess.check_output(["curl", "-s", "-4", "ip.sb"], timeout=5).decode().strip()
+            if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ipv4_address):
+                ipv4_address = ""
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            ipv4_address = ""
+
+    if not ipv6_address:
+        try:
+            ipv6_address = subprocess.check_output(["curl", "-s", "-6", "ip.sb"], timeout=5).decode().strip()
+            if ":" not in ipv6_address:
+                ipv6_address = ""
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            ipv6_address = ""
 
     return ipv4_address, ipv6_address
 

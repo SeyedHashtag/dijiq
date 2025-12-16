@@ -113,6 +113,32 @@ install_mongodb() {
     fi
 }
 
+migrate_normalsub_path() {
+    local normalsub_env_file="$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/.env"
+    info "Checking for NormalSub configuration migration..."
+
+    if systemctl is-active --quiet "hysteria-normal-sub.service" && [[ -f "$normalsub_env_file" ]]; then
+        info "Active NormalSub service detected with .env file. Checking subpath format..."
+        
+        (
+            source "$normalsub_env_file"
+            
+            if [[ -n "${SUBPATH:-}" ]] && ! [[ "$SUBPATH" == *"sub/normal"* ]]; then
+                warn "Old NormalSub subpath format detected. Migrating to maintain URL compatibility..."
+                local new_subpath="${SUBPATH}/sub/normal"
+                
+                sed -i "s|SUBPATH=.*|SUBPATH=${new_subpath}|" "$normalsub_env_file"
+                
+                success "SUBPATH in $normalsub_env_file updated to: $new_subpath"
+            else
+                success "NormalSub subpath format is already up-to-date or migration is not needed."
+            fi
+        )
+    else
+        info "NormalSub service not active or .env file not found. Skipping migration."
+    fi
+}
+
 # ========== New Function to Migrate Data ==========
 migrate_json_to_mongo() {
     info "Checking for user data migration..."
@@ -208,6 +234,9 @@ fix_caddy_repo
 
 # ========== Install MongoDB Prerequisite ==========
 install_mongodb
+
+# ========== Migrate NormalSub Path (if necessary) ==========
+migrate_normalsub_path
 
 # ========== Backup Files ==========
 cd /root
