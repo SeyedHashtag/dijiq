@@ -182,13 +182,26 @@ def __parse_services_status(services_status: dict[str, bool]) -> ServerServicesS
 
 @router.get('/version', response_model=VersionInfoResponse)
 async def get_version_info():
-    """Retrieves the current version of the panel."""
+    """Retrieves the current version of the panel and Hysteria core."""
     try:
         version_output = cli_api.show_version()
-        if version_output:
-            current_version = version_output.split(": ")[1].strip()
-            return VersionInfoResponse(current_version=current_version)
-        raise HTTPException(status_code=404, detail="Version information not found")
+        if not version_output:
+            raise HTTPException(status_code=404, detail="Version information not found")
+
+        lines = version_output.strip().splitlines()
+        current_version = None
+        core_version = None
+
+        for line in lines:
+            if "Panel Version:" in line:
+                current_version = line.split(": ")[1].strip()
+            elif "Hysteria2 Core Version:" in line:
+                core_version = line.split(": ")[1].strip()
+
+        if current_version:
+            return VersionInfoResponse(current_version=current_version, core_version=core_version)
+        
+        raise HTTPException(status_code=404, detail="Panel version not found in output")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
