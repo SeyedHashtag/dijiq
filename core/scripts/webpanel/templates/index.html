@@ -16,10 +16,12 @@
 <section class="content" 
          data-server-status-url="{{ url_for('server_status_api') }}" 
          data-services-status-url="{{ url_for('server_services_status_api') }}"
-         data-restart-hysteria-url="{{ url_for('restart_service') }}">
+         data-restart-hysteria-url="{{ url_for('restart_service') }}"
+         data-version-url="{{ url_for('get_version_info') }}" 
+         data-check-version-url="{{ url_for('check_version_info') }}">
     <div class="container-fluid">
         <div class="row">
-            <div class="col-md-3 col-sm-6 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-info"><i class="fas fa-microchip"></i></span>
                     <div class="info-box-content">
@@ -28,7 +30,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-warning"><i class="fas fa-memory"></i></span>
                     <div class="info-box-content">
@@ -37,7 +39,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-success"><i class="fas fa-users"></i></span>
                     <div class="info-box-content">
@@ -46,7 +48,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-secondary"><i class="fas fa-clock"></i></span>
                     <div class="info-box-content">
@@ -57,23 +59,23 @@
             </div>
         </div>
         <div class="row">
-            <div class="col-md-4 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-primary"><i class="fas fa-exchange-alt"></i></span>
                     <div class="info-box-content">
                         <span class="info-box-text">Network Speed</span>
                         <div style="font-size: 16px; line-height: 1.3; font-weight: bold;">
-                            <span class="d-block" id="download-speed">🔽 Download: --</span>
-                            <span class="d-block" id="upload-speed">🔼 Upload: --</span>
+                            <span class="d-block" id="download-speed">🔽 --</span>
+                            <span class="d-block" id="upload-speed">🔼 --</span>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm">
                     <span class="info-box-icon bg-dark"><i class="fas fa-project-diagram"></i></span>
                     <div class="info-box-content">
-                        <span class="info-box-text">Active Connections</span>
+                        <span class="info-box-text">Connections</span>
                         <div style="font-size: 16px; line-height: 1.3; font-weight: bold;">
                             <span class="d-block" id="tcp-connections">TCP: --</span>
                             <span class="d-block" id="udp-connections">UDP: --</span>
@@ -81,7 +83,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4 col-12">
+            <div class="col-lg-3 col-md-6 col-12">
                 <div class="info-box shadow-sm" id="ip-info-box">
                     <span class="info-box-icon bg-purple"><i class="fas fa-network-wired"></i></span>
                     <div class="info-box-content">
@@ -91,6 +93,22 @@
                         <div id="ip-addresses" style="filter: blur(5px); font-size: 16px; line-height: 1.3; font-weight: bold;">
                             <span class="d-block" id="server-ipv4">IPv4: --</span>
                             <span class="d-block" id="server-ipv6">IPv6: --</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6 col-12">
+                <div class="info-box shadow-sm">
+                    <span class="info-box-icon bg-indigo"><i class="fas fa-info-circle"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Version Info</span>
+                        <div style="font-size: 16px; line-height: 1.3; font-weight: bold;">
+                            <a href="https://github.com/ReturnFI/Blitz/releases" target="_blank" rel="noopener noreferrer" class="text-reset d-block">
+                                Panel: <strong id="panel-version-display">...</strong>
+                            </a>
+                            <a id="core-version-row" href="https://github.com/apernet/hysteria/releases" target="_blank" rel="noopener noreferrer" class="text-reset d-block" style="display: none;">
+                                Core: <strong id="core-version-display">...</strong>
+                            </a>
                         </div>
                     </div>
                 </div>
