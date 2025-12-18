@@ -176,7 +176,7 @@ hysteria2_remove_user_handler() {
             echo -e "${red}Error:${NC} Username can only contain letters and numbers."
         fi
     done
-    python3 $CLI_PATH remove-user --username "$username"
+    python3 $CLI_PATH remove-user "$username"
 }
 
 hysteria2_get_user_handler() {
