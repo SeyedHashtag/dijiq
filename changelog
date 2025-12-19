@@ -1,36 +1,79 @@
-# 🚀 **Release 2.4.11 — Masquerade Status, Flexible Sub Paths & Enhanced Password Security**
+# 📦 ** Release 2.5.0 — ACL & WARP fixes, safer password generation, service controls 🚀**
 
-*Released: 2025-12-07*
+*Released: 2025-12-19*
 
-### 🎭 **Masquerade Enhancements**
+## ✨ New Features
 
-* 🔧 Added **masquerade controls** & real-time **status indicator** to the Hysteria settings page
-* 🔄 Updated API endpoints with improved masquerade handling
-* ⚙️ Added a new **core status check** for masquerade
-* 🧹 Refactored masquerade logic to **string-based mode**
+### 🧠 **Core & Service Management**
 
-### 🔗 **Flexible Subscription Paths**
+* 🔍 Added **Hysteria2 core version detection** and validation
+* 📊 Display **core version** directly in the web panel
+* 🔁 Added **Restart Hysteria2** button in the web UI with proper fetch handling
+* 🔌 New API endpoint to **restart Hysteria2 service** programmatically
 
-* 🌐 Implemented **path-based normalsub URLs**, enabling more flexible subscription structures
-* ♻️ Added **automatic backward compatibility migration** for old paths
+### 🌍 **Geo & ACL Rule Management**
 
-### 🔐 **Password Security Improvements** *(Thanks to @YerdosNar 🙌)*
+* 🗺️ Enhanced **Geo file update process** with intelligent ACL rule handling
+* 🧩 Added **geo rule detection & auto-update** for ACL configurations
+* 🧹 Removed redundant `geoip` / `geosite` rejection rules
+* 🚫 Removed speedtest-related rejection from ACL rules
 
-* 🔁 Added password confirmation loop for safety
-* 🕶️ Enabled **masked input** during password entry
-* ✔️ General improvements to password validation flow
+### 🛡️ **Security & Password Handling**
+
+* 🔐 Replaced `pwgen` with **Python `secrets` module** for secure password generation
+* 🔑 Improved password generation for:
+
+  * add-user
+  * bulk users
+  * internal password utilities
+* 🧪 Removed implicit password auto-generation where not required
+
+### 🧰 **CLI Improvements**
+
+* 📤 Added `run_cmd_and_stream` for **real-time command output streaming**
+* ⚙️ Improved error messages during **Hysteria2 installation**
+* 🔁 Updated install scripts to return meaningful output messages
+* 🔒 Replaced `pwgen` with **openssl** for:
+
+  * obfs password generation
+  * normalsub path generation
+
+### 🌐 **Network & IP Detection**
+
+* 🌍 Added **ip.sb fallback** for public IP detection to improve reliability
 
 ---
 
-## 🛠️ **Fixes & Cleanup**
+## 🐛 Fixes & Improvements
 
-* 🧹 Removed outdated comment blocks
-* 🔇 Commented out old debug print statements
+### 👤 **User & Username Handling**
+
+* ✅ Allowed **underscores (`_`) in usernames**
+* 🧼 Improved validation regex and error handling
+* 🔧 Updated `remove-user` command syntax
+* 🧠 Improved user handler robustness
+
+### 🎭 **Masquerade & OBFS**
+
+* 🚫 Prevented **OBFS usage when masquerade is enabled** to avoid conflicts
+
+### 🧹 **Scheduler & System Stability**
+
+* 🔇 Suppressed noisy `systemctl` output during scheduler setup
+* 🧯 Improved rule-checking logic for WARP configuration status
+
+### 🧼 **Uninstall & Cleanup**
+
+* ♻️ Improved WARP uninstall flow:
+
+  * Better config loading & error handling
+  * Automatic **ACL rule reset** after uninstall
 
 ---
 
-## 📦 **Dependency Updates**
+## 📦 Dependency Updates
 
-* ⬆️ fastapi → **0.123.9**
-* ⬆️ pymongo → **4.15.5**
-* ⬆️ certbot → **5.2.1**
+* ⬆️ **FastAPI** → 0.124.4
+* ⬆️ **Certbot** → 5.2.2
+* ⬆️ **python-multipart** → 0.0.21
+
