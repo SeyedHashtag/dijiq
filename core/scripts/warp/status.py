@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import sys
+import re
 
 core_scripts_dir = Path(__file__).resolve().parents[1]
 if str(core_scripts_dir) not in sys.path:
@@ -26,25 +27,36 @@ def check_warp_configuration():
         print(json.dumps(status_data, indent=4))
         return
 
-
     acl_inline = config.get("acl", {}).get("inline", [])
 
-    def contains_warp(rule_prefixes):
-        return any(rule.startswith(prefix) for rule in acl_inline for prefix in rule_prefixes)
+    def contains_any_rule(rule_patterns):
+        """Checks if any of the provided rule patterns exist in the acl_inline list."""
+        for rule in acl_inline:
+            for pattern in rule_patterns:
+                if re.search(pattern, rule):
+                    return True
+        return False
 
-    status_data["all_traffic_via_warp"] = contains_warp(["warps(all)"])
-    status_data["popular_sites_via_warp"] = contains_warp([
-        "warps(geosite:google)",
-        "warps(geoip:google)",
-        "warps(geosite:netflix)",
-        "warps(geosite:spotify)",
-        "warps(geosite:openai)",
-        "warps(geoip:openai)"
-    ])
-    status_data["domestic_sites_via_warp"] = contains_warp([
-        "warps(geosite:ir)",
-        "warps(geoip:ir)"
-    ])
+    status_data["all_traffic_via_warp"] = "warps(all)" in acl_inline
+    
+    popular_site_patterns = [
+        r"warps\(geosite:google\)",
+        r"warps\(geoip:google\)",
+        r"warps\(geosite:netflix\)",
+        r"warps\(geosite:spotify\)"
+    ]
+    status_data["popular_sites_via_warp"] = contains_any_rule(popular_site_patterns)
+
+    domestic_site_patterns = [
+        r"warps\(geosite:ir\)",
+        r"warps\(geoip:ir\)",
+        r"warps\(geosite:cn\)",
+        r"warps\(geoip:cn\)",
+        r"warps\(geosite:ru-available-only-inside\)",
+        r"warps\(geoip:ru\)"
+    ]
+    status_data["domestic_sites_via_warp"] = contains_any_rule(domestic_site_patterns)
+    
     status_data["block_adult_content"] = "reject(geosite:nsfw)" in acl_inline
     
     print(json.dumps(status_data, indent=4))
