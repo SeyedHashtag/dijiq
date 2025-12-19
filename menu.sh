@@ -977,7 +977,12 @@ masquerade_handler() {
 
         case $option in
             1)
-                python3 $CLI_PATH masquerade -e
+                obfs_status=$(python3 $CLI_PATH manage_obfs --check 2>/dev/null)
+                if [[ "$obfs_status" == "OBFS is active." ]]; then
+                    echo -e "${red}Error:${NC} Cannot enable Masquerade while OBFS is active. Please disable OBFS first."
+                else
+                    python3 $CLI_PATH masquerade -e
+                fi
                 ;;
             2)
                 python3 $CLI_PATH masquerade -r
