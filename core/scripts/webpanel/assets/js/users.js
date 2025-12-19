@@ -17,6 +17,7 @@ $(function () {
     const passwordRegex = /^[a-zA-Z0-9]+$/;
     let cachedUserData = [];
     let searchTimeout = null;
+    const PRACTICAL_MAX_DAYS = 36500;
 
     function setCookie(name, value, days) {
         let expires = "";
@@ -63,6 +64,7 @@ $(function () {
         const isValid = usernameRegex.test(username);
         $(errorElement).text(isValid ? "" : "Usernames can only contain letters, numbers, and underscores.");
         $(inputElement).closest('form').find('button[type="submit"]').prop('disabled', !isValid);
+        return isValid;
     }
     
     function validatePassword(inputElement, errorElement) {
@@ -70,8 +72,26 @@ $(function () {
         const isValid = password === '' || passwordRegex.test(password);
         $(errorElement).text(isValid ? "" : "Password can only contain letters and numbers.");
         $('#editSubmitButton').prop('disabled', !isValid);
+        return isValid;
     }
     
+    function validateExpirationDays(inputElement, errorElement) {
+        const days = parseInt($(inputElement).val(), 10);
+        let isValid = !isNaN(days) && days >= 0;
+        let errorMessage = "";
+
+        if (!isValid) {
+            errorMessage = "Please enter a non-negative number.";
+        } else if (days > PRACTICAL_MAX_DAYS) {
+            isValid = false;
+            errorMessage = `For unlimited duration, please use 0. Values above ${PRACTICAL_MAX_DAYS} are not practical.`;
+        }
+
+        $(errorElement).text(errorMessage);
+        $(inputElement).closest('form').find('button[type="submit"]').prop('disabled', !isValid);
+        return isValid;
+    }
+
     function refreshUserList() {
         const query = $("#searchInput").val().trim();
         if (query !== "") {
@@ -147,6 +167,10 @@ $(function () {
 
     $('#addUsername, #addBulkPrefix').on('input', function() {
         validateUsername(this, `#${this.id}Error`);
+    });
+
+    $('#addExpirationDays, #addBulkExpirationDays, #editExpirationDays').on('input', function() {
+        validateExpirationDays(this, `#${this.id}Error`);
     });
 
     $(".filter-button").on("click", function (e) {
@@ -260,6 +284,7 @@ $(function () {
         const statusText = dataRow.find("td:eq(3)").text().trim();
         
         $('#editPasswordError').text('');
+        $('#editExpirationDaysError').text('');
         $('#editSubmitButton').prop('disabled', false);
 
         $("#originalUsername").val(user);
@@ -480,7 +505,7 @@ $(function () {
     
     $('#addUserModal').on('show.bs.modal', function () {
         $('#addUserForm, #addBulkUsersForm').trigger('reset');
-        $('#addUsernameError, #addBulkPrefixError').text('');
+        $('#addUsernameError, #addBulkPrefixError, #addExpirationDaysError, #addBulkExpirationDaysError').text('');
         Object.assign(document.getElementById('addTrafficLimit'), {value: 30});
         Object.assign(document.getElementById('addExpirationDays'), {value: 30});
         Object.assign(document.getElementById('addBulkTrafficLimit'), {value: 30});
