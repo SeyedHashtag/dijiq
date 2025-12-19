@@ -6,8 +6,6 @@ trap 'echo -e "\n❌ An error occurred. Aborting."; exit 1' ERR
 # ========== Variables ==========
 HYSTERIA_INSTALL_DIR="/etc/hysteria"
 HYSTERIA_VENV_DIR="$HYSTERIA_INSTALL_DIR/hysteria2_venv"
-GEOSITE_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geosite.dat"
-GEOIP_URL="https://raw.githubusercontent.com/Chocolate4U/Iran-v2ray-rules/release/geoip.dat"
 MIGRATE_SCRIPT_PATH="$HYSTERIA_INSTALL_DIR/core/scripts/db/migrate_users.py"
 
 # ========== Color Setup ==========
@@ -225,7 +223,7 @@ fix_caddy_repo
 install_mongodb
 
 # ========== Migrate NormalSub Path (if necessary) ==========
-migrate_normalsub_path
+# migrate_normalsub_path
 
 # ========== Backup Files ==========
 cd /root
@@ -238,6 +236,8 @@ FILES=(
     "$HYSTERIA_INSTALL_DIR/.configs.env"
     "$HYSTERIA_INSTALL_DIR/nodes.json"
     "$HYSTERIA_INSTALL_DIR/extra.json"
+    "$HYSTERIA_INSTALL_DIR/geosite.dat"
+    "$HYSTERIA_INSTALL_DIR/geoip.dat"
     "$HYSTERIA_INSTALL_DIR/core/scripts/telegrambot/.env"
     "$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/.env"
     "$HYSTERIA_INSTALL_DIR/core/scripts/normalsub/Caddyfile.normalsub"
@@ -245,35 +245,29 @@ FILES=(
     "$HYSTERIA_INSTALL_DIR/core/scripts/webpanel/Caddyfile"
 )
 
-info "Backing up configuration files to: $TEMP_DIR"
+info "Backing up configuration and data files to: $TEMP_DIR"
 for FILE in "${FILES[@]}"; do
     if [[ -f "$FILE" ]]; then
         mkdir -p "$TEMP_DIR/$(dirname "$FILE")"
         cp -p "$FILE" "$TEMP_DIR/$FILE"
         success "Backed up: $FILE"
     else
-        warn "File not found: $FILE"
+        warn "File not found, skipping backup: $FILE"
     fi
 done
 
 # ========== Download and Replace Installation ==========
 download_and_extract_latest_release
 
-# ========== Download Geo Data ==========
-info "Downloading geosite.dat and geoip.dat..."
-wget -q -O "$HYSTERIA_INSTALL_DIR/geosite.dat" "$GEOSITE_URL"
-wget -q -O "$HYSTERIA_INSTALL_DIR/geoip.dat" "$GEOIP_URL"
-success "Geo data downloaded."
-
 # ========== Restore Backup ==========
-info "Restoring configuration files..."
+info "Restoring configuration and data files..."
 for FILE in "${FILES[@]}"; do
     BACKUP="$TEMP_DIR/$FILE"
     if [[ -f "$BACKUP" ]]; then
         cp -p "$BACKUP" "$FILE"
         success "Restored: $FILE"
     else
-        warn "Missing backup file: $BACKUP"
+        warn "Missing backup file, skipping restore: $BACKUP"
     fi
 done
 
