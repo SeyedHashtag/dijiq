@@ -23,9 +23,7 @@
     {% block stylesheets %}{% endblock %}
 </head>
 
-<body class="hold-transition sidebar-mini sidebar-collapse" 
-      data-version-url="{{ url_for('get_version_info') }}" 
-      data-check-version-url="{{ url_for('check_version_info') }}">
+<body class="hold-transition sidebar-mini sidebar-collapse">
     <div class="wrapper">
         
         <!-- Update Notification Bar -->
@@ -188,16 +186,13 @@
 
         <!-- Footer -->
         <footer class="main-footer">
-            <div class="d-flex align-items-center">
-                <a href="https://github.com/ReturnFI/Blitz" target="_blank" rel="noopener noreferrer" class="text-decoration-none mr-3">
-                    <i class="fab fa-github"></i> GitHub
-                </a>
-                <a href="https://t.me/hysteria2_panel" target="_blank" rel="noopener noreferrer" class="text-decoration-none mr-3">
-                    <i class="fab fa-telegram-plane"></i> Telegram
-                </a>
-                <div class="ml-auto">
-                    <a href="https://github.com/ReturnFI/Blitz/releases" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                        <i class="fas fa-code-branch"></i> <span id="panel-version">Loading version...</span>
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-center">
+                <div class="mb-2 mb-md-0">
+                    <a href="https://github.com/ReturnFI/Blitz" target="_blank" rel="noopener noreferrer" class="text-decoration-none mr-3">
+                        <i class="fab fa-github"></i> GitHub
+                    </a>
+                    <a href="https://t.me/hysteria2_panel" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                        <i class="fab fa-telegram-plane"></i> Telegram
                     </a>
                 </div>
             </div>
@@ -239,7 +234,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.js"></script>
     <!-- ShowdownJS for Markdown -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
-    <!-- Custom JS -->
+    <!-- Base JS -->
     <script src="{{ url_for('assets', path='js/base.js') }}"></script>
     
     {% block javascripts %}{% endblock %}

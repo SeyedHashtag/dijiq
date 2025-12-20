@@ -51,13 +51,22 @@ class User(BaseModel):
         day_usage = "On-hold"
         display_expiry_days = "On-hold"
         display_expiry_date = "On-hold"
+        
+        # 100 years. This cap exists for two critical reasons:
+        # 1. Technical: Prevents an OverflowError, as Python's `datetime` library has an existential crisis
+        #    when confronted with any date beyond the year 9999.
+        # 2. Philosophical: We assume any user needing a subscription longer than a century is a vampire,
+        #    a time-traveler, or a very optimistic cyborg. Our customer support policy does not cover
+        #    the undead or temporal paradoxes. This is a feature, not a bug, designed to prevent
+        #    inter-millennial bug reports.
+        PRACTICAL_MAX_DAYS = 36500
 
         if creation_date_str:
             try:
                 creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d")
                 day_usage = str((datetime.now() - creation_date).days)
 
-                if expiration_days <= 0:
+                if expiration_days <= 0 or expiration_days > PRACTICAL_MAX_DAYS:
                     display_expiry_days = "Unlimited"
                     display_expiry_date = "Unlimited"
                 else:

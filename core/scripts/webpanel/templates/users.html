@@ -252,7 +252,7 @@
                                     <div class="input-group-prepend">
                                         <span class="input-group-text"><i class="fas fa-database"></i></span>
                                     </div>
-                                    <input type="number" class="form-control" id="addTrafficLimit" name="traffic_limit" required>
+                                    <input type="number" class="form-control" id="addTrafficLimit" name="traffic_limit" required min="0">
                                 </div>
                             </div>
                             <div class="form-group">
@@ -261,8 +261,9 @@
                                     <div class="input-group-prepend">
                                         <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
                                     </div>
-                                    <input type="number" class="form-control" id="addExpirationDays" name="expiration_days" required>
+                                    <input type="number" class="form-control" id="addExpirationDays" name="expiration_days" required min="0">
                                 </div>
+                                <small class="form-text text-danger" id="addExpirationDaysError"></small>
                             </div>
                             <div class="form-group">
                                 <label for="addNote">Note (Optional)</label>
@@ -301,7 +302,7 @@
                                         <div class="input-group-prepend">
                                             <span class="input-group-text"><i class="fas fa-hashtag"></i></span>
                                         </div>
-                                        <input type="number" class="form-control" id="addBulkCount" name="count" value="10" required>
+                                        <input type="number" class="form-control" id="addBulkCount" name="count" value="10" required min="1">
                                     </div>
                                 </div>
                                 <div class="form-group col-md-6">
@@ -310,7 +311,7 @@
                                         <div class="input-group-prepend">
                                             <span class="input-group-text"><i class="fas fa-play-circle"></i></span>
                                         </div>
-                                        <input type="number" class="form-control" id="addBulkStartNumber" name="start_number" value="1" required>
+                                        <input type="number" class="form-control" id="addBulkStartNumber" name="start_number" value="1" required min="0">
                                     </div>
                                 </div>
                             </div>
@@ -321,7 +322,7 @@
                                         <div class="input-group-prepend">
                                             <span class="input-group-text"><i class="fas fa-database"></i></span>
                                         </div>
-                                        <input type="number" class="form-control" id="addBulkTrafficLimit" name="traffic_gb" required>
+                                        <input type="number" class="form-control" id="addBulkTrafficLimit" name="traffic_gb" required min="0">
                                     </div>
                                 </div>
                                 <div class="form-group col-md-6">
@@ -330,8 +331,9 @@
                                         <div class="input-group-prepend">
                                             <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
                                         </div>
-                                        <input type="number" class="form-control" id="addBulkExpirationDays" name="expiration_days" required>
+                                        <input type="number" class="form-control" id="addBulkExpirationDays" name="expiration_days" required min="0">
                                     </div>
+                                    <small class="form-text text-danger" id="addBulkExpirationDaysError"></small>
                                 </div>
                             </div>
                             <div class="form-check mb-3 requires-iplimit-service" style="display: none;">
@@ -395,7 +397,7 @@
                             <div class="input-group-prepend">
                                 <span class="input-group-text"><i class="fas fa-database"></i></span>
                             </div>
-                            <input type="number" class="form-control" id="editTrafficLimit" name="new_traffic_limit">
+                            <input type="number" class="form-control" id="editTrafficLimit" name="new_traffic_limit" min="0">
                         </div>
                     </div>
                     <div class="form-group">
@@ -404,8 +406,9 @@
                             <div class="input-group-prepend">
                                 <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
                             </div>
-                            <input type="number" class="form-control" id="editExpirationDays" name="new_expiration_days">
+                            <input type="number" class="form-control" id="editExpirationDays" name="new_expiration_days" min="0">
                         </div>
+                        <small class="form-text text-danger" id="editExpirationDaysError"></small>
                     </div>
                     <div class="form-group">
                         <label for="editNote">Note</label>

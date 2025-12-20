@@ -170,19 +170,19 @@ hysteria2_remove_user_handler() {
     while true; do
         read -p "Enter the username: " username
 
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             break
         else
             echo -e "${red}Error:${NC} Username can only contain letters and numbers."
         fi
     done
-    python3 $CLI_PATH remove-user --username "$username"
+    python3 $CLI_PATH remove-user "$username"
 }
 
 hysteria2_get_user_handler() {
     while true; do
         read -p "Enter the username: " username
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             break
         else
             echo -e "${red}Error:${NC} Username can only contain letters and numbers."
@@ -190,9 +190,15 @@ hysteria2_get_user_handler() {
     done
 
     user_data=$(python3 "$CLI_PATH" get-user --username "$username" 2>/dev/null)
+    local exit_code=$?
 
     if [[ $exit_code -ne 0 || -z "$user_data" ]]; then
         echo -e "${red}Error:${NC} User '$username' not found or invalid response."
+        return 1
+    fi
+
+    if ! echo "$user_data" | jq -e . > /dev/null 2>&1; then
+        echo -e "${red}Error:${NC} Received invalid data for user '$username'."
         return 1
     fi
 
@@ -209,12 +215,23 @@ hysteria2_get_user_handler() {
     upload_gb=$(echo "scale=2; $upload_bytes / 1073741824" | bc)
     download_gb=$(echo "scale=2; $download_bytes / 1073741824" | bc)
     total_usage_gb=$(echo "scale=2; $total_usage / 1073741824" | bc)
-    expiration_date=$(date -d "$account_creation_date + $expiration_days days" +"%Y-%m-%d")
-    current_date=$(date +"%Y-%m-%d")
-    used_days=$(( ( $(date -d "$current_date" +%s) - $(date -d "$account_creation_date" +%s) ) / 86400 ))
 
-    if [[ $used_days -gt $expiration_days ]]; then
-        used_days=$expiration_days
+    local expiration_date_str="N/A"
+    local used_days_str="N/A"
+
+    if [[ "$account_creation_date" != "N/A" ]]; then
+        expiration_date_str=$(date -d "$account_creation_date + $expiration_days days" +"%Y-%m-%d")
+        current_date=$(date +"%Y-%m-%d")
+        used_days=$(( ( $(date -d "$current_date" +%s) - $(date -d "$account_creation_date" +%s) ) / 86400 ))
+
+        if [[ $used_days -lt 0 ]]; then
+            used_days=0
+        fi
+
+        if [[ $used_days -gt $expiration_days ]]; then
+            used_days=$expiration_days
+        fi
+        used_days_str=$used_days
     fi
 
     echo -e "${green}User Details:${NC}"
@@ -222,27 +239,33 @@ hysteria2_get_user_handler() {
     echo -e "Password:         $password"
     echo -e "Total Traffic:    $max_download_gb GB"
     echo -e "Total Usage:      $total_usage_gb GB"
-    echo -e "Time Expiration:  $expiration_date ($used_days/$expiration_days Days)"
+    echo -e "Time Expiration:  $expiration_date_str ($used_days_str/$expiration_days Days)"
     echo -e "Blocked:          $blocked"
     echo -e "Status:           $status"
 }
 
 hysteria2_list_users_handler() {
     users_json=$(python3 $CLI_PATH list-users 2>/dev/null)
+    local exit_code=$?
 
-    if [ $? -ne 0 ] || [ -z "$users_json" ]; then
+    if [ $exit_code -ne 0 ] || [ -z "$users_json" ]; then
         echo -e "${red}Error:${NC} Failed to list users."
+        return 1
+    fi
+    
+    if ! echo "$users_json" | jq -e . > /dev/null 2>&1; then
+        echo -e "${red}Error:${NC} Received invalid data while listing users."
         return 1
     fi
 
     user_count=$(echo "$users_json" | jq 'length')
 
     if [ "$user_count" -eq 0 ]; then
-        echo -e "${red}Error:${NC} No users found."
+        echo -e "${yellow}No users found.${NC}"
         return 1
     fi
 
-    printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
+    printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s\n" \
         "Username" "Traffic(GB)" "Expiry(Days)" "Created" "Password" "Blocked" "Status" "Down(MB)" "Up(MB)"
 
     echo "$users_json" | jq -r '.[] |
@@ -254,11 +277,10 @@ hysteria2_list_users_handler() {
          .blocked,
          .status,
          ((.download_bytes // 0) / 1048576 | floor),
-         ((.upload_bytes // 0) / 1048576 | floor),
-         .online_count] |
+         ((.upload_bytes // 0) / 1048576 | floor)] |
         @tsv' | \
-    while IFS=$'\t' read -r username traffic expiry created password blocked status down up online; do
-        printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s %-10s\n" \
+    while IFS=$'\t' read -r username traffic expiry created password blocked status down up; do
+        printf "%-20s %-20s %-15s %-20s %-30s %-10s %-15s %-15s %-15s\n" \
             "$username" "$traffic" "$expiry" "$created" "$password" "$blocked" "$status" "$down" "$up"
     done
 }
@@ -267,7 +289,7 @@ hysteria2_reset_user_handler() {
     while true; do
         read -p "Enter the username: " username
 
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             break
         else
             echo -e "${red}Error:${NC} Username can only contain letters and numbers."
@@ -283,7 +305,7 @@ hysteria2_show_user_uri_handler() {
 
     while true; do
         read -p "Enter the username: " username
-        if [[ "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             break
         else
             echo -e "${red}Error:${NC} Username can only contain letters and numbers."
@@ -989,7 +1011,12 @@ masquerade_handler() {
 
         case $option in
             1)
-                python3 $CLI_PATH masquerade -e
+                obfs_status=$(python3 $CLI_PATH manage_obfs --check 2>/dev/null)
+                if [[ "$obfs_status" == "OBFS is active." ]]; then
+                    echo -e "${red}Error:${NC} Cannot enable Masquerade while OBFS is active. Please disable OBFS first."
+                else
+                    python3 $CLI_PATH masquerade -e
+                fi
                 ;;
             2)
                 python3 $CLI_PATH masquerade -r

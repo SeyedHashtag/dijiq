@@ -82,45 +82,136 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const restartBtn = document.getElementById('restart-hysteria2-btn');
     const restartUrl = document.querySelector('.content').dataset.restartHysteriaUrl;
-
     restartBtn.addEventListener('click', function(e) {
         e.preventDefault();
         
         restartBtn.innerHTML = 'Restarting... <i class="fas fa-sync-alt fa-spin ml-1"></i>';
         restartBtn.style.pointerEvents = 'none';
 
-        fetch(restartUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(err => { throw new Error(err.detail || 'Unknown error'); });
-            }
-            return response.json();
-        })
-        .then(data => {
-            Swal.fire({
-                icon: 'success',
-                title: 'Success',
-                text: data.detail,
-                timer: 2000,
-                showConfirmButton: false
+        fetch(restartUrl, { method: 'POST' })
+            .then(response => {
+                if (!response.ok) return response.json().then(err => { throw new Error(err.detail || 'Unknown error'); });
+                return response.json();
+            })
+            .then(data => {
+                Swal.fire({ icon: 'success', title: 'Success', text: data.detail, timer: 2000, showConfirmButton: false });
+                setTimeout(updateServiceStatuses, 1000);
+            })
+            .catch(error => {
+                Swal.fire({ icon: 'error', title: 'Error', text: `Failed to restart Hysteria2: ${error.message}` });
+            })
+            .finally(() => {
+                restartBtn.innerHTML = 'Restart Service <i class="fas fa-sync-alt ml-1"></i>';
+                restartBtn.style.pointerEvents = 'auto';
             });
-            setTimeout(updateServiceStatuses, 1000);
-        })
-        .catch(error => {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: `Failed to restart Hysteria2: ${error.message}`
-            });
-        })
-        .finally(() => {
-            restartBtn.innerHTML = 'Restart Service <i class="fas fa-sync-alt ml-1"></i>';
-            restartBtn.style.pointerEvents = 'auto';
-        });
     });
+
+    const versionUrl = $('.content').data('version-url');
+    $.ajax({
+        url: versionUrl,
+        type: 'GET',
+        success: function (response) {
+            $('#panel-version-display').text(response.current_version || 'N/A');
+            if (response.core_version) {
+                $('#core-version-display').text(response.core_version);
+                $('#core-version-row').show();
+            }
+        },
+        error: function (error) {
+            console.error("Error fetching version:", error);
+            $('#panel-version-display').text('Error');
+        }
+    });
+
+    function shouldCheckForUpdates() {
+        const lastCheck = localStorage.getItem('lastUpdateCheck');
+        const updateDismissed = localStorage.getItem('updateDismissed');
+        const now = Date.now();
+        const checkInterval = 24 * 60 * 60 * 1000;
+        
+        if (!lastCheck) return true;
+        if (updateDismissed && now - parseInt(updateDismissed) < 2 * 60 * 60 * 1000) return false;
+        
+        return now - parseInt(lastCheck) > checkInterval;
+    }
+
+    function showUpdateBar(version, changelog) {
+        $('#updateMessage').text(`Version ${version} is now available`);
+        
+        const converter = new showdown.Converter();
+        const htmlChangelog = changelog ? converter.makeHtml(changelog) : '<p>No changelog available.</p>';
+        $('#changelogText').html(htmlChangelog);
+
+        $('#updateBar').slideDown(300);
+        
+        $('#viewRelease').off('click').on('click', function(e) {
+            e.preventDefault();
+            window.open('https://github.com/ReturnFI/Blitz/releases/latest', '_blank');
+        });
+        
+        $('#showChangelog').off('click').on('click', function() {
+            const $content = $('#changelogContent');
+            const $icon = $(this).find('i');
+            
+            if ($content.is(':visible')) {
+                $content.slideUp(250);
+                $icon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
+                $(this).css('opacity', '0.8');
+            } else {
+                $content.slideDown(250);
+                $icon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
+                $(this).css('opacity', '1');
+            }
+        });
+        
+        $('.dropdown-toggle').dropdown();
+        
+        $('#remindLater').off('click').on('click', function(e) {
+            e.preventDefault();
+            $('#updateBar').slideUp(350);
+        });
+        
+        $('#skipVersion').off('click').on('click', function(e) {
+            e.preventDefault();
+            localStorage.setItem('dismissedVersion', version);
+            localStorage.setItem('updateDismissed', Date.now().toString());
+            $('#updateBar').slideUp(350);
+        });
+        
+        $('#closeUpdateBar').off('click').on('click', function() {
+            $('#updateBar').slideUp(350);
+        });
+    }
+
+    function checkForUpdates() {
+        if (!shouldCheckForUpdates()) return;
+
+        const checkVersionUrl = $('.content').data('check-version-url');
+        $.ajax({
+            url: checkVersionUrl,
+            type: 'GET',
+            timeout: 10000,
+            success: function (response) {
+                localStorage.setItem('lastUpdateCheck', Date.now().toString());
+                
+                if (response.is_latest) {
+                    localStorage.removeItem('updateDismissed');
+                    return;
+                }
+
+                const dismissedVersion = localStorage.getItem('dismissedVersion');
+                if (dismissedVersion === response.latest_version) return;
+
+                showUpdateBar(response.latest_version, response.changelog);
+            },
+            error: function (xhr, status, error) {
+                if (status !== 'timeout') {
+                    console.warn("Update check failed:", error);
+                }
+                localStorage.setItem('lastUpdateCheck', Date.now().toString());
+            }
+        });
+    }
+
+    setTimeout(checkForUpdates, 2000);
 });
