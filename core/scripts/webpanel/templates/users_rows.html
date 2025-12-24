@@ -30,8 +30,7 @@
         </td>
         <td class="d-none d-md-table-cell">{{ user.traffic_used }}</td>
         <td class="d-none d-md-table-cell">{{ user.expiry_date }}</td>
-        <td class="d-none d-md-table-cell">{{ user.expiry_days }}</td>
-        <td class="d-none d-md-table-cell">{{ user.day_usage }}</td>
+        <td class="d-none d-md-table-cell">{{ user.usage_days_display }}</td>
         <td class="d-none d-md-table-cell">
             {% if user.enable %}
             <i class="fas fa-check-circle text-success"></i>
@@ -101,8 +100,7 @@
                 </p>
                 <p><strong>Traffic Usage:</strong> <span>{{ user.traffic_used }}</span></p>
                 <p><strong>Expiry Date:</strong> <span>{{ user.expiry_date }}</span></p>
-                <p><strong>Expiry Days:</strong> <span>{{ user.expiry_days }}</span></p>
-                <p><strong>Day Usage:</strong> <span>{{ user.day_usage }}</span></p>
+                <p><strong>Day Usage:</strong> <span>{{ user.usage_days_display }}</span></p>
                 <p><strong>Note:</strong> <span>{{ user.note or 'N/A' }}</span></p>
                 <p><strong>Enable:</strong>
                     <span>

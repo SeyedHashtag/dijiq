@@ -279,7 +279,8 @@ $(function () {
         const url = GET_USER_URL_TEMPLATE.replace('U', user);
 
         const trafficText = dataRow.find("td:eq(4)").text();
-        const expiryText = dataRow.find("td:eq(6)").text();
+        const usageDaysText = dataRow.find("td:eq(6)").text();
+        const expiryText = usageDaysText.split('/')[1] || "0";
         const note = dataRow.data('note');
         const statusText = dataRow.find("td:eq(3)").text().trim();
         
