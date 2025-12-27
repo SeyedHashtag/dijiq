@@ -87,9 +87,9 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
         user_output = {"username": username, "ipv4": None, "ipv6": None, "nodes": [], "normal_sub": None}
 
         if ip4 and ip4 != "None":
-            user_output["ipv4"] = generate_uri(username, auth_password, ip4, default_port, base_uri_params, 4, f"{username}-IPv4")
+            user_output["ipv4"] = generate_uri(username, auth_password, ip4, default_port, base_uri_params, 4, "IPv4")
         if ip6 and ip6 != "None":
-            user_output["ipv6"] = generate_uri(username, auth_password, ip6, default_port, base_uri_params, 6, f"{username}-IPv6")
+            user_output["ipv6"] = generate_uri(username, auth_password, ip6, default_port, base_uri_params, 6, "IPv6")
 
         for node in nodes:
             node_name = node.get("name")
@@ -98,7 +98,7 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
                 continue
 
             ip_v = 6 if ':' in node_ip else 4
-            tag = f"{username}-{node_name}"
+            tag = node_name
 
             node_port = str(node.get("port", default_port))
             node_sni = node.get("sni", default_sni)
@@ -117,7 +117,7 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
             user_output["nodes"].append({"name": node_name, "uri": uri})
         
         if ns_domain and ns_port and ns_subpath:
-            user_output["normal_sub"] = f"https://{ns_domain}:{ns_port}/{ns_subpath}/{auth_password}#{username}"
+            user_output["normal_sub"] = f"https://{ns_domain}:{ns_port}/{ns_subpath}/{auth_password}#Hysteria2"
 
         results.append(user_output)
         
