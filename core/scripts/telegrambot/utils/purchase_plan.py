@@ -9,6 +9,7 @@ from utils.payment_records import add_payment_record, update_payment_status, get
 from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
+from utils.referral import add_referral_reward
 import qrcode
 import io
 import os
@@ -400,6 +401,7 @@ def handle_admin_approval(call):
             result = api_client.add_user(username, int(plan_gb), int(days))
             if result:
                 update_payment_status(payment_id, 'completed')
+                add_referral_reward(payment_record['user_id'], payment_record['price'])
                 user_uri_data = api_client.get_user_uri(username)
                 if user_uri_data and 'normal_sub' in user_uri_data:
                     sub_url = user_uri_data['normal_sub']
@@ -457,6 +459,7 @@ def handle_check_payment(call):
         result = api_client.add_user(username, int(plan_gb), int(days))
         if result:
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
+            add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
                 sub_url = user_uri_data['normal_sub']
@@ -523,6 +526,7 @@ def process_payment_webhook(request_data):
                 if result:
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method)
+                    add_referral_reward(user_id, price)
                     sub_url = api_client.get_subscription_url(username)
                     update_payment_status(record_key, 'completed')
                     success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
@@ -594,6 +598,7 @@ def check_pending_payments():
                         
                         if add_result:
                             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
+                            add_referral_reward(user_id, price)
                             user_uri_data = api_client.get_user_uri(username)
                             
                             update_payment_status(payment_id, 'completed')

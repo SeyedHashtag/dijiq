@@ -15,7 +15,7 @@ DEFAULT_LANGUAGE = "en"
 BUTTON_TRANSLATIONS = {
     "en": {
         "my_configs": "📱 My Configs",
-        "purchase_plan": "💰 Purchase Plan",
+        "purchase_plan": "💳 Purchase Plan",
         "downloads": "⬇️ Downloads",
         "test_config": "🎁 Test Config",
         "support": "📞 Support",
@@ -25,11 +25,12 @@ BUTTON_TRANSLATIONS = {
         "crypto": "💳 Crypto",
         "card_to_card": "📄 Card to Card (Iran)",
         "payment_link": "🔗 Payment Link",
-        "check_status": "🔄 Check Status"
+        "check_status": "🔄 Check Status",
+        "referral": "💰 Earn Crypto"
     },
     "fa": {
         "my_configs": "📱 پیکربندی‌های من",
-        "purchase_plan": "💰 خرید طرح",
+        "purchase_plan": "💳 خرید طرح",
         "downloads": "⬇️ دانلودها",
         "test_config": "🎁 پیکربندی آزمایشی",
         "support": "📞 پشتیبانی",
@@ -39,11 +40,12 @@ BUTTON_TRANSLATIONS = {
         "crypto": "💳 کریپتو",
         "card_to_card": "📄 کارت به کارت (ایران)",
         "payment_link": "🔗 لینک پرداخت",
-        "check_status": "🔄 بررسی وضعیت"
+        "check_status": "🔄 بررسی وضعیت",
+        "referral": "💰 کسب درآمد کریپتویی"
     },
     "tk": {
         "my_configs": "📱 Meniň sazlamalarym",
-        "purchase_plan": "💰 Meýilnama satyn al",
+        "purchase_plan": "💳 Meýilnama satyn al",
         "downloads": "⬇️ Ýüklemeler",
         "test_config": "🎁 Synag sazlamalary",
         "support": "📞 Goldaw",
@@ -53,11 +55,12 @@ BUTTON_TRANSLATIONS = {
         "crypto": "💳 Kripto",
         "card_to_card": "📄 Karta kart (Eýran)",
         "payment_link": "🔗 Töleg baglanyşygy",
-        "check_status": "🔄 Statusy barlaň"
+        "check_status": "🔄 Statusy barlaň",
+        "referral": "💰 Kripto gazan"
     },
     "ru": {
         "my_configs": "📱 Мои конфиги",
-        "purchase_plan": "💰 Купить план",
+        "purchase_plan": "💳 Купить план",
         "downloads": "⬇️ Загрузки",
         "test_config": "🎁 Тестовый конфиг",
         "support": "📞 Поддержка",
@@ -67,13 +70,19 @@ BUTTON_TRANSLATIONS = {
         "crypto": "💳 Крипто",
         "card_to_card": "📄 Карта на карту (Иран)",
         "payment_link": "🔗 Ссылка на оплату",
-        "check_status": "🔄 Проверить статус"
+        "check_status": "🔄 Проверить статус",
+        "referral": "💰 Заработать крипту"
     }
 }
 
 # Messages translations
 MESSAGE_TRANSLATIONS = {
     "en": {
+        "referral_stats": "💰 **Earn Crypto**\n\nInvite your friends and earn rewards!\n\n📊 **Your Stats:**\nInvited Users: {count}\nTotal Earnings: ${total_earnings:.2f}\nAvailable Balance: ${available_balance:.2f}\n\n🔗 **Your Invitation Link:**\n`{referral_link}`",
+        "referral_registered": "✅ You have been referred by user {referrer_id}!",
+        "referral_self_error": "❌ You cannot refer yourself.",
+        "referral_already_registered": "❌ You have already been referred.",
+        "referral_invalid_code": "❌ Invalid referral code.",
         "select_platform": "🔴 **Important: Select your actual country in the software.",
         "no_active_configs": "❌ You don't have any active configurations.\n\nPlease use the '🎁 Test Config' button to get a free test config or the '💰 Purchase Plan' button to buy a subscription.",
         "test_config_used": "⚠️ You have already used your free test config. Please purchase a plan for continued service.",
@@ -125,6 +134,11 @@ MESSAGE_TRANSLATIONS = {
         "timestamp": "Timestamp"
     },
     "ru": {
+        "referral_stats": "💰 **Заработать крипту**\n\nПриглашайте друзей и получайте вознаграждения!\n\n📊 **Ваша статистика:**\nПриглашенные пользователи: {count}\nОбщий заработок: ${total_earnings:.2f}\nДоступный баланс: ${available_balance:.2f}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
+        "referral_registered": "✅ Вы были приглашены пользователем {referrer_id}!",
+        "referral_self_error": "❌ Вы не можете пригласить самого себя.",
+        "referral_already_registered": "❌ Вы уже были приглашены.",
+        "referral_invalid_code": "❌ Неверный реферальный код.",
         "select_platform": "🔴 **Важно: Выберите свою страну в программе.",
         "no_active_configs": "❌ У вас нет активных конфигураций.\n\nПожалуйста, используйте кнопку '🎁 Тестовый конфиг' для получения бесплатного тестового конфига или кнопку '💰 Купить план' для покупки подписки.",
         "test_config_used": "⚠️ Вы уже использовали свой бесплатный тестовый конфиг. Пожалуйста, купите план для продолжения обслуживания.",
@@ -176,6 +190,11 @@ MESSAGE_TRANSLATIONS = {
         "timestamp": "Временная метка"
     },
     "fa": {
+        "referral_stats": "💰 **کسب درآمد کریپتویی**\n\nدوستان خود را دعوت کنید و پاداش دریافت کنید!\n\n📊 **آمار شما:**\nکاربران دعوت شده: {count}\nمجموع درآمد: ${total_earnings:.2f}\nموجودی قابل برداشت: ${available_balance:.2f}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
+        "referral_registered": "✅ شما توسط کاربر {referrer_id} دعوت شدید!",
+        "referral_self_error": "❌ شما نمی‌توانید خودتان را دعوت کنید.",
+        "referral_already_registered": "❌ شما قبلاً دعوت شده‌اید.",
+        "referral_invalid_code": "❌ کد دعوت نامعتبر است.",
         "select_platform": "🔴 **مهم: در نرم افزار، کشور ایران را انتخاب کنید.",
         "no_active_configs": "❌ شما هیچ پیکربندی فعالی ندارید.\n\nلطفاً از دکمه '🎁 پیکربندی آزمایشی' برای دریافت پیکربندی آزمایشی رایگان یا دکمه '💰 پرداخت با رمزارز' برای خرید اشتراک استفاده کنید.",
         "test_config_used": "⚠️ شما قبلاً از پیکربندی آزمایشی رایگان خود استفاده کرده‌اید. لطفاً برای ادامه خدمات، یک اشتراک خریداری کنید.",
@@ -227,6 +246,11 @@ MESSAGE_TRANSLATIONS = {
         "timestamp": "مهر زمانی"
     },
     "tk": {
+        "referral_stats": "💰 **Kripto Gazan**\n\nDostlaryňyzy çagyryň we baýrak gazanyň!\n\n📊 **Siziň Statistikaňyz:**\nÇagyrylan Ulanyjylar: {count}\nJemi Gazanç: ${total_earnings:.2f}\nElýeterli Balans: ${available_balance:.2f}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
+        "referral_registered": "✅ Siz {referrer_id} ulanyjy tarapyndan çagyryldyňyz!",
+        "referral_self_error": "❌ Özüňizi çagyryp bilmersiňiz.",
+        "referral_already_registered": "❌ Siz eýýäm çagyryldyňyz.",
+        "referral_invalid_code": "❌ Nädogry çakylyk kody.",
         "select_platform": "🔴 ** Möhüm: Programma üpjünçiliginde hakyky ýurduňyzy saýlaň.",
         "no_active_configs": "❌ Siziň işjeň sazlamalaňyz ýok.\n\nMugt synag sazlamasyny almak üçin '🎁 Synag sazlamalary' düwmesini ýa-da abunalyk satyn almak üçin '💰 Kripto bilen töle' düwmesini ulanyň.",
         "test_config_used": "⚠️ Siz eýýäm mugt synag sazlamaňyzy ulanypsyňyz. Hyzmaty dowam etdirmek üçin meýilnama satyn alyň.",

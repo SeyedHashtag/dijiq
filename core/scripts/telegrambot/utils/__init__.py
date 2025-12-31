@@ -18,3 +18,7 @@ from .edit_support import *
 from .downloads import *
 from .my_configs import *
 from .broadcast import *
+from .translations import *
+from .language import *
+from .referral import *
+from .referral_handlers import *

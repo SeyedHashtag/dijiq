@@ -17,7 +17,7 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         # Non-admin menu with translations
         markup.row(
             language_translations.get("my_configs", "📱 My Configs"), 
-            language_translations.get("purchase_plan", "💰 Purchase Plan")
+            language_translations.get("purchase_plan", "💳 Purchase Plan")
         )
         markup.row(
             language_translations.get("downloads", "⬇️ Downloads"), 
@@ -26,6 +26,9 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         markup.row(
             language_translations.get("support", "📞 Support"), 
             language_translations.get("language", "🌐 Language/زبان")
+        )
+        markup.row(
+            language_translations.get("referral", "💰 Earn Crypto")
         )
     return markup
 

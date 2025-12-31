@@ -6,6 +6,19 @@ import time
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
+    
+    # Check for referral
+    args = message.text.split()
+    if len(args) > 1:
+        referral_code = args[1]
+        try:
+            success, result = process_referral(user_id, referral_code)
+            lang = get_user_language(user_id)
+            if success:
+                 bot.send_message(user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
+        except Exception as e:
+            print(f"Error processing referral: {e}")
+
     if is_admin(user_id):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
