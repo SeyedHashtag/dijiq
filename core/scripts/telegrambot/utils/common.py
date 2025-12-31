@@ -12,7 +12,7 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         markup.row('❌ Delete User', '📊 Server Info')
         markup.row('💾 Backup Server', '💳 Payment Settings')
         markup.row('📝 Edit Plans', '📢 Broadcast Message')
-        markup.row('📞 Edit Support')
+        markup.row('📞 Edit Support', '🔄 Update Keyboards')
     else:
         # Non-admin menu with translations
         markup.row(

@@ -22,3 +22,4 @@ from .translations import *
 from .language import *
 from .referral import *
 from .referral_handlers import *
+from .update_keyboards import *

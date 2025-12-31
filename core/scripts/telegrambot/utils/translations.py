@@ -131,7 +131,8 @@ MESSAGE_TRANSLATIONS = {
         "amount": "Amount",
         "payment_method_label": "Payment Method",
         "payment_id_label": "Payment ID",
-        "timestamp": "Timestamp"
+        "timestamp": "Timestamp",
+        "menu_updated_notification": "🔄 We have updated our menu to serve you better. Here is the latest version!"
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\nПриглашайте друзей и получайте вознаграждения!\n\n📊 **Ваша статистика:**\nПриглашенные пользователи: {count}\nОбщий заработок: ${total_earnings:.2f}\nДоступный баланс: ${available_balance:.2f}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -187,7 +188,8 @@ MESSAGE_TRANSLATIONS = {
         "amount": "Сумма",
         "payment_method_label": "Метод оплаты",
         "payment_id_label": "ID платежа",
-        "timestamp": "Временная метка"
+        "timestamp": "Временная метка",
+        "menu_updated_notification": "🔄 Мы обновили наше меню, чтобы лучше обслуживать вас. Вот последняя версия!"
     },
     "fa": {
         "referral_stats": "💰 **کسب درآمد کریپتویی**\n\nدوستان خود را دعوت کنید و پاداش دریافت کنید!\n\n📊 **آمار شما:**\nکاربران دعوت شده: {count}\nمجموع درآمد: ${total_earnings:.2f}\nموجودی قابل برداشت: ${available_balance:.2f}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
@@ -243,7 +245,8 @@ MESSAGE_TRANSLATIONS = {
         "amount": "مبلغ",
         "payment_method_label": "روش پرداخت",
         "payment_id_label": "شناسه پرداخت",
-        "timestamp": "مهر زمانی"
+        "timestamp": "مهر زمانی",
+        "menu_updated_notification": "🔄 ما منوی خود را برای خدمات رسانی بهتر به شما به روز کرده ایم. این آخرین نسخه است!"
     },
     "tk": {
         "referral_stats": "💰 **Kripto Gazan**\n\nDostlaryňyzy çagyryň we baýrak gazanyň!\n\n📊 **Siziň Statistikaňyz:**\nÇagyrylan Ulanyjylar: {count}\nJemi Gazanç: ${total_earnings:.2f}\nElýeterli Balans: ${available_balance:.2f}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
@@ -299,7 +302,8 @@ MESSAGE_TRANSLATIONS = {
         "amount": "Mukdar",
         "payment_method_label": "Töleg usuly",
         "payment_id_label": "Töleg belgisi",
-        "timestamp": "Wagt belgisi"
+        "timestamp": "Wagt belgisi",
+        "menu_updated_notification": "🔄 Size has has gowy hyzmat etmek üçin menýumyzy täzeledik. Ine iň soňky wersiýa!"
     }
 }
 
