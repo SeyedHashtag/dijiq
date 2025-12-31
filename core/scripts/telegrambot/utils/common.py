@@ -4,5 +4,5 @@ def create_main_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('➕ Add User', '🔍 Show User')
     markup.row('🗑️ Delete User', '🖥️ Server Info')
-    markup.row('💾 Backup Server')
+    markup.row('💾 Backup Server', '🔗 Get Webpanel URL')
     return markup
