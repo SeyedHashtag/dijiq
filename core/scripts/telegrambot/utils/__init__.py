@@ -9,3 +9,4 @@ from .serverinfo import *
 from .cpu import *
 from .check_version import *
 from .weburl import *
+from .settings import *
