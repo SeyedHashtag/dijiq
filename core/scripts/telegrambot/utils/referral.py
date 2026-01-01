@@ -9,7 +9,7 @@ REFERRALS_FILE = '/etc/dijiq/core/scripts/telegrambot/referrals.json'
 referral_lock = threading.Lock()
 
 # Configuration
-REFERRAL_REWARD_PERCENTAGE = 10  # 10% reward
+REFERRAL_REWARD_PERCENTAGE = 20  # 20% reward
 
 def load_referrals():
     with referral_lock:
