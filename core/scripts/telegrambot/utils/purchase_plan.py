@@ -313,17 +313,31 @@ def process_receipt_photo(message, plan_gb, price):
         photo_path = os.path.join(uploads_dir, f"{payment_id}.jpg")
         with open(photo_path, 'wb') as new_file:
             new_file.write(downloaded_file)
-        plans = load_plans()
-        plan = plans[plan_gb]
-        payment_record = {
-            'user_id': user_id,
-            'plan_gb': plan_gb,
-            'price': price,
-            'days': plan['days'],
-            'payment_id': payment_id,
-            'status': 'pending_approval',
-            'receipt_path': photo_path
-        }
+        
+        if plan_gb == 'Settlement':
+             payment_record = {
+                'user_id': user_id,
+                'plan_gb': plan_gb,
+                'price': price,
+                'days': 0,
+                'payment_id': payment_id,
+                'status': 'pending_approval',
+                'receipt_path': photo_path,
+                'type': 'settlement'
+            }
+        else:
+            plans = load_plans()
+            plan = plans[plan_gb]
+            payment_record = {
+                'user_id': user_id,
+                'plan_gb': plan_gb,
+                'price': price,
+                'days': plan['days'],
+                'payment_id': payment_id,
+                'status': 'pending_approval',
+                'receipt_path': photo_path
+            }
+            
         add_payment_record(payment_id, payment_record)
         notification_message = (
             f"⏳ New Pending Payment\n\n"
@@ -392,6 +406,17 @@ def handle_admin_approval(call):
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
             return
         if action == 'approve':
+            if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
+                 from utils.reseller import clear_reseller_debt
+                 clear_reseller_debt(payment_record['user_id'])
+                 update_payment_status(payment_id, 'completed')
+                 
+                 user_to_notify = payment_record['user_id']
+                 user_language = get_user_language(user_to_notify)
+                 bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_approved"))
+                 bot.edit_message_caption(caption=f"✅ Settlement Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                 return
+
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
             plan_gb = payment_record['plan_gb']
@@ -426,7 +451,12 @@ def handle_admin_approval(call):
             update_payment_status(payment_id, 'rejected')
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
-            bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
+            
+            if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
+                 bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_rejected"))
+            else:
+                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
+                 
             bot.edit_message_caption(caption=f"❌ Payment {payment_id} rejected by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
     except Exception as e:
         user_id = call.from_user.id
@@ -452,6 +482,18 @@ def handle_check_payment(call):
     if status and status.lower() == 'paid':
         user_id = payment_record.get('user_id')
         plan_gb = payment_record.get('plan_gb')
+        
+        if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
+             from utils.reseller import clear_reseller_debt
+             clear_reseller_debt(user_id)
+             update_payment_status(payment_id, 'completed')
+             bot.send_message(
+                call.message.chat.id,
+                get_message_text(language, "debt_cleared"),
+                parse_mode="Markdown"
+            )
+             return
+
         days = payment_record.get('days')
         price = payment_record.get('price')
         username = create_username_from_user_id(user_id)
@@ -518,6 +560,18 @@ def process_payment_webhook(request_data):
                 user_id = payment_record.get('user_id')
                 user_language = get_user_language(user_id)
                 plan_gb = payment_record.get('plan_gb')
+                
+                if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
+                     from utils.reseller import clear_reseller_debt
+                     clear_reseller_debt(user_id)
+                     update_payment_status(record_key, 'completed')
+                     bot.send_message(
+                        user_id,
+                        get_message_text(user_language, "debt_cleared"),
+                        parse_mode="Markdown"
+                     )
+                     return True
+
                 days = payment_record.get('days')
                 price = payment_record.get('price')
                 username = create_username_from_user_id(user_id)
@@ -589,6 +643,22 @@ def check_pending_payments():
                         # Process payment
                         user_id = record.get('user_id')
                         plan_gb = record.get('plan_gb')
+                        
+                        if record.get('type') == 'settlement' or plan_gb == 'Settlement':
+                             from utils.reseller import clear_reseller_debt
+                             clear_reseller_debt(user_id)
+                             update_payment_status(payment_id, 'completed')
+                             try:
+                                user_language = get_user_language(user_id)
+                                bot.send_message(
+                                    user_id,
+                                    get_message_text(user_language, "debt_cleared"),
+                                    parse_mode="Markdown"
+                                )
+                             except:
+                                 pass
+                             continue
+
                         days = record.get('days')
                         price = record.get('price')
                         
