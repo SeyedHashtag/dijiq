@@ -5,6 +5,7 @@ import qrcode
 import io
 import os
 import datetime
+import re
 from dotenv import load_dotenv
 
 from utils.command import bot, ADMIN_USER_IDS, is_admin
@@ -145,8 +146,39 @@ def handle_reseller_buy(call):
     price = plan['price']
     days = plan['days']
     
-    # Generate username
-    username = f"reseller_{user_id}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    # Prompt for customer username
+    user_data[user_id] = {
+        'state': 'waiting_reseller_username',
+        'gb': gb,
+        'days': days,
+        'price': price
+    }
+    
+    bot.edit_message_text(
+        get_message_text(language, "enter_reseller_customer_username"),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id].get('state') == 'waiting_reseller_username')
+def handle_reseller_username_input(message):
+    user_id = message.from_user.id
+    language = get_user_language(user_id)
+    chosen_username = message.text.strip()
+    
+    # Validate username: alphanumeric and max 8 chars
+    if not re.match(r'^[a-zA-Z0-9]{1,8}$', chosen_username):
+        bot.reply_to(message, get_message_text(language, "invalid_username_format"))
+        return
+        
+    data = user_data[user_id]
+    gb = data['gb']
+    days = data['days']
+    price = data['price']
+    
+    # Generate final username: reseller{reseller_id}t{timestamp}{chosen_username}
+    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    username = f"reseller{user_id}t{timestamp}{chosen_username}"
     
     # Create user
     api_client = APIClient()
@@ -179,13 +211,15 @@ def handle_reseller_buy(call):
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
-            bot.send_photo(call.message.chat.id, bio, caption=msg, parse_mode="Markdown")
-            bot.delete_message(call.message.chat.id, call.message.message_id)
+            bot.send_photo(message.chat.id, bio, caption=msg, parse_mode="Markdown")
         else:
-            bot.edit_message_text(msg, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown")
+            bot.send_message(message.chat.id, msg, parse_mode="Markdown")
             
+        # Clear state
+        del user_data[user_id]
     else:
-        bot.answer_callback_query(call.id, "Failed to create config.")
+        bot.reply_to(message, "Failed to create config. Please try again or contact support.")
+        del user_data[user_id]
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:debt")
 def handle_reseller_debt(call):

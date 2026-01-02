@@ -166,7 +166,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_adjust_debt": "📝 Send the new debt amount for user {user_id}:",
         "debt_updated": "✅ Debt updated successfully.",
         "reseller_banned": "🚫 Reseller has been banned.",
-        "reseller_unbanned": "✅ Reseller has been unbanned."
+        "reseller_unbanned": "✅ Reseller has been unbanned.",
+        "enter_reseller_customer_username": "Please enter a username for your customer (max 8 characters, alphanumeric):",
+        "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters."
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\nПриглашайте друзей и получайте вознаграждения!\n\n📊 **Ваша статистика:**\nПриглашенные пользователи: {count}\nОбщий заработок: ${total_earnings:.2f}\nДоступный баланс: ${available_balance:.2f}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -223,7 +225,9 @@ MESSAGE_TRANSLATIONS = {
         "payment_method_label": "Метод оплаты",
         "payment_id_label": "ID платежа",
         "timestamp": "Временная метка",
-        "menu_updated_notification": "🔄 Мы обновили наше меню, чтобы лучше обслуживать вас. Вот последняя версия!"
+        "menu_updated_notification": "🔄 Мы обновили наше меню, чтобы лучше обслуживать вас. Вот последняя версия!",
+        "enter_reseller_customer_username": "Пожалуйста, введите имя пользователя для вашего клиента (макс. 8 символов, буквенно-цифровые):",
+        "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов."
     },
     "fa": {
         "referral_stats": "💰 **کسب درآمد کریپتویی**\n\nدوستان خود را دعوت کنید و پاداش دریافت کنید!\n\n📊 **آمار شما:**\nکاربران دعوت شده: {count}\nمجموع درآمد: ${total_earnings:.2f}\nموجودی قابل برداشت: ${available_balance:.2f}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
@@ -300,7 +304,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_adjust_debt": "📝 مبلغ بدهی جدید را برای کاربر {user_id} ارسال کنید:",
         "debt_updated": "✅ بدهی با موفقیت بروزرسانی شد.",
         "reseller_banned": "🚫 نماینده مسدود شد.",
-        "reseller_unbanned": "✅ نماینده رفع مسدودیت شد."
+        "reseller_unbanned": "✅ نماینده رفع مسدودیت شد.",
+        "enter_reseller_customer_username": "لطفاً یک نام کاربری برای مشتری خود وارد کنید (حداکثر 8 کاراکتر، حروف و اعداد):",
+        "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر."
     },
     "tk": {
         "referral_stats": "💰 **Kripto Gazan**\n\nDostlaryňyzy çagyryň we baýrak gazanyň!\n\n📊 **Siziň Statistikaňyz:**\nÇagyrylan Ulanyjylar: {count}\nJemi Gazanç: ${total_earnings:.2f}\nElýeterli Balans: ${available_balance:.2f}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
@@ -357,7 +363,9 @@ MESSAGE_TRANSLATIONS = {
         "payment_method_label": "Töleg usuly",
         "payment_id_label": "Töleg belgisi",
         "timestamp": "Wagt belgisi",
-        "menu_updated_notification": "🔄 Size has has gowy hyzmat etmek üçin menýumyzy täzeledik. Ine iň soňky wersiýa!"
+        "menu_updated_notification": "🔄 Size has has gowy hyzmat etmek üçin menýumyzy täzeledik. Ine iň soňky wersiýa!",
+        "enter_reseller_customer_username": "Müşderiňiz üçin ulanyjy adyny giriziň (maksimum 8 simwol, harp we san):",
+        "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly."
     }
 }
 
