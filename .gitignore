@@ -160,5 +160,5 @@ cython_debug/
 #.idea/
 
 hysteria2_venv/
-.vscode/
-!.vscode/settings.json
+# .vscode/
+# !.vscode/settings.json
