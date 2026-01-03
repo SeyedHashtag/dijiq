@@ -70,10 +70,18 @@
     {
       "outbounds": [
         "auto",
-        "direct"
+        "direct",
+        "select"
       ],
       "tag": "proxy",
       "type": "selector"
+    },
+    {
+      "type": "selector",
+      "tag": "select",
+
+      "outbounds": [],
+      "interrupt_exist_connections": false
     },
     {
       "interval": "10m",
