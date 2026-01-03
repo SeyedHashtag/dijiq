@@ -160,13 +160,13 @@ def show_uri(args: argparse.Namespace) -> None:
     if args.all or args.ip_version == 4:
         if ip4 and ip4 != "None":
             uri = generate_uri(args.username, auth_password, ip4, local_port, 
-                                 local_obfs_password, local_sha256, local_sni, 4, local_insecure, f"{args.username}-IPv4")
+                                 local_obfs_password, local_sha256, local_sni, 4, local_insecure, "IPv4")
             display_uri_and_qr(uri, "IPv4", args, terminal_width)
             
     if args.all or args.ip_version == 6:
         if ip6 and ip6 != "None":
             uri = generate_uri(args.username, auth_password, ip6, local_port, 
-                                 local_obfs_password, local_sha256, local_sni, 6, local_insecure, f"{args.username}-IPv6")
+                                 local_obfs_password, local_sha256, local_sni, 6, local_insecure, "IPv6")
             display_uri_and_qr(uri, "IPv6", args, terminal_width)
 
     for node in nodes:
@@ -194,14 +194,14 @@ def show_uri(args: argparse.Namespace) -> None:
                 sni=node_sni,
                 ip_version=ip_v,
                 insecure=node_insecure,
-                fragment_tag=f"{args.username}-{node_name}"
+                fragment_tag=node_name
             )
             display_uri_and_qr(uri, f"Node: {node_name} (IPv{ip_v})", args, terminal_width)
 
     if args.singbox and is_service_active("hysteria-singbox.service"):
         domain, port = get_singbox_domain_and_port()
         if domain and port:
-            print(f"\nSingbox Sublink:\nhttps://{domain}:{port}/sub/singbox/{args.username}/{args.ip_version}#{args.username}\n")
+            print(f"\nSingbox Sublink:\nhttps://{domain}:{port}/sub/singbox/{args.username}/{args.ip_version}#Hysteria2\n")
     
     if args.normalsub and is_service_active("hysteria-normal-sub.service"):
         domain, port, subpath = get_normalsub_domain_and_port()

@@ -308,15 +308,11 @@ class SingboxConfigGenerator:
             print(f"Error during Singbox config generation from URI: {e}, URI: {uri}")
             return None
 
-        return {
+        outbound_config = {
             "type": "hysteria2",
             "tag": unquote(parsed_url.fragment), 
             "server": server,
             "server_port": server_port,
-            "obfs": {
-                "type": "salamander",
-                "password": obfs_password
-            },
             "password": final_password,
             "tls": {
                 "enabled": True,
@@ -324,6 +320,14 @@ class SingboxConfigGenerator:
                 "insecure": True
             }
         }
+
+        if obfs_password:
+            outbound_config["obfs"] = {
+                "type": "salamander",
+                "password": obfs_password
+            }
+
+        return outbound_config
 
     def combine_configs(self, all_uris: List[str], username: str, fragment: str) -> Optional[Dict[str, Any]]:
         if not all_uris:

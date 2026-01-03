@@ -670,10 +670,14 @@ def stop_webpanel_decoy():
         click.echo(f'{e}', err=True)
 
 @cli.command('get-webpanel-url')
-def get_web_panel_url():
+@click.option('--url-only', is_flag=True, help='Only display the URL without additional text')
+def get_web_panel_url(url_only: bool):
     try:
         url = cli_api.get_webpanel_url()
-        click.echo(f'Hysteria web panel is now running. The service is accessible on: {url}')
+        if url_only:
+            click.echo(url)
+        else:
+            click.echo(f'Hysteria web panel is now running. The service is accessible on: {url}')
     except Exception as e:
         click.echo(f'{e}', err=True)
 
