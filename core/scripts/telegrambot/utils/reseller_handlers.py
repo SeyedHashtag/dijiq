@@ -146,7 +146,7 @@ def handle_reseller_buy(call):
         
     plan = plans[gb]
     original_price = float(plan['price'])
-    price = original_price * 0.8  # 20% discount for resellers
+    price = round(original_price * 0.8, 2)  # 20% discount for resellers
     days = plan['days']
     
     # Prompt for customer username
