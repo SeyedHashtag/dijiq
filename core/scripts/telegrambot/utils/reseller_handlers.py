@@ -120,7 +120,9 @@ def handle_reseller_generate(call):
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     for gb, details in sorted_plans:
-        button_text = f"{gb} GB - ${details['price']} - {details['days']} days"
+        original_price = float(details['price'])
+        discounted_price = original_price * 0.8
+        button_text = f"{gb} GB - ${discounted_price:.2f} (20% OFF) - {details['days']} days"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"reseller:buy:{gb}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
@@ -143,7 +145,8 @@ def handle_reseller_buy(call):
         return
         
     plan = plans[gb]
-    price = plan['price']
+    original_price = float(plan['price'])
+    price = original_price * 0.8  # 20% discount for resellers
     days = plan['days']
     
     # Prompt for customer username
