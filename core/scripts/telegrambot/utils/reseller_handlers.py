@@ -247,25 +247,34 @@ def handle_reseller_debt(call):
 def handle_reseller_settle(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    amount = float(call.data.split(':')[2])
-    
+    full_amount = float(call.data.split(':')[2])
+
+    # Apply 20% discount for resellers when paying debt
+    discounted_amount = round(full_amount * 0.8, 2)
+
     # Re-use payment logic
     env_path = '/etc/dijiq/core/scripts/telegrambot/.env'
     load_dotenv(env_path)
-    
+
     crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
     card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
-    
+
     markup = types.InlineKeyboardMarkup(row_width=1)
     if crypto_configured:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"reseller:pay:crypto:{amount}"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"reseller:pay:crypto:{discounted_amount}"))
     if card_to_card_configured:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"reseller:pay:card:{amount}"))
-        
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"reseller:pay:card:{discounted_amount}"))
+
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-    
+
+    # Show the discount information to the reseller
+    discount_info = get_message_text(language, "reseller_discount_info").format(
+        original_amount=full_amount,
+        discount_amount=full_amount * 0.2,
+        final_amount=discounted_amount
+    )
     bot.edit_message_text(
-        get_message_text(language, "select_payment_method"),
+        discount_info + "\n\n" + get_message_text(language, "select_payment_method"),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup

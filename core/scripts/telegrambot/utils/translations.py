@@ -70,7 +70,14 @@ BUTTON_TRANSLATIONS = {
         "card_to_card": "📄 Karta kart (Eýran)",
         "payment_link": "🔗 Töleg baglanyşygy",
         "check_status": "🔄 Statusy barlaň",
-        "referral": "💰 Kripto gazan"
+        "referral": "💰 Kripto gazan",
+        "reseller_panel": "💼 Diler paneli",
+        "request_reseller": "📝 Diler bolmagy haýyş et",
+        "generate_config": "⚡ Sazlama döret",
+        "my_debt": "💰 Meniň bergim",
+        "settle_debt": "💳 Bergiňi üz",
+        "reseller_stats": "📊 Meniň statistikam",
+        "manage_resellers": "💼 Dilerleri dolandyrmak"
     },
     "ru": {
         "my_configs": "📱 Мои конфиги",
@@ -85,7 +92,14 @@ BUTTON_TRANSLATIONS = {
         "card_to_card": "📄 Карта на карту (Иран)",
         "payment_link": "🔗 Ссылка на оплату",
         "check_status": "🔄 Проверить статус",
-        "referral": "💰 Заработать крипту"
+        "referral": "💰 Заработать крипту",
+        "reseller_panel": "💼 Панель реселлера",
+        "request_reseller": "📝 Запрос на реселлерство",
+        "generate_config": "⚡ Создать конфиг",
+        "my_debt": "💰 Мой долг",
+        "settle_debt": "💳 Погасить долг",
+        "reseller_stats": "📊 Моя статистика",
+        "manage_resellers": "💼 Управление реселлерами"
     }
 }
 
@@ -168,7 +182,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_banned": "🚫 Reseller has been banned.",
         "reseller_unbanned": "✅ Reseller has been unbanned.",
         "enter_reseller_customer_username": "Please enter a username for your customer (max 8 characters, alphanumeric):",
-        "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters."
+        "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters.",
+        "reseller_discount_info": "🎉 **Reseller Discount Applied!**\n\n💰 Original Amount: ${original_amount}\n🎁 Your 20% Discount: ${discount_amount}\n💳 Final Amount to Pay: ${final_amount}\n\nAs a valued reseller, you receive a 20% discount on debt settlement!"
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\nПриглашайте друзей и получайте вознаграждения!\n\n📊 **Ваша статистика:**\nПриглашенные пользователи: {count}\nОбщий заработок: ${total_earnings:.2f}\nДоступный баланс: ${available_balance:.2f}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -226,6 +241,27 @@ MESSAGE_TRANSLATIONS = {
         "payment_id_label": "ID платежа",
         "timestamp": "Временная метка",
         "menu_updated_notification": "🔄 Мы обновили наше меню, чтобы лучше обслуживать вас. Вот последняя версия!",
+        "reseller_intro": "💼 **Панель реселлера**\n\nДобро пожаловать в панель реселлера. Здесь вы можете создавать конфиги и управлять своими клиентами.\n\nВаш текущий долг: ${debt}",
+        "reseller_status_pending": "⏳ Ваш запрос на доступ реселлера находится на рассмотрении.",
+        "reseller_status_rejected": "❌ Ваш запрос на доступ реселлера был отклонен.",
+        "reseller_request_sent": "✅ Ваш запрос отправлен администраторам. Вы получите уведомление после одобрения.",
+        "reseller_request_notification": "💼 **Новый запрос реселлера**\n\nПользователь: {user_id} (@{username})\nЗапросил доступ реселлера.",
+        "reseller_approved_notification": "✅ Ваш запрос реселлера одобрен! Теперь вы можете получить доступ к панели реселлера.",
+        "reseller_rejected_notification": "❌ Ваш запрос реселлера был отклонен.",
+        "reseller_config_created": "✅ Конфиг успешно создан!\n\nИмя пользователя: `{username}`\nПлан: {plan_gb} ГБ\nДлительность: {days} дней\nЦена: ${price}\n\nURL подписки: `{sub_url}`",
+        "current_debt": "💰 Ваш текущий долг: ${debt}",
+        "confirm_settlement": "Вы хотите погасить свой долг в размере ${debt}?",
+        "debt_cleared": "✅ Ваш долг погашен!",
+        "settlement_payment_approved": "✅ Платеж для погашения долга одобрен! Долг погашен.",
+        "settlement_payment_rejected": "❌ Платеж для погашения долга отклонен.",
+        "reseller_stats_message": "📊 **Ваша статистика**\n\n🆔 ID пользователя: `{user_id}`\n📅 Дата регистрации: {joined_date}\n⚡ Создано конфигов: {total_configs}\n💰 Общая стоимость: ${total_value}\n💳 Всего оплачено: ${total_paid}\n💸 Текущий долг: ${current_debt}",
+        "admin_resellers_list": "💼 **Список реселлеров**\nВыберите реселлера для управления:",
+        "admin_reseller_details": "👤 **Детали реселлера**\n\nПользователь: {user_id}\nСтатус: {status}\nДолг: ${debt}\nКоличество конфигов: {configs_count}",
+        "admin_adjust_debt": "📝 Отправьте новую сумму долга для пользователя {user_id}:",
+        "debt_updated": "✅ Долг успешно обновлен.",
+        "reseller_banned": "🚫 Реселлер заблокирован.",
+        "reseller_unbanned": "✅ Реселлер разблокирован.",
+        "reseller_discount_info": "🎉 **Скидка реселлера применена!**\n\n💰 Исходная сумма: ${original_amount}\n🎁 Ваша скидка 20%: ${discount_amount}\n💳 Итоговая сумма к оплате: ${final_amount}\n\nКак ценный реселлер, вы получаете скидку 20% на погашение долга!",
         "enter_reseller_customer_username": "Пожалуйста, введите имя пользователя для вашего клиента (макс. 8 символов, буквенно-цифровые):",
         "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов."
     },
@@ -364,6 +400,27 @@ MESSAGE_TRANSLATIONS = {
         "payment_id_label": "Töleg belgisi",
         "timestamp": "Wagt belgisi",
         "menu_updated_notification": "🔄 Size has has gowy hyzmat etmek üçin menýumyzy täzeledik. Ine iň soňky wersiýa!",
+        "reseller_intro": "💼 **Diler paneli**\n\nDiler paneline hoş geldiňiz. Bu ýerde sazlamalary döredip we müşderileriňizi dolandyryp bilersiňiz.\n\nSiziň häzirki bergiňiz: ${debt}",
+        "reseller_status_pending": "⏳ Diler bolmak üçin haýyşyňyz tassyklanmagyna garaşylýar.",
+        "reseller_status_rejected": "❌ Diler bolmak üçin haýyşyňyz ret edildi.",
+        "reseller_request_sent": "✅ Haýyşyňyz administratorlara ugradyldy. Tassyklanandan soň size habar berler.",
+        "reseller_request_notification": "💼 **Täze Diler Haýyşy**\n\nUlanyjy: {user_id} (@{username})\nDiler bolmagy haýyş etdi.",
+        "reseller_approved_notification": "✅ Diler haýyşyňyz tassyklandy! Indi Diler Paneline girip bilersiňiz.",
+        "reseller_rejected_notification": "❌ Diler haýyşyňyz ret edildi.",
+        "reseller_config_created": "✅ Sazlama üstünlikli döredildi!\n\nUlanyjy ady: `{username}`\nMeýilnama: {plan_gb} GB\nDowamlylygy: {days} gün\nBaha: ${price}\n\nAbuna URL: `{sub_url}`",
+        "current_debt": "💰 Siziň häzirki bergiňiz: ${debt}",
+        "confirm_settlement": "Siz ${debt} bergiňizi üzmek isleýärsiňizmi?",
+        "debt_cleared": "✅ Bergiňiz üzüldi!",
+        "settlement_payment_approved": "✅ Töleg tassyklandy! Bergi üzüldi.",
+        "settlement_payment_rejected": "❌ Töleg ret edildi.",
+        "reseller_stats_message": "📊 **Siziň Statistikaňyz**\n\n🆔 Ulanyjy ID: `{user_id}`\n📅 Goşuldy: {joined_date}\n⚡ Döredilen Sazlamalar: {total_configs}\n💰 Jemi gymmat: ${total_value}\n💳 Jemi tölenen: ${total_paid}\n💸 Häzirki bergi: ${current_debt}",
+        "admin_resellers_list": "💼 **Dilerler sanawy**\nDolandyrmak üçin bir dileri saýlaň:",
+        "admin_reseller_details": "👤 **Diler barada maglumat**\n\nUlanyjy: {user_id}\nStatus: {status}\nBergi: ${debt}\nSazlamalar: {configs_count}",
+        "admin_adjust_debt": "📝 {user_id} ulanyjy üçin täze bergi mukdaryny giriziň:",
+        "debt_updated": "✅ Bergi üstünlikli täzelendi.",
+        "reseller_banned": "🚫 Diler petiklendi.",
+        "reseller_unbanned": "✅ Diler petikden aýryldy.",
+        "reseller_discount_info": "🎉 **Diler arzanladyşy ulanyldy!**\n\n💰 Asyl mukdar: ${original_amount}\n🎁 Siziň 20% arzanladyşyňyz: ${discount_amount}\n💳 Tölmeli jemleýji mukdar: ${final_amount}\n\nGadyrly diler hökmünde, bergi üzmek üçin 20% arzanladyş alýarsyňyz!",
         "enter_reseller_customer_username": "Müşderiňiz üçin ulanyjy adyny giriziň (maksimum 8 simwol, harp we san):",
         "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly."
     }
