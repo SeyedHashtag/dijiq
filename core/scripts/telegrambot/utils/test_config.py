@@ -102,13 +102,6 @@ def handle_confirm_test_config(call):
         )
         return
 
-    # Create a username for the test config
-    username = create_username_from_user_id(user_id)
-
-    # Constants for test config
-    TEST_TRAFFIC_GB = 1  # 1 GB
-    TEST_DAYS = 30       # 30 days
-
     # Display processing message
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
@@ -116,6 +109,20 @@ def handle_confirm_test_config(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
     )
+
+    create_test_config(user_id, call.message.chat.id, is_automatic=False)
+
+def create_test_config(user_id, chat_id, is_automatic=False):
+    # Double check if user has already used a test config
+    if has_used_test_config(user_id):
+        return False
+
+    # Create a username for the test config
+    username = create_username_from_user_id(user_id)
+
+    # Constants for test config
+    TEST_TRAFFIC_GB = 1  # 1 GB
+    TEST_DAYS = 30       # 30 days
 
     api_client = APIClient()
     result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
@@ -135,8 +142,13 @@ def handle_confirm_test_config(call):
             bio.seek(0)
 
             # Format success message
+            if is_automatic:
+                prefix = "🎁 Your free test configuration (1GB - 30 days) has been created automatically!\n\n"
+            else:
+                prefix = "✅ Your test configuration has been created successfully!\n\n"
+
             success_message = (
-                f"✅ Your test configuration has been created successfully!\n\n"
+                f"{prefix}"
                 f"📊 Test Plan Details:\n"
                 f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
                 f"- 🔹 Duration: {TEST_DAYS} days\n"
@@ -147,20 +159,23 @@ def handle_confirm_test_config(call):
             )
             # Send the QR code with config details
             bot.send_photo(
-                call.message.chat.id,
+                chat_id,
                 photo=bio,
                 caption=success_message,
                 parse_mode="Markdown"
             )
         else:
             bot.send_message(
-                call.message.chat.id,
+                chat_id,
                 f"✅ Your test configuration has been created, but the subscription URL could not be generated. Please contact support.",
                 parse_mode="Markdown"
             )
+        return True
     else:
-        bot.send_message(
-            call.message.chat.id,
-            "❌ Failed to create test configuration. Please try again later or contact support.",
-            parse_mode="Markdown"
-        )
+        if not is_automatic:
+            bot.send_message(
+                chat_id,
+                "❌ Failed to create test configuration. Please try again later or contact support.",
+                parse_mode="Markdown"
+            )
+        return False

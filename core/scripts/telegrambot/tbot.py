@@ -23,6 +23,10 @@ def send_welcome(message):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
+        # Automatically create test config if not already used
+        if not has_used_test_config(user_id):
+            create_test_config(user_id, message.chat.id, is_automatic=True)
+            
         markup = create_main_markup(is_admin=False, user_id=user_id)
         bot.reply_to(message, "Welcome to Dijiq VPN services!", reply_markup=markup)
 
