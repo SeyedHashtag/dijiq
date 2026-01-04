@@ -387,7 +387,9 @@ def handle_photo(message):
 @bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id]['state'] == 'waiting_receipt')
 def handle_text_while_waiting(message):
     language = get_user_language(message.from_user.id)
-    bot.reply_to(message, get_message_text(language, "upload_receipt"))
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
+    bot.reply_to(message, get_message_text(language, "upload_receipt"), reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
 def handle_admin_approval(call):

@@ -340,6 +340,9 @@ def handle_reseller_payment(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:cancel")
 def handle_reseller_cancel(call):
+    user_id = call.from_user.id
+    if user_id in user_data:
+        del user_data[user_id]
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:stats")
