@@ -25,12 +25,12 @@ def create_main_markup_with_language(language_translations, is_admin=False):
             language_translations.get("test_config", "🎁 Test Config")
         )
         markup.row(
-            language_translations.get("support", "📞 Support"), 
-            language_translations.get("language", "🌐 Language/زبان")
-        )
-        markup.row(
             language_translations.get("referral", "💰 Earn Crypto"),
             language_translations.get("reseller_panel", "💼 Reseller Panel")
+        )
+        markup.row(
+            language_translations.get("support", "📞 Support"), 
+            language_translations.get("language", "🌐 Language/زبان")
         )
     return markup
 
