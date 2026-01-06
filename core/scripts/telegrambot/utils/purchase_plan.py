@@ -56,11 +56,7 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
     except Exception as e:
         print(f"Error in send_admin_payment_notification: {str(e)}")
 
-@bot.message_handler(func=lambda message: any(
-    message.text == get_button_text(get_user_language(message.from_user.id), "purchase_plan") for lang in BUTTON_TRANSLATIONS
-))
-def purchase_plan(message):
-    user_id = message.from_user.id
+def show_plans(chat_id, user_id, message_id=None):
     language = get_user_language(user_id)
     plans = load_plans()
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
@@ -69,11 +65,36 @@ def purchase_plan(message):
         unlimited_text = get_message_text(language, "unlimited_users") if details.get("unlimited") else get_message_text(language, "single_user")
         button_text = f"{gb} GB - ${details['price']} - {details['days']} " + get_message_text(language, "days") + f"{unlimited_text}"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"purchase:{gb}"))
-    bot.reply_to(
-        message,
-        get_message_text(language, "select_plan"),
-        reply_markup=markup
-    )
+    
+    text = get_message_text(language, "select_plan")
+    
+    if message_id:
+        bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=markup
+        )
+    else:
+        bot.send_message(
+            chat_id,
+            text,
+            reply_markup=markup
+        )
+
+@bot.message_handler(func=lambda message: any(
+    message.text == get_button_text(get_user_language(message.from_user.id), "purchase_plan") for lang in BUTTON_TRANSLATIONS
+))
+def purchase_plan(message):
+    show_plans(message.chat.id, message.from_user.id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "back_to_plans")
+def back_to_plans(call):
+    try:
+        bot.answer_callback_query(call.id)
+        show_plans(call.message.chat.id, call.from_user.id, call.message.message_id)
+    except Exception as e:
+        print(f"Error in back_to_plans: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase_selection(call):
@@ -91,12 +112,29 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "price").format(price=plan['price'])
             message += get_message_text(language, "duration").format(days=plan['days'])
             message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
-            message += get_message_text(language, "proceed_with_payment")
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            markup.add(
-                types.InlineKeyboardButton(get_button_text(language, "confirm"), callback_data=f"confirm_purchase:{plan_gb}"),
-                types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase")
-            )
+            message += get_message_text(language, "select_payment_method")
+
+            # Check configured payment methods
+            env_path = os.path.join(os.path.dirname(__file__), '.env')
+            load_dotenv(env_path)
+            crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
+            card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
+            
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            methods_count = 0
+            if crypto_configured:
+                markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"payment_method:crypto:{plan_gb}"))
+                methods_count += 1
+            if card_to_card_configured:
+                markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"payment_method:card_to_card:{plan_gb}"))
+                methods_count += 1
+            
+            if methods_count == 0:
+                 bot.answer_callback_query(call.id, text=get_message_text(language, "no_payment_methods"))
+                 return
+
+            markup.add(types.InlineKeyboardButton(get_button_text(language, "back"), callback_data="back_to_plans")) 
+
             bot.edit_message_text(
                 message,
                 chat_id=call.message.chat.id,
@@ -126,51 +164,6 @@ def handle_cancel_purchase(call):
         chat_id=call.message.chat.id,
         text=get_message_text(language, "purchase_canceled")
     )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_purchase:'))
-def handle_confirm_purchase(call):
-    try:
-        user_id = call.from_user.id
-        language = get_user_language(user_id)
-        plan_gb = call.data.split(':')[1]
-        plans = load_plans()
-        if plan_gb not in plans:
-            bot.answer_callback_query(call.id, text=get_message_text(language, "plan_not_found"))
-            return
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        load_dotenv(env_path)
-        crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
-        card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        can_proceed = False
-        if crypto_configured:
-            markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"payment_method:crypto:{plan_gb}"))
-            can_proceed = True
-        if card_to_card_configured:
-            markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"payment_method:card_to_card:{plan_gb}"))
-            can_proceed = True
-        if not can_proceed:
-            bot.edit_message_text(
-                get_message_text(language, "no_payment_methods"),
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            return
-        if crypto_configured and card_to_card_configured:
-            bot.edit_message_text(
-                get_message_text(language, "select_payment_method"),
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=markup
-            )
-        elif crypto_configured:
-            handle_payment_method_selection(call, f"payment_method:crypto:{plan_gb}")
-        elif card_to_card_configured:
-            handle_payment_method_selection(call, f"payment_method:card_to_card:{plan_gb}")
-    except Exception as e:
-        user_id = call.from_user.id
-        language = get_user_language(user_id)
-        bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('payment_method:'))
 def handle_payment_method_selection(call, data=None):
