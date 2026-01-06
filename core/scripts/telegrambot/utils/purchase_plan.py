@@ -25,9 +25,9 @@ def format_datetime_string():
     return now.strftime("%Y%m%d%H%M%S")
 
 def create_username_from_user_id(user_id):
-    """Create a username using the required format: {telegram numeric id}t{exact date and time}"""
+    """Create a username using the required format: sell{telegram numeric id}t{exact date and time}"""
     time_str = format_datetime_string()
-    return f"{user_id}t{time_str}"
+    return f"sell{user_id}t{time_str}"
 
 def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, payment_method):
     """Send a notification to all admins about a successful payment"""
@@ -224,6 +224,7 @@ def handle_crypto_payment(call, plan_gb):
                 'plan_gb': plan_gb,
                 'price': plan['price'],
                 'days': plan['days'],
+                'unlimited': plan.get('unlimited', False),
                 'payment_id': payment_id,
                 'order_id': gateway_order_id,
                 'status': 'pending'
@@ -333,6 +334,7 @@ def process_receipt_photo(message, plan_gb, price):
                 'plan_gb': plan_gb,
                 'price': price,
                 'days': plan['days'],
+                'unlimited': plan.get('unlimited', False),
                 'payment_id': payment_id,
                 'status': 'pending_approval',
                 'receipt_path': photo_path
@@ -423,9 +425,18 @@ def handle_admin_approval(call):
             user_language = get_user_language(user_to_notify)
             plan_gb = payment_record['plan_gb']
             days = payment_record['days']
+            
+            unlimited = payment_record.get('unlimited')
+            if unlimited is None:
+                 plans = load_plans()
+                 if plan_gb in plans:
+                     unlimited = plans[plan_gb].get('unlimited', False)
+                 else:
+                     unlimited = False
+            
             username = create_username_from_user_id(user_to_notify)
             api_client = APIClient()
-            result = api_client.add_user(username, int(plan_gb), int(days))
+            result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
             if result:
                 update_payment_status(payment_id, 'completed')
                 add_referral_reward(payment_record['user_id'], payment_record['price'])
@@ -498,9 +509,18 @@ def handle_check_payment(call):
 
         days = payment_record.get('days')
         price = payment_record.get('price')
+        
+        unlimited = payment_record.get('unlimited')
+        if unlimited is None:
+                plans = load_plans()
+                if plan_gb in plans:
+                    unlimited = plans[plan_gb].get('unlimited', False)
+                else:
+                    unlimited = False
+        
         username = create_username_from_user_id(user_id)
         api_client = APIClient()
-        result = api_client.add_user(username, int(plan_gb), int(days))
+        result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
         if result:
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
             add_referral_reward(user_id, price)
@@ -576,9 +596,18 @@ def process_payment_webhook(request_data):
 
                 days = payment_record.get('days')
                 price = payment_record.get('price')
+                
+                unlimited = payment_record.get('unlimited')
+                if unlimited is None:
+                    plans = load_plans()
+                    if plan_gb in plans:
+                        unlimited = plans[plan_gb].get('unlimited', False)
+                    else:
+                        unlimited = False
+                
                 username = create_username_from_user_id(user_id)
                 api_client = APIClient()
-                result = api_client.add_user(username, int(plan_gb), int(days))
+                result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
                 if result:
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method)
@@ -664,9 +693,17 @@ def check_pending_payments():
                         days = record.get('days')
                         price = record.get('price')
                         
+                        unlimited = record.get('unlimited')
+                        if unlimited is None:
+                            plans = load_plans()
+                            if plan_gb in plans:
+                                unlimited = plans[plan_gb].get('unlimited', False)
+                            else:
+                                unlimited = False
+                        
                         username = create_username_from_user_id(user_id)
                         api_client = APIClient()
-                        add_result = api_client.add_user(username, int(plan_gb), int(days))
+                        add_result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
                         
                         if add_result:
                             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")

@@ -33,14 +33,15 @@ def my_configs(message):
     user_configs = []
 
     try:
-        # The pattern is {telegram_id}t{timestamp}
+        # The patterns are {telegram_id}t{timestamp} and sell{telegram_id}t{timestamp}
         pattern = f"^{user_id}t"
+        sell_pattern = f"^sell{user_id}t"
 
         # Handle both list and dictionary responses from API
         if isinstance(users, dict):
             # If users is a dictionary, iterate through items
             for username, user_data in users.items():
-                if username and re.match(pattern, username):
+                if username and (re.match(pattern, username) or re.match(sell_pattern, username)):
                     user_configs.append((username, user_data))
 
             # Check if we found any configs for this user
@@ -55,7 +56,7 @@ def my_configs(message):
             # If users is a list, iterate through items
             for user in users:
                 username = user.get('username')
-                if username and re.match(pattern, username):
+                if username and (re.match(pattern, username) or re.match(sell_pattern, username)):
                     user_configs.append((username, user))
 
             # Check if we found any configs for this user

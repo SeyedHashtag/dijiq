@@ -65,7 +65,7 @@ def get_user_ids(filter_type):
                 continue
                 
             if filter_type in ['all', 'active', 'expired']:
-                match = re.match(r'^(\d+)t', username)
+                match = re.match(r'^(?:sell)?(\d+)t', username)
                 if match:
                     telegram_id = match.group(1)
                     
