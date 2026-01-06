@@ -111,33 +111,15 @@ def handle_show_config(call):
         # Create API client
         api_client = APIClient()
         
-        # Get all users
-        users = api_client.get_users()
-        if users is None:
-            bot.edit_message_text(
-                "⚠️ Error connecting to API. Please try again later.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            return
+        # Get specific user data
+        user_data = api_client.get_user(username)
         
-        # Find the specific user data
-        user_data = None
-        if isinstance(users, dict):
-            if username in users:
-                user_data = users[username]
-        elif isinstance(users, list):
-            for user in users:
-                if user.get('username') == username:
-                    user_data = user
-                    break
-
         if user_data:
             # Show the config
             display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
         else:
             bot.edit_message_text(
-                f"⚠️ Error: User '{username}' not found.",
+                f"⚠️ Error: User '{username}' not found or API error.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id
             )

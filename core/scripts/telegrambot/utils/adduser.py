@@ -39,6 +39,16 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching users: {e}")
             return None
+
+    def get_user(self, username):
+        try:
+            user_endpoint = f"{self.users_endpoint}{username}"
+            response = requests.get(user_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching user {username}: {e}")
+            return None
     
     def add_user(self, username, traffic_limit, expiration_days, unlimited=False):
         data = {
