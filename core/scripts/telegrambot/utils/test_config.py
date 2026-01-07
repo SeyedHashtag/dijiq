@@ -30,13 +30,19 @@ def has_used_test_config(user_id):
     configs = load_test_configs()
     return str(user_id) in configs
 
-def mark_test_config_used(user_id, username=None):
+def mark_test_config_used(user_id, username=None, language=None, telegram_username=None):
     configs = load_test_configs()
     entry = {
-        'used_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        'used_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'telegram_id': user_id
     }
     if username:
         entry['username'] = username
+    if language:
+        entry['language'] = language
+    if telegram_username:
+        entry['telegram_username'] = telegram_username
+        
     configs[str(user_id)] = entry
     save_test_configs(configs)
 
@@ -91,10 +97,10 @@ def handle_cancel_test_config(call):
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_test_config")
 def handle_confirm_test_config(call):
     user_id = call.from_user.id
+    language = get_user_language(user_id)
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
         bot.answer_callback_query(call.id)
-        language = get_user_language(user_id)
         bot.edit_message_text(
             get_message_text(language, "test_config_used"),
             chat_id=call.message.chat.id,
@@ -110,9 +116,9 @@ def handle_confirm_test_config(call):
         message_id=call.message.message_id
     )
 
-    create_test_config(user_id, call.message.chat.id, is_automatic=False)
+    create_test_config(user_id, call.message.chat.id, is_automatic=False, language=language, telegram_username=call.from_user.username)
 
-def create_test_config(user_id, chat_id, is_automatic=False):
+def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None):
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
         return False
@@ -129,7 +135,7 @@ def create_test_config(user_id, chat_id, is_automatic=False):
 
     if result:
         # Mark the test config as used (save username as well)
-        mark_test_config_used(user_id, username=username)
+        mark_test_config_used(user_id, username=username, language=language, telegram_username=telegram_username)
 
         # Get user URI from API
         user_uri_data = api_client.get_user_uri(username)

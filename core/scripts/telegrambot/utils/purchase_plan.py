@@ -29,7 +29,7 @@ def create_username_from_user_id(user_id):
     time_str = format_datetime_string()
     return f"sell{user_id}t{time_str}"
 
-def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, payment_method):
+def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, payment_method, telegram_username=None):
     """Send a notification to all admins about a successful payment"""
     try:
         for admin_id in ADMIN_USER_IDS:
@@ -38,6 +38,12 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
                 f"💰 <b>{get_message_text(admin_language, 'payment_notification_title')}</b>\n\n"
                 f"✅ <b>{get_message_text(admin_language, 'successful_payment_received')}</b>\n\n"
                 f"👤 <b>{get_message_text(admin_language, 'user_id')}:</b> <code>{user_id}</code>\n"
+            )
+            
+            if telegram_username:
+                 notification_message += f"📱 <b>Telegram Username:</b> @{telegram_username}\n"
+            
+            notification_message += (
                 f"📱 <b>{get_message_text(admin_language, 'username')}:</b> <code>{username}</code>\n"
                 f"📊 <b>{get_message_text(admin_language, 'plan_size')}:</b> {plan_gb} GB\n"
                 f"💵 <b>{get_message_text(admin_language, 'amount')}:</b> ${price}\n"
@@ -338,6 +344,11 @@ def process_receipt_photo(message, plan_gb, price):
             f"⏳ New Pending Payment\n\n"
             f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
             f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
+        )
+        if message.from_user.username:
+            notification_message += f"📱 <b>Telegram Username:</b> @{message.from_user.username}\n"
+            
+        notification_message += (
             f"📊 <b>Plan:</b> {plan_gb} GB\n"
             f"💵 <b>Amount:</b> ${price}\n"
             f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
@@ -515,7 +526,7 @@ def handle_check_payment(call):
         api_client = APIClient()
         result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
         if result:
-            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
+            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
@@ -603,7 +614,13 @@ def process_payment_webhook(request_data):
                 result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
                 if result:
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
-                    send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method)
+                    telegram_username = None
+                    try:
+                        chat = bot.get_chat(user_id)
+                        telegram_username = chat.username
+                    except:
+                        pass
+                    send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method, telegram_username=telegram_username)
                     add_referral_reward(user_id, price)
                     sub_url = api_client.get_subscription_url(username)
                     update_payment_status(record_key, 'completed')
@@ -699,7 +716,13 @@ def check_pending_payments():
                         add_result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
                         
                         if add_result:
-                            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto")
+                            telegram_username = None
+                            try:
+                                chat = bot.get_chat(user_id)
+                                telegram_username = chat.username
+                            except:
+                                pass
+                            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=telegram_username)
                             add_referral_reward(user_id, price)
                             user_uri_data = api_client.get_user_uri(username)
                             
