@@ -23,7 +23,8 @@ def load_referrals():
             "referrals": {},  # user_id -> referrer_id
             "stats": {},      # user_id -> { "count": 0, "total_earnings": 0, "available_balance": 0 }
             "codes": {},      # code -> user_id
-            "user_codes": {}  # user_id -> code
+            "user_codes": {},  # user_id -> code
+            "wallets": {}     # user_id -> wallet_address
         }
 
 def save_referrals(data):
@@ -119,3 +120,40 @@ def get_referral_stats(user_id):
 def get_referrer(user_id):
     data = load_referrals()
     return data["referrals"].get(str(user_id))
+
+def set_wallet_address(user_id, address):
+    data = load_referrals()
+    user_id_str = str(user_id)
+    
+    if "wallets" not in data:
+        data["wallets"] = {}
+        
+    data["wallets"][user_id_str] = address
+    save_referrals(data)
+    return True
+
+def get_wallet_address(user_id):
+    data = load_referrals()
+    user_id_str = str(user_id)
+    return data.get("wallets", {}).get(user_id_str)
+
+def process_withdrawal_request(user_id):
+    data = load_referrals()
+    user_id_str = str(user_id)
+    
+    stats = data["stats"].get(user_id_str)
+    if not stats:
+        return False, "No stats found"
+        
+    if stats["available_balance"] < 2.0:
+        return False, "Insufficient balance (Minimum $2.00)"
+        
+    wallet = data.get("wallets", {}).get(user_id_str)
+    if not wallet:
+        return False, "Wallet address not set"
+        
+    amount = stats["available_balance"]
+    stats["available_balance"] = 0
+    
+    save_referrals(data)
+    return True, {"amount": amount, "wallet": wallet}

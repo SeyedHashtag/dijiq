@@ -34,7 +34,11 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 My Debt",
         "settle_debt": "💳 Settle Debt",
         "reseller_stats": "📊 My Stats",
-        "manage_resellers": "💼 Manage Resellers"
+        "manage_resellers": "💼 Manage Resellers",
+        "set_wallet": "💼 Set Wallet",
+        "withdraw": "💸 Withdraw",
+        "yes": "✅ Yes",
+        "no": "❌ No"
     },
     "fa": {
         "my_configs": "📱 پیکربندی‌های من",
@@ -57,7 +61,11 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 بدهی من",
         "settle_debt": "💳 تسویه حساب",
         "reseller_stats": "📊 آمار من",
-        "manage_resellers": "💼 مدیریت نمایندگان"
+        "manage_resellers": "💼 مدیریت نمایندگان",
+        "set_wallet": "💼 تنظیم کیف پول",
+        "withdraw": "💸 برداشت",
+        "yes": "✅ بله",
+        "no": "❌ خیر"
     },
     "tk": {
         "my_configs": "📱 Meniň sazlamalarym",
@@ -80,7 +88,11 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 Meniň bergim",
         "settle_debt": "💳 Bergini üzmek",
         "reseller_stats": "📊 Statistikam",
-        "manage_resellers": "💼 Satyjylary dolandyrmak"
+        "manage_resellers": "💼 Satyjylary dolandyrmak",
+        "set_wallet": "💼 Gapjyk sora",
+        "withdraw": "💸 Çykarmak",
+        "yes": "✅ Hawa",
+        "no": "❌ Ýok"
     },
     "ru": {
         "my_configs": "📱 Мои конфиги",
@@ -103,14 +115,28 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 Мой долг",
         "settle_debt": "💳 Погасить долг",
         "reseller_stats": "📊 Моя статистика",
-        "manage_resellers": "💼 Управление реселлерами"
+        "manage_resellers": "💼 Управление реселлерами",
+        "set_wallet": "💼 Установить кошелек",
+        "withdraw": "💸 Вывести",
+        "yes": "✅ Да",
+        "no": "❌ Нет"
     }
 }
 
 # Messages translations
 MESSAGE_TRANSLATIONS = {
     "en": {
-        "referral_stats": "💰 **Earn Crypto**\n\nInvite your friends and earn rewards!\n\n📊 **Your Stats:**\nInvited Users: {count}\nTotal Earnings: ${total_earnings:.2f}\nAvailable Balance: ${available_balance:.2f}\n\n🔗 **Your Invitation Link:**\n`{referral_link}`",
+        "referral_stats": "💰 **Earn Crypto**\n\n🚀 **How it works:**\n1️⃣ Invite friends using your unique link.\n2️⃣ Receive **20%** commission on all their purchases!\n3️⃣ Withdraw your earnings to your **Litecoin (LTC)** wallet when you reach **$2.00**.\n\n📊 **Your Stats:**\n👥 Invited Users: {count}\n💰 Total Earnings: ${total_earnings:.2f}\n💳 Available Balance: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Your Invitation Link:**\n`{referral_link}`",
+        "wallet_info": "💼 Wallet: `{wallet}`",
+        "wallet_not_set": "💼 Wallet: Not Set",
+        "enter_wallet": "Please enter your Litecoin (LTC) wallet address:",
+        "wallet_updated": "✅ Wallet address updated successfully!",
+        "withdraw_confirm": "Are you sure you want to withdraw ${amount} to `{wallet}`?",
+        "withdraw_success": "✅ Withdrawal request sent to admins!",
+        "withdraw_failed": "❌ Withdrawal failed: {reason}",
+        "admin_withdraw_request": "💸 **New Withdrawal Request**\n\nUser: {user_id}\nAmount: ${amount}\nWallet: `{wallet}`",
+        "mark_paid": "✅ Mark as Paid",
+        "already_paid": "⚠️ This request has already been processed.",
         "referral_registered": "✅ You have been referred by user {referrer_id}!",
         "referral_self_error": "❌ You cannot refer yourself.",
         "referral_already_registered": "❌ You have already been referred.",
@@ -189,7 +215,7 @@ MESSAGE_TRANSLATIONS = {
         "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters."
     },
     "ru": {
-        "referral_stats": "💰 **Заработать крипту**\n\nПриглашайте друзей и получайте вознаграждения!\n\n📊 **Ваша статистика:**\nПриглашенные пользователи: {count}\nОбщий заработок: ${total_earnings:.2f}\nДоступный баланс: ${available_balance:.2f}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
+        "referral_stats": "💰 **Заработать крипту**\n\n🚀 **Как это работает:**\n1️⃣ Приглашайте друзей по вашей уникальной ссылке.\n2️⃣ Получайте **20%** комиссии со всех их покупок!\n3️⃣ Выводите заработанные средства на свой **Litecoin (LTC)** кошелек при достижении **$2.00**.\n\n📊 **Ваша статистика:**\n👥 Приглашенные пользователи: {count}\n💰 Общий заработок: ${total_earnings:.2f}\n💳 Доступный баланс: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
         "referral_registered": "✅ Вы были приглашены пользователем {referrer_id}!",
         "referral_self_error": "❌ Вы не можете пригласить самого себя.",
         "referral_already_registered": "❌ Вы уже были приглашены.",
@@ -268,7 +294,7 @@ MESSAGE_TRANSLATIONS = {
         "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов."
     },
     "fa": {
-        "referral_stats": "💰 **کسب درآمد کریپتویی**\n\nدوستان خود را دعوت کنید و پاداش دریافت کنید!\n\n📊 **آمار شما:**\nکاربران دعوت شده: {count}\nمجموع درآمد: ${total_earnings:.2f}\nموجودی قابل برداشت: ${available_balance:.2f}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
+        "referral_stats": "💰 **کسب درآمد کریپتویی**\n\n🚀 **نحوه کار:**\n۱️⃣ دوستان خود را با لینک اختصاصی خود دعوت کنید.\n۲️⃣ **۲۰٪** کمیسیون از تمام خریدهای آنها دریافت کنید!\n۳️⃣ درآمد خود را پس از رسیدن به **۲ دلار** به کیف پول **لایت‌کوین (LTC)** خود برداشت کنید.\n\n📊 **آمار شما:**\n👥 کاربران دعوت شده: {count}\n💰 مجموع درآمد: ${total_earnings:.2f}\n💳 موجودی قابل برداشت: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
         "referral_registered": "✅ شما توسط کاربر {referrer_id} دعوت شدید!",
         "referral_self_error": "❌ شما نمی‌توانید خودتان را دعوت کنید.",
         "referral_already_registered": "❌ شما قبلاً دعوت شده‌اید.",
@@ -347,7 +373,7 @@ MESSAGE_TRANSLATIONS = {
         "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر."
     },
     "tk": {
-        "referral_stats": "💰 **Kripto Gazan**\n\nDostlaryňyzy çagyryň we baýrak gazanyň!\n\n📊 **Siziň Statistikaňyz:**\nÇagyrylan Ulanyjylar: {count}\nJemi Gazanç: ${total_earnings:.2f}\nElýeterli Balans: ${available_balance:.2f}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
+        "referral_stats": "💰 **Kripto Gazan**\n\n🚀 **Bu nähili işleýär:**\n1️⃣ Dostlaryňyzy ýörite baglanyşygyňyz bilen çagyryň.\n2️⃣ Olaryň ähli satyn almalaryndan **20%** komissiýa alyň!\n3️⃣ Gazananlaryňyzy **$2.00** ýetende **Litecoin (LTC)** gapjygyňyza çykaryň.\n\n📊 **Siziň Statistikaňyz:**\n👥 Çagyrylan Ulanyjylar: {count}\n💰 Jemi Gazanç: ${total_earnings:.2f}\n💳 Elýeterli Balans: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
         "referral_registered": "✅ Siz {referrer_id} ulanyjy tarapyndan çagyryldyňyz!",
         "referral_self_error": "❌ Özüňizi çagyryp bilmersiňiz.",
         "referral_already_registered": "❌ Siz eýýäm çagyryldyňyz.",
