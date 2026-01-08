@@ -168,8 +168,10 @@ def server_info() -> str | None:
         payments = payment_records.load_payments()
         total_revenue = 0.0
         monthly_revenue = 0.0
+        daily_revenue = 0.0
         total_orders = 0
         current_month = datetime.now().strftime('%Y-%m')
+        current_day = datetime.now().strftime('%Y-%m-%d')
         
         for p in payments.values():
             if str(p.get('status')).lower() in ['completed', 'paid']:
@@ -178,9 +180,11 @@ def server_info() -> str | None:
                     price = float(p.get('price', 0))
                     total_revenue += price
                     
-                    created_at = p.get('created_at', '')
-                    if created_at.startswith(current_month):
+                    date_to_check = p.get('updated_at', p.get('created_at', ''))
+                    if str(date_to_check).startswith(current_month):
                         monthly_revenue += price
+                    if str(date_to_check).startswith(current_day):
+                        daily_revenue += price
                 except ValueError:
                     pass
 
@@ -209,6 +213,7 @@ def server_info() -> str | None:
         output.append("💰 **Business Statistics**")
         output.append(f"💵 **Total Revenue:** ${total_revenue:,.2f}")
         output.append(f"📅 **Monthly Revenue:** ${monthly_revenue:,.2f}")
+        output.append(f"📆 **Daily Revenue:** ${daily_revenue:,.2f}")
         output.append(f"📦 **Total Orders:** {total_orders}")
         output.append(f"🤝 **Total Referral Rewards:** ${total_payouts:,.2f}")
         output.append("")

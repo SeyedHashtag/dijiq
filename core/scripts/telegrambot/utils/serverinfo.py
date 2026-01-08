@@ -7,4 +7,4 @@ def server_info(message):
     command = f"python3 {CLI_PATH} server-info"
     result = run_cli_command(command)
     bot.send_chat_action(message.chat.id, 'typing')
-    bot.reply_to(message, result)
+    bot.reply_to(message, result, parse_mode='Markdown')
