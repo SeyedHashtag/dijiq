@@ -226,7 +226,8 @@ def handle_crypto_payment(call, plan_gb):
                 'unlimited': plan.get('unlimited', False),
                 'payment_id': payment_id,
                 'order_id': gateway_order_id,
-                'status': 'pending'
+                'status': 'pending',
+                'payment_method': 'Crypto'
             }
             add_payment_record(payment_id, payment_record)
             qr = qrcode.make(payment_url)
@@ -323,7 +324,8 @@ def process_receipt_photo(message, plan_gb, price):
                 'payment_id': payment_id,
                 'status': 'pending_approval',
                 'receipt_path': photo_path,
-                'type': 'settlement'
+                'type': 'settlement',
+                'payment_method': 'Card to Card'
             }
         else:
             plans = load_plans()
@@ -336,7 +338,8 @@ def process_receipt_photo(message, plan_gb, price):
                 'unlimited': plan.get('unlimited', False),
                 'payment_id': payment_id,
                 'status': 'pending_approval',
-                'receipt_path': photo_path
+                'receipt_path': photo_path,
+                'payment_method': 'Card to Card'
             }
             
         add_payment_record(payment_id, payment_record)
@@ -421,6 +424,24 @@ def handle_admin_approval(call):
                  
                  user_to_notify = payment_record['user_id']
                  user_language = get_user_language(user_to_notify)
+                 
+                 telegram_username = None
+                 try:
+                    chat = bot.get_chat(user_to_notify)
+                    telegram_username = chat.username
+                 except:
+                    pass
+
+                 send_admin_payment_notification(
+                    user_to_notify, 
+                    "Settlement", 
+                    "Settlement", 
+                    payment_record['price'], 
+                    payment_id, 
+                    payment_record.get('payment_method', 'Card to Card'), 
+                    telegram_username=telegram_username
+                )
+
                  bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_approved"))
                  bot.edit_message_caption(caption=f"✅ Settlement Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                  return
@@ -444,6 +465,24 @@ def handle_admin_approval(call):
             if result:
                 update_payment_status(payment_id, 'completed')
                 add_referral_reward(payment_record['user_id'], payment_record['price'])
+                
+                telegram_username = None
+                try:
+                    chat = bot.get_chat(user_to_notify)
+                    telegram_username = chat.username
+                except:
+                    pass
+                    
+                send_admin_payment_notification(
+                    user_to_notify, 
+                    username, 
+                    plan_gb, 
+                    payment_record['price'], 
+                    payment_id, 
+                    payment_record.get('payment_method', 'Card to Card'), 
+                    telegram_username=telegram_username
+                )
+
                 user_uri_data = api_client.get_user_uri(username)
                 if user_uri_data and 'normal_sub' in user_uri_data:
                     sub_url = user_uri_data['normal_sub']

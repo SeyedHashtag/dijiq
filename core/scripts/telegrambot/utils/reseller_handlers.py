@@ -299,7 +299,8 @@ def handle_reseller_payment(call):
                 'days': 0,
                 'payment_id': payment_id,
                 'status': 'pending',
-                'type': 'settlement'
+                'type': 'settlement',
+                'payment_method': 'Crypto'
             }
             add_payment_record(payment_id, payment_record)
             
