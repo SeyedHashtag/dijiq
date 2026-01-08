@@ -21,6 +21,10 @@ class Command(Enum):
     SERVICES_STATUS = os.path.join(SCRIPT_DIR, 'services_status.sh')
     VERSION = os.path.join(SCRIPT_DIR, 'dijiq', 'version.py')
 
+import psutil
+import requests
+import sys
+
 # region Custom Exceptions
 
 
@@ -131,7 +135,99 @@ def traffic_status():
 # TODO: it's better to return json
 def server_info() -> str | None:
     '''Retrieves server information.'''
-    return run_cmd(['bash', Command.SERVER_INFO.value])
+    try:
+        # Add path for utils
+        sys.path.append('/etc/dijiq/core/scripts/telegrambot')
+        from utils import payment_records, referral, language, translations
+        
+        # 1. System Stats
+        cpu = psutil.cpu_percent(interval=1)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # 2. Online Users
+        online_users = 0
+        try:
+            # Load env for token
+            env_vars = dotenv_values('/etc/dijiq/core/scripts/telegrambot/.env')
+            token = env_vars.get('TOKEN')
+            url = "http://127.0.0.1:25413/online"
+            if token:
+                headers = {'Authorization': token}
+                resp = requests.get(url, headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict):
+                         online_users = sum(data.values())
+                    elif isinstance(data, list):
+                         online_users = sum(data)
+        except Exception:
+             pass 
+             
+        # 3. Sales Stats
+        payments = payment_records.load_payments()
+        total_revenue = 0.0
+        monthly_revenue = 0.0
+        total_orders = 0
+        current_month = datetime.now().strftime('%Y-%m')
+        
+        for p in payments.values():
+            if str(p.get('status')).lower() in ['completed', 'paid']:
+                total_orders += 1
+                try:
+                    price = float(p.get('price', 0))
+                    total_revenue += price
+                    
+                    created_at = p.get('created_at', '')
+                    if created_at.startswith(current_month):
+                        monthly_revenue += price
+                except ValueError:
+                    pass
+
+        # 4. Referral Stats
+        referral_data = referral.load_referrals()
+        total_payouts = 0.0
+        if 'stats' in referral_data:
+             for stat in referral_data['stats'].values():
+                 total_payouts += float(stat.get('total_earnings', 0))
+
+        # 5. Language Stats
+        lang_prefs = language.load_user_languages()
+        total_prefs = len(lang_prefs)
+        lang_counts = {}
+        for lang in lang_prefs.values():
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+
+        # Format Output
+        output = []
+        output.append("📊 **Server Statistics**")
+        output.append(f"💻 **CPU Usage:** {cpu}%")
+        output.append(f"🧠 **RAM Usage:** {ram.percent}% ({ram.used // (1024*1024)}MB / {ram.total // (1024*1024)}MB)")
+        output.append(f"💾 **Disk Usage:** {disk.percent}% ({disk.used // (1024*1024*1024)}GB / {disk.total // (1024*1024*1024)}GB)")
+        output.append(f"👥 **Online Users:** {online_users}")
+        output.append("")
+        output.append("💰 **Business Statistics**")
+        output.append(f"💵 **Total Revenue:** ${total_revenue:,.2f}")
+        output.append(f"📅 **Monthly Revenue:** ${monthly_revenue:,.2f}")
+        output.append(f"📦 **Total Orders:** {total_orders}")
+        output.append(f"🤝 **Total Referral Rewards:** ${total_payouts:,.2f}")
+        output.append("")
+        output.append("🌐 **Language Distribution**")
+        
+        if total_prefs > 0:
+            sorted_langs = sorted(lang_counts.items(), key=lambda item: item[1], reverse=True)
+            for code, count in sorted_langs:
+                percent = (count / total_prefs) * 100
+                lang_name = translations.LANGUAGES.get(code, code)
+                # Remove flag emoji for cleaner CLI output if needed, but keeping for now
+                output.append(f"   - {lang_name}: {percent:.1f}% ({count})")
+        else:
+            output.append("   No language data available.")
+        
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error generating server info: {str(e)}"
 
 
 def get_ip_address() -> tuple[str | None, str | None]:
