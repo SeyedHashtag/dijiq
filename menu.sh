@@ -369,17 +369,8 @@ telegram_bot_handler() {
                             break
                         fi
                     done
-                    
-                    while true; do
-                        read -e -p "Enter the subscription URL (e.g., http://example.com/sub): " sub_url
-                        if [ -z "$sub_url" ]; then
-                            echo "Subscription URL cannot be empty. Please try again."
-                        else
-                            break
-                        fi
-                    done
 
-                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" -s "$sub_url"
+                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key"
                 fi
                 ;;
             2)

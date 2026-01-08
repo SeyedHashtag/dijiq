@@ -17,7 +17,6 @@ class APIClient:
         
         self.base_url = os.getenv('URL')
         self.token = os.getenv('TOKEN')
-        self.sub_url = os.getenv('SUB_URL')
         
         if not self.base_url or not self.token:
             print("Warning: API URL or TOKEN not found in environment variables.")
@@ -84,13 +83,15 @@ class APIClient:
             "blocked": False
         })
     
-    def get_subscription_url(self, username):
-        if not self.sub_url:
+    def get_user_uri(self, username):
+        try:
+            user_uri_endpoint = f"{self.base_url}api/v1/users/{username}/uri"
+            response = requests.get(user_uri_endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error getting user URI: {e}")
             return None
-        
-        # Remove trailing slash if present
-        sub_url = self.sub_url.rstrip('/')
-        return f"{sub_url}/{username}#Hysteria2"
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
@@ -155,12 +156,14 @@ def process_show_user(message):
         f"{traffic_message}"
     )
     
-    # Get subscription URL from the API client
-    sub_url = api_client.get_subscription_url(actual_username)
+    # Get user URI from the API client
+    user_uri_data = api_client.get_user_uri(actual_username)
     
-    if not sub_url:
-        bot.reply_to(message, f"Error: Could not generate subscription URL for user '{actual_username}'. Check SUB_URL configuration.")
+    if not user_uri_data or 'normal_sub' not in user_uri_data:
+        bot.reply_to(message, f"Error: Could not retrieve subscription URL for user '{actual_username}'. Check API configuration.")
         return
+    
+    sub_url = user_uri_data['normal_sub']
     
     # Create QR code for subscription URL
     qr_code = qrcode.make(sub_url)

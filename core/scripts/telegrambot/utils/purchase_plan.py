@@ -661,7 +661,10 @@ def process_payment_webhook(request_data):
                         pass
                     send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method, telegram_username=telegram_username)
                     add_referral_reward(user_id, price)
-                    sub_url = api_client.get_subscription_url(username)
+                    
+                    user_uri_data = api_client.get_user_uri(username)
+                    sub_url = user_uri_data.get('normal_sub') if user_uri_data else None
+                    
                     update_payment_status(record_key, 'completed')
                     success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
                     bot.send_message(

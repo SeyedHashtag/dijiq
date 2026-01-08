@@ -172,11 +172,11 @@ def edit_ip_address(ipv4: str, ipv6: str):
 # region Advanced Menu
 
 
-def start_telegram_bot(token: str, adminid: str, api_url: str, api_key: str, sub_url: str):
+def start_telegram_bot(token: str, adminid: str, api_url: str, api_key: str):
     '''Starts the Telegram bot.'''
-    if not token or not adminid or not api_url or not api_key or not sub_url:
-        raise InvalidInputError('Error: All parameters (token, adminid, api_url, api_key, sub_url) are required for the start action.')
-    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_key, sub_url])
+    if not token or not adminid or not api_url or not api_key:
+        raise InvalidInputError('Error: All parameters (token, adminid, api_url, api_key) are required for the start action.')
+    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_key])
 
 
 def stop_telegram_bot():

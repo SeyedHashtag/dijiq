@@ -15,7 +15,6 @@ class APIClient:
         
         self.base_url = os.getenv('URL')
         self.token = os.getenv('TOKEN')
-        self.sub_url = os.getenv('SUB_URL')
         
         if not self.base_url or not self.token:
             print("Warning: API URL or TOKEN not found in environment variables.")
@@ -87,14 +86,6 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             print(f"Error getting user URI: {e}")
             return None
-    
-    def get_subscription_url(self, username):
-        if not self.sub_url:
-            return None
-        
-        # Remove trailing slash if present
-        sub_url = self.sub_url.rstrip('/')
-        return f"{sub_url}/{username}#Hysteria2"
 
 
 def create_cancel_markup(back_step=None):
