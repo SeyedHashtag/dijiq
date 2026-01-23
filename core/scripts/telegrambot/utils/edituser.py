@@ -164,6 +164,7 @@ def process_show_user(message):
         return
     
     sub_url = user_uri_data['normal_sub']
+    ipv4_url = user_uri_data.get('ipv4', '')
     
     # Create QR code for subscription URL
     qr_code = qrcode.make(sub_url)
@@ -180,7 +181,11 @@ def process_show_user(message):
     markup.add(types.InlineKeyboardButton("Renew Creation Date", callback_data=f"renew_creation:{actual_username}"),
                types.InlineKeyboardButton("Block User", callback_data=f"block_user:{actual_username}"))
 
-    caption = f"{formatted_details}\n\nSubscription URL: `{sub_url}`"
+    caption = ""
+    if ipv4_url:
+        caption += f"IPv4 URL: `{ipv4_url}`\n\n"
+
+    caption += f"{formatted_details}\n\nSubscription URL: `{sub_url}`"
     
     bot.send_photo(
         message.chat.id,

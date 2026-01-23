@@ -141,6 +141,8 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
         user_uri_data = api_client.get_user_uri(username)
         if user_uri_data and 'normal_sub' in user_uri_data:
             sub_url = user_uri_data['normal_sub']
+            ipv4_url = user_uri_data.get('ipv4', '')
+
             # Create QR code for subscription URL
             qr = qrcode.make(sub_url)
             bio = io.BytesIO()
@@ -153,8 +155,11 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
             else:
                 prefix = "✅ Your test configuration has been created successfully!\n\n"
 
-            success_message = (
-                f"{prefix}"
+            success_message = prefix
+            if ipv4_url:
+                success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
+
+            success_message += (
                 f"📊 Test Plan Details:\n"
                 f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
                 f"- 🔹 Duration: {TEST_DAYS} days\n"

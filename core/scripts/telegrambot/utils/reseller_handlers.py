@@ -200,13 +200,16 @@ def handle_reseller_username_input(message):
         # Get subscription URL
         user_uri_data = api_client.get_user_uri(username)
         sub_url = user_uri_data.get('normal_sub', 'N/A') if user_uri_data else 'N/A'
+        ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
+        ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
         
         msg = get_message_text(language, "reseller_config_created").format(
             username=username,
             plan_gb=gb,
             days=days,
             price=price,
-            sub_url=sub_url
+            sub_url=sub_url,
+            ipv4_info=ipv4_info
         )
         
         if sub_url != 'N/A':

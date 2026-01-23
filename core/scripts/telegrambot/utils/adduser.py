@@ -204,6 +204,7 @@ def process_add_user_step4(call):
             return
 
         sub_url = user_uri_data['normal_sub']
+        ipv4_url = user_uri_data.get('ipv4', '')
 
         # Generate QR code for subscription URL
         qr_code = qrcode.make(sub_url)
@@ -214,6 +215,9 @@ def process_add_user_step4(call):
         # Create success message
         unlimited_text = "Yes" if unlimited else "No"
         success_message = f"User '{username}' added successfully!\n"
+        if ipv4_url:
+            success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
+            
         success_message += f"Traffic limit: {traffic_limit} GB\n"
         success_message += f"Expiration days: {expiration_days}\n"
         success_message += f"Unlimited Access: {unlimited_text}\n\n"

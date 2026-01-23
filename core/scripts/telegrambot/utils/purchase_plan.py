@@ -486,11 +486,14 @@ def handle_admin_approval(call):
                 user_uri_data = api_client.get_user_uri(username)
                 if user_uri_data and 'normal_sub' in user_uri_data:
                     sub_url = user_uri_data['normal_sub']
+                    ipv4_url = user_uri_data.get('ipv4', '')
+                    ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
+
                     qr = qrcode.make(sub_url)
                     bio = io.BytesIO()
                     qr.save(bio, 'PNG')
                     bio.seek(0)
-                    success_message = get_message_text(user_language, "payment_approved").format(plan_gb=plan_gb, days=days, username=username, sub_url=sub_url)
+                    success_message = get_message_text(user_language, "payment_approved").format(plan_gb=plan_gb, days=days, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                     bot.send_photo(
                         user_to_notify,
                         photo=bio,
@@ -570,12 +573,15 @@ def handle_check_payment(call):
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
                 sub_url = user_uri_data['normal_sub']
+                ipv4_url = user_uri_data.get('ipv4', '')
+                ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
+
                 update_payment_status(payment_id, 'completed')
                 qr = qrcode.make(sub_url)
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
                 bio.seek(0)
-                success_message = get_message_text(language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
+                success_message = get_message_text(language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                 bot.send_photo(
                     call.message.chat.id,
                     photo=bio,
@@ -664,9 +670,11 @@ def process_payment_webhook(request_data):
                     
                     user_uri_data = api_client.get_user_uri(username)
                     sub_url = user_uri_data.get('normal_sub') if user_uri_data else None
+                    ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
+                    ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
                     
                     update_payment_status(record_key, 'completed')
-                    success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
+                    success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                     bot.send_message(
                         user_id,
                         success_message,
@@ -774,11 +782,14 @@ def check_pending_payments():
                             
                             if user_uri_data and 'normal_sub' in user_uri_data:
                                 sub_url = user_uri_data['normal_sub']
+                                ipv4_url = user_uri_data.get('ipv4', '')
+                                ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
+
                                 qr = qrcode.make(sub_url)
                                 bio = io.BytesIO()
                                 qr.save(bio, 'PNG')
                                 bio.seek(0)
-                                success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url)
+                                success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                                 try:
                                     bot.send_photo(
                                         user_id,
