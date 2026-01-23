@@ -215,12 +215,13 @@ def process_add_user_step4(call):
         # Create success message
         unlimited_text = "Yes" if unlimited else "No"
         success_message = f"User '{username}' added successfully!\n"
-        if ipv4_url:
-            success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
-            
         success_message += f"Traffic limit: {traffic_limit} GB\n"
         success_message += f"Expiration days: {expiration_days}\n"
         success_message += f"Unlimited Access: {unlimited_text}\n\n"
+        
+        if ipv4_url:
+            success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
+            
         success_message += f"Subscription URL: {sub_url}"
         
         bot.send_photo(call.message.chat.id, photo=bio, caption=success_message, parse_mode="Markdown", reply_markup=create_main_markup())

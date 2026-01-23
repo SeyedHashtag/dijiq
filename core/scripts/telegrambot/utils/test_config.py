@@ -156,15 +156,18 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 prefix = "✅ Your test configuration has been created successfully!\n\n"
 
             success_message = prefix
-            if ipv4_url:
-                success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
-
             success_message += (
                 f"📊 Test Plan Details:\n"
                 f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
                 f"- 🔹 Duration: {TEST_DAYS} days\n"
                 f"- 🔹 Unlimited Devices: Yes\n"
                 f"- 🔹 Username: `{username}`\n\n"
+            )
+
+            if ipv4_url:
+                success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
+
+            success_message += (
                 f"Subscription URL: `{sub_url}`\n\n"
                 f"Scan the QR code to configure your VPN client."
             )

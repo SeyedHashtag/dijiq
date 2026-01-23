@@ -181,11 +181,11 @@ def process_show_user(message):
     markup.add(types.InlineKeyboardButton("Renew Creation Date", callback_data=f"renew_creation:{actual_username}"),
                types.InlineKeyboardButton("Block User", callback_data=f"block_user:{actual_username}"))
 
-    caption = ""
+    caption = f"{formatted_details}\n\n"
     if ipv4_url:
         caption += f"IPv4 URL: `{ipv4_url}`\n\n"
 
-    caption += f"{formatted_details}\n\nSubscription URL: `{sub_url}`"
+    caption += f"Subscription URL: `{sub_url}`"
     
     bot.send_photo(
         message.chat.id,
