@@ -73,17 +73,28 @@ def handle_plan_select(call):
         return
     try:
         bot.answer_callback_query(call.id)
-        index = int(call.data.split(':')[1])
+        val = call.data.split(':')[1]
         _, _, sorted_plans = create_plans_markup()
+        plans = load_plans()
         
-        if 0 <= index < len(sorted_plans):
-            gb, plan = sorted_plans[index]
-            
+        gb, plan = None, None
+        
+        # 1. Try as GB key directly
+        if val in plans:
+            gb = val
+            plan = plans[val]
+        # 2. Try as index
+        elif val.isdigit():
+            index = int(val)
+            if 0 <= index < len(sorted_plans):
+                gb, plan = sorted_plans[index]
+        
+        if gb and plan:
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
                 types.InlineKeyboardButton("✏️ Edit", callback_data=f"edit_plan:{gb}"),
                 types.InlineKeyboardButton("🗑️ Delete", callback_data=f"confirm_delete_plan:{gb}"),
-                types.InlineKeyboardButton("⬅️ Back", callback_data="back_to_plans")
+                types.InlineKeyboardButton("⬅️ Back", callback_data="admin_back_to_plans")
             )
             
             unlimited_text = "Yes" if plan.get("unlimited") else "Single User"
@@ -114,12 +125,19 @@ def handle_edit_plan(call):
             bot.send_message(call.message.chat.id, "Plan not found.")
             return
 
+        sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
+        index = -1
+        for i, (k, _) in enumerate(sorted_plans):
+            if k == str(gb):
+                index = i
+                break
+
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("💰 Price", callback_data=f"edit_field:price:{gb}"),
             types.InlineKeyboardButton("📦 Size (GB)", callback_data=f"edit_field:gb:{gb}"),
             types.InlineKeyboardButton("📅 Days", callback_data=f"edit_field:days:{gb}"),
-            types.InlineKeyboardButton("⬅️ Back", callback_data=f"select_plan:{gb}")
+            types.InlineKeyboardButton("⬅️ Back", callback_data=f"select_plan:{index}")
         )
         
         bot.edit_message_text(
@@ -165,18 +183,9 @@ def process_update_price(message, gb):
             save_plans(plans)
             bot.reply_to(message, f"✅ Price updated to ${price}")
             
-            # Find index for back button
-            sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
-            index = -1
-            for i, (k, _) in enumerate(sorted_plans):
-                if k == str(gb):
-                    index = i
-                    break
-            
-            if index != -1:
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{index}"))
-                bot.send_message(message.chat.id, "Select an action:", reply_markup=markup)
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{gb}"))
+            bot.send_message(message.chat.id, "Select an action:", reply_markup=markup)
         else:
              bot.reply_to(message, "❌ Plan not found.")
     except ValueError:
@@ -200,14 +209,8 @@ def process_update_gb(message, old_gb):
             
             # Return to plan view (with new gb)
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{new_gb}")) # Wait, select_plan uses index...
-            # The select_plan handler uses index from sorted list. 
-            # If we change GB, the sort order changes. We can't easily jump back to select_plan:{index} without recalculating index.
-            # But wait, handle_plan_select uses index from call.data. 
-            # Let's just go back to main list.
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("📋 Back to List", callback_data="back_to_plans"))
+            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{new_gb}"),
+                       types.InlineKeyboardButton("📋 Back to List", callback_data="admin_back_to_plans"))
             bot.send_message(message.chat.id, "Select an action:", reply_markup=markup)
 
         else:
@@ -227,26 +230,8 @@ def process_update_days(message, gb):
             bot.reply_to(message, f"✅ Duration updated to {days} days")
             
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{gb}")) # This might be wrong index if sort changes, but here only days changed.
-            # actually select_plan callback data is index based on sorted keys.
-            # If we come from "Back to Plan" button, we need the INDEX.
-            # But here we only have GB.
-            # Let's find the index.
-            
-            sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
-            index = -1
-            for i, (k, _) in enumerate(sorted_plans):
-                if k == str(gb):
-                    index = i
-                    break
-            
-            if index != -1:
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{index}"))
-                bot.send_message(message.chat.id, "Select an action:", reply_markup=markup)
-            else:
-                 bot.reply_to(message, "Error finding plan index.")
-
+            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{gb}"))
+            bot.send_message(message.chat.id, "Select an action:", reply_markup=markup)
         else:
              bot.reply_to(message, "❌ Plan not found.")
     except ValueError:
@@ -305,7 +290,7 @@ def handle_plan_delete(call):
         print(f"DEBUG: Error in handle_plan_delete: {str(e)}")
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_plans")
+@bot.callback_query_handler(func=lambda call: call.data == "admin_back_to_plans")
 def handle_plan_navigation(call):
     if not is_admin(call.from_user.id):
         return

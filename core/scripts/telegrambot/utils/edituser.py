@@ -195,7 +195,7 @@ def process_show_user(message):
         parse_mode="Markdown"
     )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_') or call.data.startswith('renew_') or call.data.startswith('block_') or call.data.startswith('reset_'))
+@bot.callback_query_handler(func=lambda call: any(call.data.startswith(p) for p in ['edit_username:', 'edit_traffic:', 'edit_expiration:', 'renew_password:', 'renew_creation:', 'block_user:', 'reset_user:']))
 def handle_edit_callback(call):
     action, username = call.data.split(':')
     api_client = APIClient()
