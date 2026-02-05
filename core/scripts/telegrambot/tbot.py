@@ -56,6 +56,16 @@ def traffic_monitoring_thread():
         # Check every 2 hours
         time.sleep(7200)
 
+def automated_backup_thread():
+    """Background thread to run automated backups every 6 hours"""
+    while True:
+        try:
+            run_backup_and_send_to_admins()
+        except Exception as e:
+            print(f"Error in automated backup: {e}")
+        # Run every 6 hours
+        time.sleep(21600)
+
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
     monitor_thread.start()
@@ -65,4 +75,6 @@ if __name__ == '__main__':
     payment_thread.start()
     traffic_thread = threading.Thread(target=traffic_monitoring_thread, daemon=True)
     traffic_thread.start()
+    backup_thread = threading.Thread(target=automated_backup_thread, daemon=True)
+    backup_thread.start()
     bot.polling(none_stop=True)

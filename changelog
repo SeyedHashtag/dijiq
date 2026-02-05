@@ -1,3 +1,7 @@
+## v1.12.7
+💾 added automated backups every 6 hours (sent to admins)
+🔒 guarded backups to prevent overlapping runs
+
 ## v1.12.6
 🔔 added traffic quota alerts via Telegram bot (80/90%)
 ⏱️ scheduled traffic checks in background (every 2 hours)
