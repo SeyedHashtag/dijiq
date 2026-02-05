@@ -212,7 +212,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_banned": "🚫 Reseller has been banned.",
         "reseller_unbanned": "✅ Reseller has been unbanned.",
         "enter_reseller_customer_username": "Please enter a username for your customer (max 8 characters, alphanumeric):",
-        "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters."
+        "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters.",
+        "traffic_quota_alert": "⚠️ **Traffic Usage Alert**\n\n📱 Username: `{username}`\n📊 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Status: {percent}% of your quota used\n\nPlease consider purchasing a new plan if needed."
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\n🚀 **Как это работает:**\n1️⃣ Приглашайте друзей по вашей уникальной ссылке.\n2️⃣ Получайте **20%** комиссии со всех их покупок!\n3️⃣ Выводите заработанные средства на свой **Litecoin (LTC)** кошелек при достижении **$2.00**.\n\n📊 **Ваша статистика:**\n👥 Приглашенные пользователи: {count}\n💰 Общий заработок: ${total_earnings:.2f}\n💳 Доступный баланс: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -291,7 +292,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_banned": "🚫 Реселлер был заблокирован.",
         "reseller_unbanned": "✅ Реселлер был разблокирован.",
         "enter_reseller_customer_username": "Пожалуйста, введите имя пользователя для вашего клиента (макс. 8 символов, буквенно-цифровые):",
-        "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов."
+        "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов.",
+        "traffic_quota_alert": "⚠️ **Предупреждение о трафике**\n\n📱 Имя пользователя: `{username}`\n📊 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% вашего лимита\n\nПри необходимости приобретите новый план."
     },
     "fa": {
         "referral_stats": "💰 **کسب درآمد کریپتویی**\n\n🚀 **نحوه کار:**\n۱️⃣ دوستان خود را با لینک اختصاصی خود دعوت کنید.\n۲️⃣ **۲۰٪** کمیسیون از تمام خریدهای آنها دریافت کنید!\n۳️⃣ درآمد خود را پس از رسیدن به **۲ دلار** به کیف پول **لایت‌کوین (LTC)** خود برداشت کنید.\n\n📊 **آمار شما:**\n👥 کاربران دعوت شده: {count}\n💰 مجموع درآمد: ${total_earnings:.2f}\n💳 موجودی قابل برداشت: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
@@ -370,7 +372,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_banned": "🚫 نماینده مسدود شد.",
         "reseller_unbanned": "✅ نماینده رفع مسدودیت شد.",
         "enter_reseller_customer_username": "لطفاً یک نام کاربری برای مشتری خود وارد کنید (حداکثر 8 کاراکتر، حروف و اعداد):",
-        "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر."
+        "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر.",
+        "traffic_quota_alert": "⚠️ **هشدار مصرف ترافیک**\n\n📱 نام کاربری: `{username}`\n📊 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 استفاده: {percent}% از سهمیه شما\n\nدر صورت نیاز، لطفاً یک طرح جدید خریداری کنید."
     },
     "tk": {
         "referral_stats": "💰 **Kripto Gazan**\n\n🚀 **Bu nähili işleýär:**\n1️⃣ Dostlaryňyzy ýörite baglanyşygyňyz bilen çagyryň.\n2️⃣ Olaryň ähli satyn almalaryndan **20%** komissiýa alyň!\n3️⃣ Gazananlaryňyzy **$2.00** ýetende **Litecoin (LTC)** gapjygyňyza çykaryň.\n\n📊 **Siziň Statistikaňyz:**\n👥 Çagyrylan Ulanyjylar: {count}\n💰 Jemi Gazanç: ${total_earnings:.2f}\n💳 Elýeterli Balans: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
@@ -449,7 +452,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_banned": "🚫 Satyjy blokirlemdi.",
         "reseller_unbanned": "✅ Satyjy blokdan çykaryldy.",
         "enter_reseller_customer_username": "Müşderiňiz üçin ulanyjy adyny giriziň (maksimum 8 simwol, harp we san):",
-        "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly."
+        "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly.",
+        "traffic_quota_alert": "⚠️ **Trafik Ulanyş Duýduryşy**\n\n📱 Ulanyjy ady: `{username}`\n📊 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Ulanylyş: {percent}%\n\nZerur bolsa täze meýilnama satyn alyň."
     }
 }
 

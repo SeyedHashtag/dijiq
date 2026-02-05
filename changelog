@@ -1,3 +1,4 @@
-## v1.12.3
-🔧 enhanced plan selection handling
-🔧 improved user navigation in edit plans
+## v1.12.6
+🔔 added traffic quota alerts via Telegram bot (80/90%)
+⏱️ scheduled traffic checks in background (every 2 hours)
+🌐 added multilingual traffic usage alert text

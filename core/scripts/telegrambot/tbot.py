@@ -46,6 +46,16 @@ def payment_monitoring_thread():
         # Check every 5 minutes
         time.sleep(300)
 
+def traffic_monitoring_thread():
+    """Background thread to notify users when nearing traffic quota"""
+    while True:
+        try:
+            monitor_user_traffic()
+        except Exception as e:
+            print(f"Error in traffic monitoring: {e}")
+        # Check every 2 hours
+        time.sleep(7200)
+
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
     monitor_thread.start()
@@ -53,4 +63,6 @@ if __name__ == '__main__':
     version_thread.start()
     payment_thread = threading.Thread(target=payment_monitoring_thread, daemon=True)
     payment_thread.start()
+    traffic_thread = threading.Thread(target=traffic_monitoring_thread, daemon=True)
+    traffic_thread.start()
     bot.polling(none_stop=True)
