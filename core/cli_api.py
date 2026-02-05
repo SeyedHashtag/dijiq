@@ -1,7 +1,7 @@
 import os
 import subprocess
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from typing import Any
 from dotenv import dotenv_values
@@ -166,27 +166,77 @@ def server_info() -> str | None:
              
         # 3. Sales Stats
         payments = payment_records.load_payments()
-        total_revenue = 0.0
-        monthly_revenue = 0.0
-        daily_revenue = 0.0
-        total_orders = 0
-        current_month = datetime.now().strftime('%Y-%m')
-        current_day = datetime.now().strftime('%Y-%m-%d')
-        
-        for p in payments.values():
-            if str(p.get('status')).lower() in ['completed', 'paid']:
-                total_orders += 1
+        paid_statuses = {'completed', 'paid', 'success', 'succeeded'}
+        failed_statuses = {'rejected', 'failed', 'canceled', 'cancelled', 'expired', 'error'}
+        pending_statuses = {'pending', 'pending_approval', 'processing', 'waiting', 'unpaid'}
+
+        now = datetime.now()
+        current_month = now.strftime('%Y-%m')
+        current_day = now.strftime('%Y-%m-%d')
+        last_30_days_start = now - timedelta(days=30)
+
+        def parse_date(value: str):
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value
+            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
                 try:
-                    price = float(p.get('price', 0))
-                    total_revenue += price
-                    
-                    date_to_check = p.get('updated_at', p.get('created_at', ''))
-                    if str(date_to_check).startswith(current_month):
-                        monthly_revenue += price
-                    if str(date_to_check).startswith(current_day):
-                        daily_revenue += price
+                    return datetime.strptime(str(value), fmt)
                 except ValueError:
-                    pass
+                    continue
+            return None
+
+        stats = {
+            'all': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
+            'month': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
+            'today': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
+            'last30': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
+        }
+
+        plan_revenue = {}
+        plan_count = {}
+
+        for p in payments.values():
+            status = str(p.get('status', '')).lower()
+            price_raw = p.get('price', 0)
+            try:
+                price = float(price_raw or 0)
+            except (ValueError, TypeError):
+                price = 0.0
+
+            date_to_check = p.get('updated_at') or p.get('created_at') or ''
+            payment_dt = parse_date(date_to_check)
+            in_month = str(date_to_check).startswith(current_month) if date_to_check else False
+            in_today = str(date_to_check).startswith(current_day) if date_to_check else False
+            in_last30 = payment_dt is not None and payment_dt >= last_30_days_start
+
+            def bump(bucket: str):
+                stats[bucket]['orders'] += 1
+                if status in paid_statuses:
+                    stats[bucket]['paid'] += 1
+                    stats[bucket]['revenue'] += price
+                elif status in failed_statuses:
+                    stats[bucket]['failed'] += 1
+                elif status in pending_statuses:
+                    stats[bucket]['pending'] += 1
+
+            bump('all')
+            if in_month:
+                bump('month')
+            if in_today:
+                bump('today')
+            if in_last30:
+                bump('last30')
+
+            if status in paid_statuses:
+                plan = p.get('plan_gb', 'Unknown')
+                plan_revenue[plan] = plan_revenue.get(plan, 0.0) + price
+                plan_count[plan] = plan_count.get(plan, 0) + 1
+
+        def aov(bucket: str) -> float:
+            paid = stats[bucket]['paid']
+            return stats[bucket]['revenue'] / paid if paid else 0.0
 
         # 4. Referral Stats
         referral_data = referral.load_referrals()
@@ -211,11 +261,28 @@ def server_info() -> str | None:
         output.append(f"👥 **Online Users:** {online_users}")
         output.append("")
         output.append("💰 **Business Statistics**")
-        output.append(f"💵 **Total Revenue:** ${total_revenue:,.2f}")
-        output.append(f"📅 **Monthly Revenue:** ${monthly_revenue:,.2f}")
-        output.append(f"📆 **Daily Revenue:** ${daily_revenue:,.2f}")
-        output.append(f"📦 **Total Orders:** {total_orders}")
+        output.append(f"💵 **Total Revenue:** ${stats['all']['revenue']:,.2f}")
+        output.append(f"📦 **Total Orders:** {stats['all']['orders']} (✅ {stats['all']['paid']} • ❌ {stats['all']['failed']} • ⏳ {stats['all']['pending']})")
+        output.append(f"🧾 **AOV (All Time):** ${aov('all'):,.2f}")
+        output.append("")
+        output.append(f"📆 **Today:** ${stats['today']['revenue']:,.2f} • {stats['today']['orders']} orders (✅ {stats['today']['paid']} • ❌ {stats['today']['failed']} • ⏳ {stats['today']['pending']})")
+        output.append(f"📅 **This Month:** ${stats['month']['revenue']:,.2f} • {stats['month']['orders']} orders (✅ {stats['month']['paid']} • ❌ {stats['month']['failed']} • ⏳ {stats['month']['pending']})")
+        output.append(f"🗓️ **Last 30 Days:** ${stats['last30']['revenue']:,.2f} • {stats['last30']['orders']} orders (✅ {stats['last30']['paid']} • ❌ {stats['last30']['failed']} • ⏳ {stats['last30']['pending']})")
+        output.append(f"🧾 **AOV (30 Days):** ${aov('last30'):,.2f}")
         output.append(f"🤝 **Total Referral Rewards:** ${total_payouts:,.2f}")
+        if stats['all']['revenue'] > 0:
+            share = (total_payouts / stats['all']['revenue']) * 100
+            output.append(f"🤝 **Referral Share of Revenue:** {share:.1f}%")
+
+        if plan_revenue:
+            output.append("")
+            output.append("🏷️ **Top Plans (Revenue)**")
+            for plan, amount in sorted(plan_revenue.items(), key=lambda item: item[1], reverse=True)[:3]:
+                output.append(f"   - {plan}: ${amount:,.2f}")
+        if plan_count:
+            output.append("🏷️ **Top Plans (Orders)**")
+            for plan, count in sorted(plan_count.items(), key=lambda item: item[1], reverse=True)[:3]:
+                output.append(f"   - {plan}: {count}")
         output.append("")
         output.append("🌐 **Language Distribution**")
         

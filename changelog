@@ -1,3 +1,6 @@
+## v1.12.8
+📊 expanded Server Info with business metrics (revenue windows, order status breakdowns, AOV, top plans)
+
 ## v1.12.7
 💾 added automated backups every 6 hours (sent to admins)
 🔒 guarded backups to prevent overlapping runs
