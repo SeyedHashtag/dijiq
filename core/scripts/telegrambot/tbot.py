@@ -2,6 +2,7 @@ from telebot import types
 from utils import *
 import threading
 import time
+import datetime
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -56,15 +57,34 @@ def traffic_monitoring_thread():
         # Check every 2 hours
         time.sleep(7200)
 
+def _seconds_until_next_backup_window(now=None):
+    """Return seconds until next 6-hour boundary in local server time."""
+    if now is None:
+        now = datetime.datetime.now()
+
+    next_hour = ((now.hour // 6) + 1) * 6
+    next_day = now.date()
+    if next_hour >= 24:
+        next_hour = 0
+        next_day = now.date() + datetime.timedelta(days=1)
+
+    next_run = datetime.datetime.combine(
+        next_day,
+        datetime.time(hour=next_hour, minute=0, second=0, microsecond=0),
+    )
+    delta = (next_run - now).total_seconds()
+    return max(0, int(delta))
+
+
 def automated_backup_thread():
-    """Background thread to run automated backups every 6 hours"""
+    """Background thread to run automated backups at fixed 6-hour boundaries."""
     while True:
+        sleep_seconds = _seconds_until_next_backup_window()
+        time.sleep(sleep_seconds)
         try:
             run_backup_and_send_to_admins()
         except Exception as e:
             print(f"Error in automated backup: {e}")
-        # Run every 6 hours
-        time.sleep(21600)
 
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
