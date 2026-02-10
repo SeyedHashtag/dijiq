@@ -1,3 +1,7 @@
+## v1.12.9
+🕒 automated backups now run on fixed 6-hour boundaries (server local time)
+📜 added admin Logs button to download latest service logs via Telegram
+
 ## v1.12.8
 📊 expanded Server Info with business metrics (revenue windows, order status breakdowns, AOV, top plans)
 
