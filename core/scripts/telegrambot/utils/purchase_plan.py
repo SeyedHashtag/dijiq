@@ -396,8 +396,9 @@ def handle_photo(message):
 @bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id]['state'] == 'waiting_receipt')
 def handle_text_while_waiting(message):
     language = get_user_language(message.from_user.id)
+    cancel_callback = user_data[message.from_user.id].get('cancel_callback', 'cancel_purchase')
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data=cancel_callback))
     bot.reply_to(message, get_message_text(language, "upload_receipt"), reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
@@ -418,8 +419,8 @@ def handle_admin_approval(call):
             return
         if action == 'approve':
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
-                 from utils.reseller import clear_reseller_debt
-                 clear_reseller_debt(payment_record['user_id'])
+                 from utils.reseller import apply_reseller_payment
+                 apply_reseller_payment(payment_record['user_id'], payment_record.get('price', 0))
                  update_payment_status(payment_id, 'completed')
                  
                  user_to_notify = payment_record['user_id']
@@ -543,8 +544,8 @@ def handle_check_payment(call):
         plan_gb = payment_record.get('plan_gb')
         
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-             from utils.reseller import clear_reseller_debt
-             clear_reseller_debt(user_id)
+             from utils.reseller import apply_reseller_payment
+             apply_reseller_payment(user_id, payment_record.get('price', 0))
              update_payment_status(payment_id, 'completed')
              bot.send_message(
                 call.message.chat.id,
@@ -633,8 +634,8 @@ def process_payment_webhook(request_data):
                 plan_gb = payment_record.get('plan_gb')
                 
                 if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                     from utils.reseller import clear_reseller_debt
-                     clear_reseller_debt(user_id)
+                     from utils.reseller import apply_reseller_payment
+                     apply_reseller_payment(user_id, payment_record.get('price', 0))
                      update_payment_status(record_key, 'completed')
                      bot.send_message(
                         user_id,
@@ -736,8 +737,8 @@ def check_pending_payments():
                         plan_gb = record.get('plan_gb')
                         
                         if record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                             from utils.reseller import clear_reseller_debt
-                             clear_reseller_debt(user_id)
+                             from utils.reseller import apply_reseller_payment
+                             apply_reseller_payment(user_id, record.get('price', 0))
                              update_payment_status(payment_id, 'completed')
                              try:
                                 user_language = get_user_language(user_id)

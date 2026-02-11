@@ -13,13 +13,19 @@ from utils.language import get_user_language
 from utils.translations import get_message_text, get_button_text, BUTTON_TRANSLATIONS
 from utils.reseller import (
     get_reseller_data, update_reseller_status, add_reseller_debt, 
-    clear_reseller_debt, get_all_resellers, set_reseller_debt
+    get_all_resellers, set_reseller_debt
 )
 from utils.edit_plans import load_plans
 from utils.adduser import APIClient
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.purchase_plan import user_data
+
+def _get_approved_reseller_data(user_id):
+    reseller_data = get_reseller_data(user_id)
+    if not reseller_data or reseller_data.get('status') != 'approved':
+        return None
+    return reseller_data
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -40,8 +46,8 @@ def reseller_panel(message):
             types.InlineKeyboardButton(get_button_text(language, "my_debt"), callback_data="reseller:debt")
         )
         markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"))
-        debt = reseller_data.get('debt', 0.0)
-        bot.reply_to(message, get_message_text(language, "reseller_intro").replace("${debt}", f"${debt}"), reply_markup=markup)
+        debt = float(reseller_data.get('debt', 0.0))
+        bot.reply_to(message, get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}"), reply_markup=markup)
         
     elif status == 'pending':
         bot.reply_to(message, get_message_text(language, "reseller_status_pending"))
@@ -59,9 +65,20 @@ def reseller_panel(message):
 def handle_reseller_request(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    reseller_data = get_reseller_data(user_id)
+    current_status = reseller_data.get('status') if reseller_data else None
+
+    if current_status == 'approved':
+        bot.answer_callback_query(call.id, "You are already an approved reseller.")
+        return
+    if current_status == 'pending':
+        bot.answer_callback_query(call.id, get_message_text(language, "reseller_status_pending"))
+        return
     
     # Update status to pending
-    update_reseller_status(user_id, 'pending')
+    if not update_reseller_status(user_id, 'pending'):
+        bot.answer_callback_query(call.id, "Failed to submit request. Please try again.")
+        return
     
     bot.edit_message_text(
         get_message_text(language, "reseller_request_sent"),
@@ -114,6 +131,9 @@ def handle_admin_reseller(call):
 def handle_reseller_generate(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    if not _get_approved_reseller_data(user_id):
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
     
     plans = load_plans()
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
@@ -138,6 +158,9 @@ def handle_reseller_generate(call):
 def handle_reseller_buy(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    if not _get_approved_reseller_data(user_id):
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
     gb = call.data.split(':')[2]
     
     plans = load_plans()
@@ -167,6 +190,11 @@ def handle_reseller_buy(call):
 def handle_reseller_username_input(message):
     user_id = message.from_user.id
     language = get_user_language(user_id)
+    if not _get_approved_reseller_data(user_id):
+        if user_id in user_data:
+            del user_data[user_id]
+        bot.reply_to(message, "Your reseller access is not active.")
+        return
     chosen_username = message.text.strip()
     
     # Validate username: alphanumeric and max 8 chars
@@ -195,7 +223,17 @@ def handle_reseller_username_input(message):
             "days": days,
             "price": price
         }
-        add_reseller_debt(user_id, price, config_data)
+        debt_added = add_reseller_debt(user_id, price, config_data)
+        if not debt_added:
+            for admin_id in ADMIN_USER_IDS:
+                try:
+                    bot.send_message(admin_id, f"⚠️ Reseller debt write failed for user {user_id} after config creation: {username}")
+                except:
+                    pass
+            bot.reply_to(message, "Config was created, but accounting failed. Admins have been notified.")
+            if user_id in user_data:
+                del user_data[user_id]
+            return
         
         # Get subscription URL
         user_uri_data = api_client.get_user_uri(username)
@@ -231,16 +269,19 @@ def handle_reseller_username_input(message):
 def handle_reseller_debt(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = get_reseller_data(user_id)
-    debt = reseller_data.get('debt', 0.0)
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    debt = float(reseller_data.get('debt', 0.0))
     
     markup = types.InlineKeyboardMarkup()
     if debt > 0:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "settle_debt"), callback_data=f"reseller:settle:{debt}"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "settle_debt"), callback_data=f"reseller:settle:{debt:.2f}"))
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     
     bot.edit_message_text(
-        get_message_text(language, "current_debt").replace("${debt}", f"${debt}"),
+        get_message_text(language, "current_debt").replace("${debt}", f"${debt:.2f}"),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup
@@ -250,7 +291,14 @@ def handle_reseller_debt(call):
 def handle_reseller_settle(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    amount = float(call.data.split(':')[2])
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    amount = float(reseller_data.get('debt', 0.0))
+    if amount <= 0:
+        bot.answer_callback_query(call.id, get_message_text(language, "debt_cleared"))
+        return
     
     # Re-use payment logic
     env_path = '/etc/dijiq/core/scripts/telegrambot/.env'
@@ -261,9 +309,9 @@ def handle_reseller_settle(call):
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     if crypto_configured:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"reseller:pay:crypto:{amount}"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"reseller:pay:crypto:{amount:.2f}"))
     if card_to_card_configured:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"reseller:pay:card:{amount}"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"reseller:pay:card:{amount:.2f}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     
@@ -278,13 +326,22 @@ def handle_reseller_settle(call):
 def handle_reseller_payment(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
     _, _, method, amount = call.data.split(':')
     amount = float(amount)
+    current_debt = float(reseller_data.get('debt', 0.0))
+    if current_debt <= 0:
+        bot.answer_callback_query(call.id, get_message_text(language, "debt_cleared"))
+        return
+    amount_to_pay = min(amount, current_debt)
     
     if method == 'crypto':
         payment_handler = CryptoPayment()
         payment_response = payment_handler.create_payment(
-            amount, "Settlement", user_id
+            amount_to_pay, "Settlement", user_id
         )
         if "error" in payment_response:
              bot.answer_callback_query(call.id, f"Error: {payment_response['error']}")
@@ -298,7 +355,7 @@ def handle_reseller_payment(call):
             payment_record = {
                 'user_id': user_id,
                 'plan_gb': 'Settlement',
-                'price': amount,
+                'price': amount_to_pay,
                 'days': 0,
                 'payment_id': payment_id,
                 'status': 'pending',
@@ -319,13 +376,13 @@ def handle_reseller_payment(call):
             )
             
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            bot.send_photo(call.message.chat.id, bio, caption=get_message_text(language, "payment_instructions").format(price=amount, payment_url=payment_url, payment_id=payment_id), reply_markup=markup)
+            bot.send_photo(call.message.chat.id, bio, caption=get_message_text(language, "payment_instructions").format(price=amount_to_pay, payment_url=payment_url, payment_id=payment_id), reply_markup=markup)
 
     elif method == 'card':
         # Card to card logic
         exchange_rate = os.getenv('EXCHANGE_RATE', '1')
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
-        price_in_tomans = amount * float(exchange_rate)
+        price_in_tomans = amount_to_pay * float(exchange_rate)
         
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
@@ -341,8 +398,9 @@ def handle_reseller_payment(call):
         user_data[user_id] = {
             'state': 'waiting_receipt',
             'plan_gb': 'Settlement',
-            'price': amount,
-            'type': 'settlement' 
+            'price': amount_to_pay,
+            'type': 'settlement',
+            'cancel_callback': 'reseller:cancel'
         }
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:cancel")
@@ -356,9 +414,10 @@ def handle_reseller_cancel(call):
 def handle_reseller_stats(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = get_reseller_data(user_id)
+    reseller_data = _get_approved_reseller_data(user_id)
     
     if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
         return
 
     configs = reseller_data.get('configs', [])
@@ -485,10 +544,7 @@ def handle_admin_toggle_ban(call):
     new_status = 'rejected' if current_status == 'approved' else 'approved'
     update_reseller_status(target_id, new_status)
     
-    # Refresh view
-    handle_admin_manage_detail(call) # This parses call.data, but we need to pass a modified call or just call the logic.
-    # The logic extracts target_id from data "admin_manage:target_id".
-    # We can just change call.data and re-call.
+    # Refresh detail view for the same reseller
     call.data = f"admin_manage:{target_id}"
     handle_admin_manage_detail(call)
 
