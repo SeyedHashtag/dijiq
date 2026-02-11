@@ -1,6 +1,5 @@
-## v1.12.15
-🧹 maintenance release with repository-wide formatting cleanup and line-ending normalization
-🔧 no behavioral changes intended; improves consistency across shell/Python sources
+## v1.12.16
+🧹 Orders expire after some time
 
 ## v1.12.13
 🤖 hardened Telegram bot polling with retry/backoff on network timeouts
