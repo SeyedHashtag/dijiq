@@ -167,7 +167,8 @@ def server_info() -> str | None:
         # 3. Sales Stats
         payments = payment_records.load_payments()
         paid_statuses = {'completed', 'paid', 'success', 'succeeded'}
-        failed_statuses = {'rejected', 'failed', 'canceled', 'cancelled', 'expired', 'error'}
+        failed_statuses = {'rejected', 'failed', 'canceled', 'cancelled', 'error'}
+        expired_statuses = {'expired'}
         pending_statuses = {'pending', 'pending_approval', 'processing', 'waiting', 'unpaid'}
 
         now = datetime.now()
@@ -188,10 +189,10 @@ def server_info() -> str | None:
             return None
 
         stats = {
-            'all': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
-            'month': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
-            'today': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
-            'last30': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'pending': 0},
+            'all': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
+            'month': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
+            'today': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
+            'last30': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
         }
 
         plan_revenue = {}
@@ -218,6 +219,8 @@ def server_info() -> str | None:
                     stats[bucket]['revenue'] += price
                 elif status in failed_statuses:
                     stats[bucket]['failed'] += 1
+                elif status in expired_statuses:
+                    stats[bucket]['expired'] += 1
                 elif status in pending_statuses:
                     stats[bucket]['pending'] += 1
 
@@ -262,12 +265,12 @@ def server_info() -> str | None:
         output.append("")
         output.append("💰 **Business Statistics**")
         output.append(f"💵 **Total Revenue:** ${stats['all']['revenue']:,.2f}")
-        output.append(f"📦 **Total Orders:** {stats['all']['orders']} (✅ {stats['all']['paid']} • ❌ {stats['all']['failed']} • ⏳ {stats['all']['pending']})")
+        output.append(f"📦 **Total Orders:** {stats['all']['orders']} (✅ {stats['all']['paid']} • ❌ {stats['all']['failed']} • ⌛ {stats['all']['expired']} • ⏳ {stats['all']['pending']})")
         output.append(f"🧾 **AOV (All Time):** ${aov('all'):,.2f}")
         output.append("")
-        output.append(f"📆 **Today:** ${stats['today']['revenue']:,.2f} • {stats['today']['orders']} orders (✅ {stats['today']['paid']} • ❌ {stats['today']['failed']} • ⏳ {stats['today']['pending']})")
-        output.append(f"📅 **This Month:** ${stats['month']['revenue']:,.2f} • {stats['month']['orders']} orders (✅ {stats['month']['paid']} • ❌ {stats['month']['failed']} • ⏳ {stats['month']['pending']})")
-        output.append(f"🗓️ **Last 30 Days:** ${stats['last30']['revenue']:,.2f} • {stats['last30']['orders']} orders (✅ {stats['last30']['paid']} • ❌ {stats['last30']['failed']} • ⏳ {stats['last30']['pending']})")
+        output.append(f"📆 **Today:** ${stats['today']['revenue']:,.2f} • {stats['today']['orders']} orders (✅ {stats['today']['paid']} • ❌ {stats['today']['failed']} • ⌛ {stats['today']['expired']} • ⏳ {stats['today']['pending']})")
+        output.append(f"📅 **This Month:** ${stats['month']['revenue']:,.2f} • {stats['month']['orders']} orders (✅ {stats['month']['paid']} • ❌ {stats['month']['failed']} • ⌛ {stats['month']['expired']} • ⏳ {stats['month']['pending']})")
+        output.append(f"🗓️ **Last 30 Days:** ${stats['last30']['revenue']:,.2f} • {stats['last30']['orders']} orders (✅ {stats['last30']['paid']} • ❌ {stats['last30']['failed']} • ⌛ {stats['last30']['expired']} • ⏳ {stats['last30']['pending']})")
         output.append(f"🧾 **AOV (30 Days):** ${aov('last30'):,.2f}")
         output.append(f"🤝 **Total Referral Rewards:** ${total_payouts:,.2f}")
         if stats['all']['revenue'] > 0:

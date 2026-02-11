@@ -734,12 +734,13 @@ def check_pending_payments():
         
         for payment_id, record in payments.items():
             if record.get('status') == 'pending':
-                # Check if payment is not too old (e.g., > 24 hours) to avoid spamming API for abandoned orders
+                # Check if payment is not too old (e.g., > 24 hours) — mark as expired
                 created_at_str = record.get('created_at')
                 if created_at_str:
                     try:
                         created_at = datetime.datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
                         if datetime.datetime.now() - created_at > datetime.timedelta(hours=24):
+                            update_payment_status(payment_id, 'expired')
                             continue
                     except ValueError:
                         pass
