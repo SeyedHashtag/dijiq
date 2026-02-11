@@ -34,10 +34,10 @@ def _is_reseller_suspended(reseller_data):
 
 def _debt_state_label(debt_state):
     if debt_state == 'suspended':
-        return "Suspended"
+        return "debt_state_suspended"
     if debt_state == 'warning':
-        return "Warning"
-    return "Active"
+        return "debt_state_warning"
+    return "debt_state_active"
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -59,11 +59,11 @@ def reseller_panel(message):
         )
         markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"))
         debt = float(reseller_data.get('debt', 0.0))
-        debt_state = _debt_state_label(reseller_data.get('debt_state', 'active'))
+        debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
         intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}")
-        intro += f"\nDebt Status: {debt_state}"
+        intro += "\n" + get_message_text(language, "reseller_debt_status_line").format(debt_state=debt_state_text)
         if _is_reseller_suspended(reseller_data):
-            intro += "\nNew config creation is temporarily disabled until debt is reduced."
+            intro += "\n" + get_message_text(language, "reseller_suspended_intro_notice")
         bot.reply_to(message, intro, reply_markup=markup)
         
     elif status == 'pending':
@@ -72,7 +72,7 @@ def reseller_panel(message):
     elif status == 'rejected':
         bot.reply_to(message, get_message_text(language, "reseller_status_rejected"))
     elif status == 'banned':
-        bot.reply_to(message, "🚫 Your reseller access is banned. Contact support/admin.")
+        bot.reply_to(message, get_message_text(language, "reseller_access_banned"))
         
     else:
         # Not a reseller yet
@@ -94,7 +94,7 @@ def handle_reseller_request(call):
         bot.answer_callback_query(call.id, get_message_text(language, "reseller_status_pending"))
         return
     if current_status == 'banned':
-        bot.answer_callback_query(call.id, "Your reseller access is banned. Contact support/admin.")
+        bot.answer_callback_query(call.id, get_message_text(language, "reseller_access_banned"))
         return
     
     # Update status to pending
@@ -162,7 +162,7 @@ def handle_reseller_generate(call):
         unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
         bot.answer_callback_query(
             call.id,
-            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
         )
         return
     
@@ -198,7 +198,7 @@ def handle_reseller_buy(call):
         unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
         bot.answer_callback_query(
             call.id,
-            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
         )
         return
     gb = call.data.split(':')[2]
@@ -216,14 +216,12 @@ def handle_reseller_buy(call):
     projected_debt = current_debt + price
     if projected_debt >= DEBT_WARNING_THRESHOLD:
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("Continue", callback_data=f"reseller:confirm_buy:{gb}"))
+        markup.add(types.InlineKeyboardButton(get_message_text(language, "continue_action"), callback_data=f"reseller:confirm_buy:{gb}"))
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-        warning_msg = (
-            f"⚠️ Debt warning\n\n"
-            f"Current debt: ${current_debt:.2f}\n"
-            f"This purchase adds: ${price:.2f}\n"
-            f"Projected debt: ${projected_debt:.2f}\n\n"
-            f"Continue?"
+        warning_msg = get_message_text(language, "reseller_debt_warning_message").format(
+            current_debt=current_debt,
+            purchase_adds=price,
+            projected_debt=projected_debt
         )
         bot.edit_message_text(
             warning_msg,
@@ -261,7 +259,7 @@ def handle_reseller_confirm_buy(call):
         unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
         bot.answer_callback_query(
             call.id,
-            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
         )
         return
 
@@ -304,7 +302,7 @@ def handle_reseller_username_input(message):
         unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
         if user_id in user_data:
             del user_data[user_id]
-        bot.reply_to(message, f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation.")
+        bot.reply_to(message, get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount))
         return
     chosen_username = message.text.strip()
     
@@ -386,6 +384,7 @@ def handle_reseller_debt(call):
         return
     debt = float(reseller_data.get('debt', 0.0))
     debt_state = reseller_data.get('debt_state', 'active')
+    debt_state_text = get_message_text(language, _debt_state_label(debt_state))
     debt_since = reseller_data.get('debt_since') or 'N/A'
     last_payment_at = reseller_data.get('last_payment_at') or 'N/A'
     unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD) if debt_state == 'suspended' else 0.0
@@ -398,10 +397,10 @@ def handle_reseller_debt(call):
     bot.edit_message_text(
         (
             f"{get_message_text(language, 'current_debt').replace('${debt}', f'${debt:.2f}')}\n"
-            f"Debt Status: {_debt_state_label(debt_state)}\n"
-            f"Oldest unpaid date: {debt_since}\n"
-            f"Last payment date: {last_payment_at}\n"
-            f"Amount due to unlock: ${unlock_amount:.2f}"
+            f"{get_message_text(language, 'reseller_debt_status_line').format(debt_state=debt_state_text)}\n"
+            f"{get_message_text(language, 'reseller_oldest_unpaid_date_line').format(debt_since=debt_since)}\n"
+            f"{get_message_text(language, 'reseller_last_payment_date_line').format(last_payment_at=last_payment_at)}\n"
+            f"{get_message_text(language, 'reseller_amount_due_to_unlock_line').format(unlock_amount=unlock_amount)}"
         ),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,

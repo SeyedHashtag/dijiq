@@ -20,6 +20,14 @@ import uuid
 # New: Global dictionary for user states
 user_data = {}
 
+
+def _debt_state_label_key(debt_state):
+    if debt_state == 'suspended':
+        return 'debt_state_suspended'
+    if debt_state == 'warning':
+        return 'debt_state_warning'
+    return 'debt_state_active'
+
 def format_datetime_string():
     """Generate a datetime string in the format required for username"""
     now = datetime.datetime.now()
@@ -843,19 +851,16 @@ def check_pending_payments():
                 try:
                     user_language = get_user_language(reseller_id)
                     if debt_state == 'suspended':
-                        user_message = (
-                            f"🚫 Debt reminder\n\n"
-                            f"Your reseller account is suspended due to debt.\n"
-                            f"Current debt: ${debt:.2f}\n"
-                            f"Debt age: {debt_age_days} days\n"
-                            f"Pay at least ${unlock_amount:.2f} to unlock config generation."
+                        user_message = get_message_text(user_language, "reseller_debt_reminder_suspended").format(
+                            debt=debt,
+                            debt_age_days=debt_age_days,
+                            unlock_amount=unlock_amount
                         )
                     else:
-                        user_message = (
-                            f"⚠️ Debt reminder\n\n"
-                            f"Current debt: ${debt:.2f}\n"
-                            f"Debt age: {debt_age_days} days\n"
-                            f"Please settle debt to avoid suspension at ${DEBT_SUSPEND_THRESHOLD:.2f}."
+                        user_message = get_message_text(user_language, "reseller_debt_reminder_warning").format(
+                            debt=debt,
+                            debt_age_days=debt_age_days,
+                            suspend_threshold=DEBT_SUSPEND_THRESHOLD
                         )
 
                     markup = types.InlineKeyboardMarkup()
@@ -872,14 +877,15 @@ def check_pending_payments():
             if event.get('notify_admin'):
                 for admin_id in ADMIN_USER_IDS:
                     try:
-                        admin_message = (
-                            f"📣 Reseller debt threshold crossed\n\n"
-                            f"User ID: {reseller_id}\n"
-                            f"State: {debt_state}\n"
-                            f"Debt: ${debt:.2f}\n"
-                            f"Debt age: {debt_age_days} days\n"
-                            f"Warning threshold: ${DEBT_WARNING_THRESHOLD:.2f}\n"
-                            f"Suspend threshold: ${DEBT_SUSPEND_THRESHOLD:.2f}"
+                        admin_language = get_user_language(admin_id)
+                        state_text = get_message_text(admin_language, _debt_state_label_key(debt_state))
+                        admin_message = get_message_text(admin_language, "reseller_debt_threshold_crossed_admin").format(
+                            reseller_id=reseller_id,
+                            debt_state=state_text,
+                            debt=debt,
+                            debt_age_days=debt_age_days,
+                            warning_threshold=DEBT_WARNING_THRESHOLD,
+                            suspend_threshold=DEBT_SUSPEND_THRESHOLD
                         )
                         bot.send_message(admin_id, admin_message)
                     except Exception:
