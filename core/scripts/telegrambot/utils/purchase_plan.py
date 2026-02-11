@@ -10,6 +10,7 @@ from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 from utils.referral import add_referral_reward
+from utils.reseller import evaluate_reseller_debt_policies, DEBT_WARNING_THRESHOLD, DEBT_SUSPEND_THRESHOLD
 import qrcode
 import io
 import os
@@ -824,6 +825,65 @@ def check_pending_payments():
                                     print(f"Failed to send success message to user {user_id}: {e}")
                 except Exception as e:
                     print(f"Error checking pending payment {payment_id}: {e}")
-                    
+
+        # Also run reseller debt reminders/escalations on the same monitoring cycle.
+        debt_events = evaluate_reseller_debt_policies()
+        for event in debt_events:
+            try:
+                reseller_id = int(event['user_id'])
+            except (TypeError, ValueError):
+                continue
+
+            debt = float(event.get('debt', 0.0))
+            debt_state = str(event.get('debt_state', 'active'))
+            debt_age_days = int(event.get('debt_age_days', 0))
+            unlock_amount = float(event.get('unlock_amount', 0.0))
+
+            if event.get('notify_user'):
+                try:
+                    user_language = get_user_language(reseller_id)
+                    if debt_state == 'suspended':
+                        user_message = (
+                            f"🚫 Debt reminder\n\n"
+                            f"Your reseller account is suspended due to debt.\n"
+                            f"Current debt: ${debt:.2f}\n"
+                            f"Debt age: {debt_age_days} days\n"
+                            f"Pay at least ${unlock_amount:.2f} to unlock config generation."
+                        )
+                    else:
+                        user_message = (
+                            f"⚠️ Debt reminder\n\n"
+                            f"Current debt: ${debt:.2f}\n"
+                            f"Debt age: {debt_age_days} days\n"
+                            f"Please settle debt to avoid suspension at ${DEBT_SUSPEND_THRESHOLD:.2f}."
+                        )
+
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(
+                        types.InlineKeyboardButton(
+                            get_button_text(user_language, "settle_debt"),
+                            callback_data=f"reseller:settle:{debt:.2f}"
+                        )
+                    )
+                    bot.send_message(reseller_id, user_message, reply_markup=markup)
+                except Exception:
+                    pass
+
+            if event.get('notify_admin'):
+                for admin_id in ADMIN_USER_IDS:
+                    try:
+                        admin_message = (
+                            f"📣 Reseller debt threshold crossed\n\n"
+                            f"User ID: {reseller_id}\n"
+                            f"State: {debt_state}\n"
+                            f"Debt: ${debt:.2f}\n"
+                            f"Debt age: {debt_age_days} days\n"
+                            f"Warning threshold: ${DEBT_WARNING_THRESHOLD:.2f}\n"
+                            f"Suspend threshold: ${DEBT_SUSPEND_THRESHOLD:.2f}"
+                        )
+                        bot.send_message(admin_id, admin_message)
+                    except Exception:
+                        pass
+
     except Exception as e:
         print(f"Error in check_pending_payments: {e}")

@@ -12,8 +12,8 @@ from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.language import get_user_language
 from utils.translations import get_message_text, get_button_text, BUTTON_TRANSLATIONS
 from utils.reseller import (
-    get_reseller_data, update_reseller_status, add_reseller_debt, 
-    get_all_resellers, set_reseller_debt
+    get_reseller_data, update_reseller_status, add_reseller_debt,
+    get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD
 )
 from utils.edit_plans import load_plans
 from utils.adduser import APIClient
@@ -26,6 +26,18 @@ def _get_approved_reseller_data(user_id):
     if not reseller_data or reseller_data.get('status') != 'approved':
         return None
     return reseller_data
+
+
+def _is_reseller_suspended(reseller_data):
+    return reseller_data and reseller_data.get('debt_state') == 'suspended' and float(reseller_data.get('debt', 0.0)) > 0
+
+
+def _debt_state_label(debt_state):
+    if debt_state == 'suspended':
+        return "Suspended"
+    if debt_state == 'warning':
+        return "Warning"
+    return "Active"
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -47,13 +59,20 @@ def reseller_panel(message):
         )
         markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"))
         debt = float(reseller_data.get('debt', 0.0))
-        bot.reply_to(message, get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}"), reply_markup=markup)
+        debt_state = _debt_state_label(reseller_data.get('debt_state', 'active'))
+        intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}")
+        intro += f"\nDebt Status: {debt_state}"
+        if _is_reseller_suspended(reseller_data):
+            intro += "\nNew config creation is temporarily disabled until debt is reduced."
+        bot.reply_to(message, intro, reply_markup=markup)
         
     elif status == 'pending':
         bot.reply_to(message, get_message_text(language, "reseller_status_pending"))
         
     elif status == 'rejected':
         bot.reply_to(message, get_message_text(language, "reseller_status_rejected"))
+    elif status == 'banned':
+        bot.reply_to(message, "🚫 Your reseller access is banned. Contact support/admin.")
         
     else:
         # Not a reseller yet
@@ -73,6 +92,9 @@ def handle_reseller_request(call):
         return
     if current_status == 'pending':
         bot.answer_callback_query(call.id, get_message_text(language, "reseller_status_pending"))
+        return
+    if current_status == 'banned':
+        bot.answer_callback_query(call.id, "Your reseller access is banned. Contact support/admin.")
         return
     
     # Update status to pending
@@ -131,8 +153,17 @@ def handle_admin_reseller(call):
 def handle_reseller_generate(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    if not _get_approved_reseller_data(user_id):
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        bot.answer_callback_query(
+            call.id,
+            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+        )
         return
     
     plans = load_plans()
@@ -158,8 +189,17 @@ def handle_reseller_generate(call):
 def handle_reseller_buy(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    if not _get_approved_reseller_data(user_id):
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        bot.answer_callback_query(
+            call.id,
+            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+        )
         return
     gb = call.data.split(':')[2]
     
@@ -171,6 +211,27 @@ def handle_reseller_buy(call):
     original_price = float(plan['price'])
     price = original_price * 0.8  # 20% discount for resellers
     days = plan['days']
+
+    current_debt = float(reseller_data.get('debt', 0.0))
+    projected_debt = current_debt + price
+    if projected_debt >= DEBT_WARNING_THRESHOLD:
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("Continue", callback_data=f"reseller:confirm_buy:{gb}"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+        warning_msg = (
+            f"⚠️ Debt warning\n\n"
+            f"Current debt: ${current_debt:.2f}\n"
+            f"This purchase adds: ${price:.2f}\n"
+            f"Projected debt: ${projected_debt:.2f}\n\n"
+            f"Continue?"
+        )
+        bot.edit_message_text(
+            warning_msg,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+        return
     
     # Prompt for customer username
     user_data[user_id] = {
@@ -186,14 +247,64 @@ def handle_reseller_buy(call):
         message_id=call.message.message_id
     )
 
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:confirm_buy:"))
+def handle_reseller_confirm_buy(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        bot.answer_callback_query(
+            call.id,
+            f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation."
+        )
+        return
+
+    gb = call.data.split(':')[2]
+    plans = load_plans()
+    if gb not in plans:
+        bot.answer_callback_query(call.id, "Plan not found.")
+        return
+
+    plan = plans[gb]
+    original_price = float(plan['price'])
+    price = original_price * 0.8
+    days = plan['days']
+
+    user_data[user_id] = {
+        'state': 'waiting_reseller_username',
+        'gb': gb,
+        'days': days,
+        'price': price
+    }
+
+    bot.edit_message_text(
+        get_message_text(language, "enter_reseller_customer_username"),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+
 @bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id].get('state') == 'waiting_reseller_username')
 def handle_reseller_username_input(message):
     user_id = message.from_user.id
     language = get_user_language(user_id)
-    if not _get_approved_reseller_data(user_id):
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
         if user_id in user_data:
             del user_data[user_id]
         bot.reply_to(message, "Your reseller access is not active.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        if user_id in user_data:
+            del user_data[user_id]
+        bot.reply_to(message, f"Account suspended due to debt (${debt:.2f}). Pay at least ${unlock_amount:.2f} to unlock config generation.")
         return
     chosen_username = message.text.strip()
     
@@ -274,6 +385,10 @@ def handle_reseller_debt(call):
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
     debt = float(reseller_data.get('debt', 0.0))
+    debt_state = reseller_data.get('debt_state', 'active')
+    debt_since = reseller_data.get('debt_since') or 'N/A'
+    last_payment_at = reseller_data.get('last_payment_at') or 'N/A'
+    unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD) if debt_state == 'suspended' else 0.0
     
     markup = types.InlineKeyboardMarkup()
     if debt > 0:
@@ -281,7 +396,13 @@ def handle_reseller_debt(call):
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     
     bot.edit_message_text(
-        get_message_text(language, "current_debt").replace("${debt}", f"${debt:.2f}"),
+        (
+            f"{get_message_text(language, 'current_debt').replace('${debt}', f'${debt:.2f}')}\n"
+            f"Debt Status: {_debt_state_label(debt_state)}\n"
+            f"Oldest unpaid date: {debt_since}\n"
+            f"Last payment date: {last_payment_at}\n"
+            f"Amount due to unlock: ${unlock_amount:.2f}"
+        ),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup
@@ -462,7 +583,15 @@ def admin_manage_resellers(message):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     for rid, data in resellers.items():
-        status_icon = "✅" if data.get('status') == 'approved' else "⏳" if data.get('status') == 'pending' else "❌"
+        status = data.get('status')
+        if status == 'approved':
+            status_icon = "✅"
+        elif status == 'pending':
+            status_icon = "⏳"
+        elif status == 'banned':
+            status_icon = "🚫"
+        else:
+            status_icon = "❌"
         markup.add(types.InlineKeyboardButton(f"{status_icon} {rid}", callback_data=f"admin_manage:{rid}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
@@ -520,7 +649,15 @@ def handle_admin_back_resellers(call):
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     for rid, data in resellers.items():
-        status_icon = "✅" if data.get('status') == 'approved' else "⏳" if data.get('status') == 'pending' else "❌"
+        status = data.get('status')
+        if status == 'approved':
+            status_icon = "✅"
+        elif status == 'pending':
+            status_icon = "⏳"
+        elif status == 'banned':
+            status_icon = "🚫"
+        else:
+            status_icon = "❌"
         markup.add(types.InlineKeyboardButton(f"{status_icon} {rid}", callback_data=f"admin_manage:{rid}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
@@ -541,7 +678,7 @@ def handle_admin_toggle_ban(call):
     reseller_data = get_reseller_data(target_id)
     current_status = reseller_data.get('status')
     
-    new_status = 'rejected' if current_status == 'approved' else 'approved'
+    new_status = 'approved' if current_status == 'banned' else 'banned'
     update_reseller_status(target_id, new_status)
     
     # Refresh detail view for the same reseller
