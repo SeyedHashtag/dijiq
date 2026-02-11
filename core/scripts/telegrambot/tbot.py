@@ -2,6 +2,7 @@ from telebot import types
 from utils import *
 import threading
 import time
+import traceback
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -66,6 +67,22 @@ def automated_backup_thread():
         # Run every 6 hours
         time.sleep(21600)
 
+
+def run_polling_forever():
+    """Keep polling alive across transient Telegram/network failures."""
+    retry_delay_seconds = 3
+    max_retry_delay_seconds = 60
+
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=25, long_polling_timeout=25)
+            retry_delay_seconds = 3
+        except Exception as e:
+            print(f"Telegram polling crashed: {e}")
+            traceback.print_exc()
+            time.sleep(retry_delay_seconds)
+            retry_delay_seconds = min(max_retry_delay_seconds, retry_delay_seconds * 2)
+
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)
     monitor_thread.start()
@@ -77,4 +94,4 @@ if __name__ == '__main__':
     traffic_thread.start()
     backup_thread = threading.Thread(target=automated_backup_thread, daemon=True)
     backup_thread.start()
-    bot.polling(none_stop=True)
+    run_polling_forever()
