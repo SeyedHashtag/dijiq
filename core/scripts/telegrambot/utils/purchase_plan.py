@@ -5,7 +5,7 @@ from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
 from utils.payments import CryptoPayment
-from utils.payment_records import add_payment_record, update_payment_status, get_payment_record, load_payments
+from utils.payment_records import add_payment_record, update_payment_status, get_payment_record, load_payments, claim_payment_for_processing
 from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
@@ -532,6 +532,12 @@ def handle_check_payment(call):
     if not payment_record:
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
         return
+    if payment_record.get('status') == 'completed':
+        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status='completed'))
+        return
+    if payment_record.get('status') == 'processing':
+        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status='processing'))
+        return
     payment_handler = CryptoPayment()
     payment_status_response = payment_handler.check_payment_status(payment_id)
     if "error" in payment_status_response:
@@ -540,6 +546,13 @@ def handle_check_payment(call):
     payment_status_data = payment_status_response.get('result', {})
     status = payment_status_data.get('status') or payment_status_data.get('payment_status') or payment_status_data.get('paymentStatus')
     if status and status.lower() == 'paid':
+        if not claim_payment_for_processing(payment_id, allowed_statuses={'pending'}):
+            latest_record = get_payment_record(payment_id) or {}
+            latest_status = latest_record.get('status', 'unknown')
+            bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=latest_status))
+            return
+
+        payment_record = get_payment_record(payment_id) or payment_record
         user_id = payment_record.get('user_id')
         plan_gb = payment_record.get('plan_gb')
         
@@ -572,12 +585,12 @@ def handle_check_payment(call):
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
+            update_payment_status(payment_id, 'completed')
             if user_uri_data and 'normal_sub' in user_uri_data:
                 sub_url = user_uri_data['normal_sub']
                 ipv4_url = user_uri_data.get('ipv4', '')
                 ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
 
-                update_payment_status(payment_id, 'completed')
                 qr = qrcode.make(sub_url)
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
@@ -628,7 +641,7 @@ def process_payment_webhook(request_data):
             return False
         if status and status.lower() == 'paid':
             payment_record = get_payment_record(record_key)
-            if payment_record and payment_record.get('status') != 'completed':
+            if payment_record and payment_record.get('status') == 'pending':
                 user_id = payment_record.get('user_id')
                 user_language = get_user_language(user_id)
                 plan_gb = payment_record.get('plan_gb')

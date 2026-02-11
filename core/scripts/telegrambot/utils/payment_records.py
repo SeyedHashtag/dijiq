@@ -72,6 +72,44 @@ def update_payment_status(payment_id, status):
             return True
         return False
 
+def claim_payment_for_processing(payment_id, allowed_statuses=None):
+    with payment_lock:
+        try:
+            if os.path.exists(PAYMENTS_FILE):
+                with open(PAYMENTS_FILE, 'r') as f:
+                    payments = json.load(f)
+            else:
+                return False
+        except Exception:
+            return False
+
+        payment = payments.get(payment_id)
+        if not payment:
+            return False
+
+        if allowed_statuses is None:
+            allowed_statuses = {'pending'}
+        else:
+            allowed_statuses = {str(s) for s in allowed_statuses}
+
+        current_status = str(payment.get('status', ''))
+        if current_status not in allowed_statuses:
+            return False
+
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        update = {
+            'status': 'processing',
+            'timestamp': current_time,
+            'previous_status': current_status
+        }
+        payment['status'] = 'processing'
+        payment['updated_at'] = current_time
+        payment.setdefault('updates', []).append(update)
+
+        with open(PAYMENTS_FILE, 'w') as f:
+            json.dump(payments, f, indent=4)
+        return True
+
 def get_payment_record(payment_id):
     payments = load_payments()
     return payments.get(payment_id)
