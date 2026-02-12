@@ -39,6 +39,39 @@ def _debt_state_label(debt_state):
         return "debt_state_warning"
     return "debt_state_active"
 
+
+def _has_active_purchased_config(user_id):
+    api_client = APIClient()
+    users = api_client.get_users()
+    if users is None:
+        return False
+
+    paid_patterns = (
+        re.compile(rf"^{user_id}t"),      # legacy purchased usernames
+        re.compile(rf"^sell{user_id}t"),  # current purchased usernames
+    )
+
+    def _is_active_paid(username, config_data):
+        if not username or not any(pattern.match(username) for pattern in paid_patterns):
+            return False
+        if bool(config_data.get('blocked', False)):
+            return False
+        try:
+            return int(config_data.get('expiration_days', 0) or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    if isinstance(users, dict):
+        return any(_is_active_paid(username, config_data or {}) for username, config_data in users.items())
+
+    if isinstance(users, list):
+        for config_data in users:
+            username = config_data.get('username') if isinstance(config_data, dict) else None
+            if _is_active_paid(username, config_data or {}):
+                return True
+
+    return False
+
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
     message.text == get_button_text(get_user_language(message.from_user.id), "reseller_panel") for lang in BUTTON_TRANSLATIONS
@@ -95,6 +128,9 @@ def handle_reseller_request(call):
         return
     if current_status == 'banned':
         bot.answer_callback_query(call.id, get_message_text(language, "reseller_access_banned"))
+        return
+    if not _has_active_purchased_config(user_id):
+        bot.answer_callback_query(call.id, get_message_text(language, "reseller_requires_active_paid_config"), show_alert=True)
         return
     
     # Update status to pending
