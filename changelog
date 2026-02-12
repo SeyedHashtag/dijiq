@@ -1,3 +1,7 @@
+## v1.12.17
+👤 added Telegram username support in reseller management
+🧾 added admin debt adjustment tools and active purchased-config checks for reseller approvals
+
 ## v1.12.16
 🧹 Orders expire after some time
 
