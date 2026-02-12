@@ -17,6 +17,6 @@ pyTelegramBotAPI==4.30.0
 python-dotenv==1.2.1
 qrcode==8.2
 requests==2.32.4
-typing_extensions==4.12.2
+typing_extensions==4.15.0
 urllib3==2.6.3
 yarl==1.22.0
