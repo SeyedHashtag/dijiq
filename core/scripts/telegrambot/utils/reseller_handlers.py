@@ -134,7 +134,7 @@ def handle_reseller_request(call):
         return
     
     # Update status to pending
-    if not update_reseller_status(user_id, 'pending'):
+    if not update_reseller_status(user_id, 'pending', telegram_username=call.from_user.username):
         bot.answer_callback_query(call.id, "Failed to submit request. Please try again.")
         return
     
@@ -605,153 +605,669 @@ def handle_reseller_stats(call):
 
 # Admin Management Handlers
 
+ADMIN_RESELLER_STATUS_ORDER = ["pending", "banned", "approved", "rejected"]
+ADMIN_RESELLER_PAGE_SIZE = 8
+ADMIN_RESELLER_MAX_DEBT = 100000.0
+ADMIN_RESELLER_DEFAULT_LIST_STATUS = "pending"
+ADMIN_RESELLER_DEBT_INPUT_STATE = {}
+ADMIN_RESELLER_VIEW_CONTEXT = {}
+
+
+def _admin_status_icon(status):
+    if status == "approved":
+        return "✅"
+    if status == "pending":
+        return "⏳"
+    if status == "banned":
+        return "🚫"
+    return "❌"
+
+
+def _admin_status_label(language, status):
+    status_key = {
+        "pending": "admin_status_pending",
+        "banned": "admin_status_banned",
+        "approved": "admin_status_approved",
+        "rejected": "admin_status_rejected",
+    }.get(status, "admin_status_rejected")
+    return get_message_text(language, status_key)
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _username_display(language, reseller_data):
+    username = str((reseller_data or {}).get("telegram_username") or "").strip().lstrip("@")
+    if username:
+        return f"@{username}"
+    return get_message_text(language, "admin_username_unknown")
+
+
+def _sort_resellers(items):
+    def _id_key(reseller_id):
+        as_str = str(reseller_id)
+        if as_str.isdigit():
+            return (0, int(as_str))
+        return (1, as_str)
+
+    return sorted(
+        items,
+        key=lambda item: (
+            -_safe_float((item[1] or {}).get("debt", 0.0)),
+            _id_key(item[0]),
+        ),
+    )
+
+
+def _group_resellers(resellers):
+    grouped = {status: [] for status in ADMIN_RESELLER_STATUS_ORDER}
+    for rid, data in resellers.items():
+        status = (data or {}).get("status", "rejected")
+        if status not in grouped:
+            status = "rejected"
+        grouped[status].append((str(rid), data or {}))
+    for status in grouped:
+        grouped[status] = _sort_resellers(grouped[status])
+    return grouped
+
+
+def _paginate(items, page, page_size=ADMIN_RESELLER_PAGE_SIZE):
+    if not items:
+        return [], 1, 0
+    total_pages = (len(items) + page_size - 1) // page_size
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    end = start + page_size
+    return items[start:end], total_pages, page
+
+
+def _build_admin_reseller_list_text(language, grouped):
+    lines = [get_message_text(language, "admin_resellers_list_grouped")]
+    for status in ADMIN_RESELLER_STATUS_ORDER:
+        status_text = _admin_status_label(language, status)
+        count = len(grouped.get(status, []))
+        lines.append(
+            get_message_text(language, "admin_reseller_section_count").format(
+                status_icon=_admin_status_icon(status),
+                status_label=status_text,
+                count=count,
+            )
+        )
+    return "\n".join(lines)
+
+
+def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RESELLER_DEFAULT_LIST_STATUS, active_page=0):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for status in ADMIN_RESELLER_STATUS_ORDER:
+        items = grouped.get(status, [])
+        status_text = _admin_status_label(language, status)
+        page = active_page if status == active_status else 0
+        visible, total_pages, page = _paginate(items, page)
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_reseller_section_button").format(
+                    status_icon=_admin_status_icon(status),
+                    status_label=status_text,
+                    count=len(items),
+                ),
+                callback_data="admin_reseller_ui:noop",
+            )
+        )
+        if not visible:
+            markup.add(
+                types.InlineKeyboardButton(
+                    get_message_text(language, "admin_reseller_no_entries"),
+                    callback_data="admin_reseller_ui:noop",
+                )
+            )
+        else:
+            for rid, data in visible:
+                markup.add(
+                    types.InlineKeyboardButton(
+                        get_message_text(language, "admin_reseller_row_compact").format(
+                            status_icon=_admin_status_icon(status),
+                            user_id=rid,
+                            username_display=_username_display(language, data),
+                            debt=_safe_float(data.get("debt", 0.0)),
+                        ),
+                        callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
+                    )
+                )
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(
+                    types.InlineKeyboardButton(
+                        get_message_text(language, "admin_prev_page"),
+                        callback_data=f"admin_reseller_ui:list:{status}:{page - 1}",
+                    )
+                )
+            nav_buttons.append(
+                types.InlineKeyboardButton(
+                    get_message_text(language, "admin_page_indicator").format(page=page + 1, total=total_pages),
+                    callback_data="admin_reseller_ui:noop",
+                )
+            )
+            if page < total_pages - 1:
+                nav_buttons.append(
+                    types.InlineKeyboardButton(
+                        get_message_text(language, "admin_next_page"),
+                        callback_data=f"admin_reseller_ui:list:{status}:{page + 1}",
+                    )
+                )
+            markup.row(*nav_buttons)
+
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    return markup
+
+
+def _admin_view_context(admin_id):
+    context = ADMIN_RESELLER_VIEW_CONTEXT.get(admin_id) or {}
+    return {
+        "return_status": context.get("return_status", ADMIN_RESELLER_DEFAULT_LIST_STATUS),
+        "return_page": int(context.get("return_page", 0)),
+    }
+
+
+def _set_admin_view_context(admin_id, return_status, return_page):
+    if return_status not in ADMIN_RESELLER_STATUS_ORDER:
+        return_status = ADMIN_RESELLER_DEFAULT_LIST_STATUS
+    ADMIN_RESELLER_VIEW_CONTEXT[admin_id] = {
+        "return_status": return_status,
+        "return_page": max(0, int(return_page)),
+    }
+
+
+def _render_admin_reseller_list(chat_id, message_id, admin_id, active_status, active_page):
+    language = get_user_language(admin_id)
+    resellers = get_all_resellers()
+    grouped = _group_resellers(resellers)
+    bot.edit_message_text(
+        _build_admin_reseller_list_text(language, grouped),
+        chat_id=chat_id,
+        message_id=message_id,
+        reply_markup=_build_admin_reseller_list_markup(language, grouped, active_status, active_page),
+    )
+
+
+def _build_admin_reseller_detail_text(language, reseller_id, reseller_data):
+    debt = _safe_float((reseller_data or {}).get("debt", 0.0))
+    status = (reseller_data or {}).get("status", "rejected")
+    debt_state = get_message_text(language, _debt_state_label((reseller_data or {}).get("debt_state", "active")))
+    configs_count = len((reseller_data or {}).get("configs", []))
+    return get_message_text(language, "admin_reseller_details_extended").format(
+        user_id=reseller_id,
+        username_display=_username_display(language, reseller_data),
+        status=_admin_status_label(language, status),
+        debt=f"{debt:.2f}",
+        debt_state=debt_state,
+        configs_count=configs_count,
+        created_at=(reseller_data or {}).get("created_at", "N/A"),
+        last_payment_at=(reseller_data or {}).get("last_payment_at", "N/A"),
+        debt_since=(reseller_data or {}).get("debt_since", "N/A"),
+    )
+
+
+def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, return_status, return_page):
+    status = (reseller_data or {}).get("status", "rejected")
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    if status in ("pending", "rejected"):
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_approve"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:approve",
+            )
+        )
+    if status in ("pending", "approved"):
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_reject"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:reject",
+            )
+        )
+    if status == "banned":
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_unban"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:unban",
+            )
+        )
+    else:
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_ban"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:ban",
+            )
+        )
+
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_action_adjust_debt"),
+            callback_data=f"admin_reseller_ui:debt:{reseller_id}:{return_status}:{return_page}",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_action_refresh"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+        ),
+    )
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_action_back_to_list"),
+            callback_data=f"admin_reseller_ui:back:{return_status}:{return_page}",
+        )
+    )
+    return markup
+
+
+def _render_admin_reseller_detail(call, reseller_id, return_status, return_page):
+    language = get_user_language(call.from_user.id)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+        _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+        return
+
+    _set_admin_view_context(call.from_user.id, return_status, return_page)
+    bot.edit_message_text(
+        _build_admin_reseller_detail_text(language, reseller_id, reseller_data),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=_build_admin_reseller_detail_markup(language, reseller_id, reseller_data, return_status, return_page),
+        parse_mode="Markdown",
+    )
+
+
+def _render_admin_debt_adjust(call, reseller_id, return_status, return_page):
+    language = get_user_language(call.from_user.id)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+        _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+        return
+
+    _set_admin_view_context(call.from_user.id, return_status, return_page)
+    current_debt = _safe_float(reseller_data.get("debt", 0.0))
+    msg = get_message_text(language, "admin_debt_adjust_menu").format(
+        user_id=reseller_id,
+        current_debt=f"{current_debt:.2f}",
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_set_zero"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:set:0"),
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_plus_five"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:add:5"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_plus_ten"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:add:10"),
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_minus_five"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:sub:5"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_minus_ten"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:sub:10"),
+        types.InlineKeyboardButton(get_message_text(language, "admin_debt_custom_amount"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:custom:0"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_action_back_to_detail"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+        )
+    )
+
+    bot.edit_message_text(
+        msg,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+    )
+
+
+def _normalize_debt_amount(value):
+    rounded = round(float(value), 2)
+    if rounded < 0:
+        return 0.0
+    if rounded > ADMIN_RESELLER_MAX_DEBT:
+        return ADMIN_RESELLER_MAX_DEBT
+    return rounded
+
+
+def _render_admin_debt_confirm(call, reseller_id, new_amount):
+    language = get_user_language(call.from_user.id)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+        context = _admin_view_context(call.from_user.id)
+        _render_admin_reseller_list(
+            call.message.chat.id,
+            call.message.message_id,
+            call.from_user.id,
+            context["return_status"],
+            context["return_page"],
+        )
+        return
+
+    context = _admin_view_context(call.from_user.id)
+    old_debt = _safe_float(reseller_data.get("debt", 0.0))
+    normalized = _normalize_debt_amount(new_amount)
+    delta = normalized - old_debt
+    msg = get_message_text(language, "admin_debt_confirm_message").format(
+        user_id=reseller_id,
+        old_debt=f"{old_debt:.2f}",
+        new_debt=f"{normalized:.2f}",
+        delta=f"{delta:+.2f}",
+    )
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_confirm"),
+            callback_data=f"admin_reseller_ui:debtconfirm:{reseller_id}:{normalized:.2f}",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_cancel"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{context['return_status']}:{context['return_page']}",
+        ),
+    )
+    bot.edit_message_text(
+        msg,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+    )
+
+
+@bot.message_handler(func=lambda message: message.from_user.id in ADMIN_RESELLER_DEBT_INPUT_STATE and ADMIN_RESELLER_DEBT_INPUT_STATE[message.from_user.id].get("state") == "waiting_custom_debt")
+def handle_admin_custom_debt_input(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    language = get_user_language(message.from_user.id)
+    state = ADMIN_RESELLER_DEBT_INPUT_STATE.get(message.from_user.id) or {}
+    reseller_id = state.get("reseller_id")
+    if not reseller_id:
+        ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+        return
+
+    raw = (message.text or "").strip()
+    try:
+        new_amount = float(raw)
+    except ValueError:
+        bot.reply_to(message, get_message_text(language, "admin_debt_invalid_number"))
+        return
+
+    if new_amount < 0 or new_amount > ADMIN_RESELLER_MAX_DEBT:
+        bot.reply_to(
+            message,
+            get_message_text(language, "admin_debt_invalid_range").format(
+                min_value="0.00",
+                max_value=f"{ADMIN_RESELLER_MAX_DEBT:.2f}",
+            ),
+        )
+        return
+
+    normalized = _normalize_debt_amount(new_amount)
+    ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.reply_to(message, get_message_text(language, "admin_reseller_not_found"))
+        return
+
+    old_debt = _safe_float(reseller_data.get("debt", 0.0))
+    delta = normalized - old_debt
+    context = _admin_view_context(message.from_user.id)
+    confirmation = get_message_text(language, "admin_debt_confirm_message").format(
+        user_id=reseller_id,
+        old_debt=f"{old_debt:.2f}",
+        new_debt=f"{normalized:.2f}",
+        delta=f"{delta:+.2f}",
+    )
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_confirm"),
+            callback_data=f"admin_reseller_ui:debtconfirm:{reseller_id}:{normalized:.2f}",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_cancel"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{context['return_status']}:{context['return_page']}",
+        ),
+    )
+    bot.send_message(message.chat.id, confirmation, reply_markup=markup)
+
+
 @bot.message_handler(func=lambda message: any(
     message.text == get_button_text(get_user_language(message.from_user.id), "manage_resellers") for lang in BUTTON_TRANSLATIONS
 ))
 def admin_manage_resellers(message):
     if not is_admin(message.from_user.id):
         return
-        
-    user_id = message.from_user.id
-    language = get_user_language(user_id)
-    resellers = get_all_resellers()
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    for rid, data in resellers.items():
-        status = data.get('status')
-        if status == 'approved':
-            status_icon = "✅"
-        elif status == 'pending':
-            status_icon = "⏳"
-        elif status == 'banned':
-            status_icon = "🚫"
-        else:
-            status_icon = "❌"
-        markup.add(types.InlineKeyboardButton(f"{status_icon} {rid}", callback_data=f"admin_manage:{rid}"))
-        
-    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-    
-    bot.reply_to(message, get_message_text(language, "admin_resellers_list"), reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_manage:"))
-def handle_admin_manage_detail(call):
+    ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+    _set_admin_view_context(message.from_user.id, ADMIN_RESELLER_DEFAULT_LIST_STATUS, 0)
+    language = get_user_language(message.from_user.id)
+    grouped = _group_resellers(get_all_resellers())
+    bot.reply_to(
+        message,
+        _build_admin_reseller_list_text(language, grouped),
+        reply_markup=_build_admin_reseller_list_markup(
+            language,
+            grouped,
+            ADMIN_RESELLER_DEFAULT_LIST_STATUS,
+            0,
+        ),
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_reseller_ui:"))
+def handle_admin_reseller_ui(call):
     if not is_admin(call.from_user.id):
         return
-        
-    target_id = call.data.split(':')[1]
+
     language = get_user_language(call.from_user.id)
-    reseller_data = get_reseller_data(target_id)
-    
-    if not reseller_data:
-        bot.answer_callback_query(call.id, "Reseller not found")
+    parts = call.data.split(":")
+    if len(parts) < 2:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
         return
-        
-    status = reseller_data.get('status')
-    debt = reseller_data.get('debt', 0.0)
-    configs_count = len(reseller_data.get('configs', []))
-    
-    msg = get_message_text(language, "admin_reseller_details").format(
-        user_id=target_id,
-        status=status,
-        debt=debt,
-        configs_count=configs_count
-    )
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📝 Adjust Debt", callback_data=f"admin_adjust_debt:{target_id}"),
-        types.InlineKeyboardButton("🚫 Ban/Unban", callback_data=f"admin_toggle_ban:{target_id}")
-    )
-    markup.add(types.InlineKeyboardButton("⬅️ Back", callback_data="admin_back_resellers"))
-    
-    bot.edit_message_text(
-        msg,
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
 
-@bot.callback_query_handler(func=lambda call: call.data == "admin_back_resellers")
-def handle_admin_back_resellers(call):
-    if not is_admin(call.from_user.id):
+    action = parts[1]
+
+    if action == "noop":
+        bot.answer_callback_query(call.id)
         return
-    # Re-use the list logic, but we need a message object. Construct a fake one or just edit.
-    # Editing is better.
-    user_id = call.from_user.id
-    language = get_user_language(user_id)
-    resellers = get_all_resellers()
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    for rid, data in resellers.items():
-        status = data.get('status')
-        if status == 'approved':
-            status_icon = "✅"
-        elif status == 'pending':
-            status_icon = "⏳"
-        elif status == 'banned':
-            status_icon = "🚫"
+
+    if action == "list":
+        if len(parts) != 4:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        status = parts[2]
+        if status not in ADMIN_RESELLER_STATUS_ORDER:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        try:
+            page = int(parts[3])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _set_admin_view_context(call.from_user.id, status, max(page, 0))
+        _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, status, page)
+        return
+
+    if action == "detail":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _render_admin_reseller_detail(call, reseller_id, return_status, return_page)
+        return
+
+    if action == "back":
+        if len(parts) != 4:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        return_status = parts[2]
+        try:
+            return_page = int(parts[3])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _set_admin_view_context(call.from_user.id, return_status, return_page)
+        _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+        return
+
+    if action == "action":
+        if len(parts) != 4:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        target_action = parts[3]
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            context = _admin_view_context(call.from_user.id)
+            _render_admin_reseller_list(
+                call.message.chat.id,
+                call.message.message_id,
+                call.from_user.id,
+                context["return_status"],
+                context["return_page"],
+            )
+            return
+
+        if target_action == "approve":
+            update_reseller_status(reseller_id, "approved")
+            target_language = get_user_language(int(reseller_id)) if str(reseller_id).isdigit() else language
+            try:
+                bot.send_message(int(reseller_id), get_message_text(target_language, "reseller_approved_notification"))
+            except:
+                pass
+        elif target_action == "reject":
+            update_reseller_status(reseller_id, "rejected")
+            target_language = get_user_language(int(reseller_id)) if str(reseller_id).isdigit() else language
+            try:
+                bot.send_message(int(reseller_id), get_message_text(target_language, "reseller_rejected_notification"))
+            except:
+                pass
+        elif target_action == "ban":
+            update_reseller_status(reseller_id, "banned")
+        elif target_action == "unban":
+            update_reseller_status(reseller_id, "approved")
         else:
-            status_icon = "❌"
-        markup.add(types.InlineKeyboardButton(f"{status_icon} {rid}", callback_data=f"admin_manage:{rid}"))
-        
-    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-    
-    bot.edit_message_text(
-        get_message_text(language, "admin_resellers_list"),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=markup
-    )
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_toggle_ban:"))
-def handle_admin_toggle_ban(call):
-    if not is_admin(call.from_user.id):
+        context = _admin_view_context(call.from_user.id)
+        _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
         return
-    
-    target_id = call.data.split(':')[1]
-    reseller_data = get_reseller_data(target_id)
-    current_status = reseller_data.get('status')
-    
-    new_status = 'approved' if current_status == 'banned' else 'banned'
-    update_reseller_status(target_id, new_status)
-    
-    # Refresh detail view for the same reseller
-    call.data = f"admin_manage:{target_id}"
-    handle_admin_manage_detail(call)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_adjust_debt:"))
-def handle_admin_adjust_debt_prompt(call):
-    if not is_admin(call.from_user.id):
+    if action == "debt":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _render_admin_debt_adjust(call, reseller_id, return_status, return_page)
         return
-        
-    target_id = call.data.split(':')[1]
-    language = get_user_language(call.from_user.id)
-    
-    bot.send_message(
-        call.message.chat.id, 
-        get_message_text(language, "admin_adjust_debt").format(user_id=target_id),
-        reply_markup=types.ForceReply()
-    )
-    # Store state to handle text reply
-    user_data[call.from_user.id] = {
-        'state': 'waiting_debt_amount',
-        'target_reseller': target_id
-    }
 
-@bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id].get('state') == 'waiting_debt_amount')
-def handle_admin_debt_input(message):
-    try:
-        data = user_data[message.from_user.id]
-        target_id = data['target_reseller']
-        new_amount = float(message.text.strip())
-        
-        set_reseller_debt(target_id, new_amount)
-        
-        language = get_user_language(message.from_user.id)
-        bot.reply_to(message, get_message_text(language, "debt_updated"))
-        
-        del user_data[message.from_user.id]
-        
-    except ValueError:
-        bot.reply_to(message, "Invalid amount. Please enter a number.")
+    if action == "debtquick":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        op = parts[3]
+        try:
+            value = float(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            return
+
+        current = _safe_float(reseller_data.get("debt", 0.0))
+        if op == "set":
+            candidate = value
+        elif op == "add":
+            candidate = current + value
+        elif op == "sub":
+            candidate = current - value
+        elif op == "custom":
+            context = _admin_view_context(call.from_user.id)
+            ADMIN_RESELLER_DEBT_INPUT_STATE[call.from_user.id] = {
+                "state": "waiting_custom_debt",
+                "reseller_id": reseller_id,
+                "return_status": context["return_status"],
+                "return_page": context["return_page"],
+            }
+            bot.send_message(
+                call.message.chat.id,
+                get_message_text(language, "admin_debt_custom_prompt").format(
+                    user_id=reseller_id,
+                    min_value="0.00",
+                    max_value=f"{ADMIN_RESELLER_MAX_DEBT:.2f}",
+                ),
+            )
+            bot.answer_callback_query(call.id)
+            return
+        else:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        candidate = _normalize_debt_amount(candidate)
+        _render_admin_debt_confirm(call, reseller_id, candidate)
+        return
+
+    if action == "debtconfirm":
+        if len(parts) != 4:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        try:
+            new_amount = float(parts[3])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        if new_amount < 0 or new_amount > ADMIN_RESELLER_MAX_DEBT:
+            bot.answer_callback_query(
+                call.id,
+                get_message_text(language, "admin_debt_invalid_range").format(
+                    min_value="0.00",
+                    max_value=f"{ADMIN_RESELLER_MAX_DEBT:.2f}",
+                ),
+                show_alert=True,
+            )
+            return
+
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            context = _admin_view_context(call.from_user.id)
+            _render_admin_reseller_list(
+                call.message.chat.id,
+                call.message.message_id,
+                call.from_user.id,
+                context["return_status"],
+                context["return_page"],
+            )
+            return
+
+        set_reseller_debt(reseller_id, _normalize_debt_amount(new_amount))
+        context = _admin_view_context(call.from_user.id)
+        _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
+        return
+
+    bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)

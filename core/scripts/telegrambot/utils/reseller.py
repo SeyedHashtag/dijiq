@@ -51,6 +51,7 @@ def _compute_debt_state(debt):
 def _ensure_reseller_defaults(record):
     data = dict(record or {})
     data['status'] = data.get('status', 'pending')
+    data.setdefault('telegram_username', None)
     debt = _safe_float(data.get('debt', 0.0))
     data['debt'] = debt
     data.setdefault('configs', [])
@@ -106,7 +107,7 @@ def get_all_resellers():
     return normalized
 
 
-def update_reseller_status(user_id, status):
+def update_reseller_status(user_id, status, telegram_username=None):
     user_id = str(user_id)
     with reseller_lock:
         try:
@@ -120,6 +121,9 @@ def update_reseller_status(user_id, status):
 
         current = _ensure_reseller_defaults(resellers.get(user_id, {}))
         current['status'] = status
+        if telegram_username is not None:
+            username_clean = str(telegram_username).strip().lstrip('@')
+            current['telegram_username'] = username_clean or None
         resellers[user_id] = _ensure_reseller_defaults(current)
 
         os.makedirs(os.path.dirname(RESELLERS_FILE), exist_ok=True)
