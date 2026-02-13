@@ -7,11 +7,46 @@ import json
 import os
 from datetime import datetime, timedelta
 
+BROADCAST_FAILED_USERS_PATH = "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
+
+
+def load_failed_broadcast_users():
+    try:
+        if not os.path.exists(BROADCAST_FAILED_USERS_PATH):
+            return set()
+        with open(BROADCAST_FAILED_USERS_PATH, 'r') as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return set()
+        return {str(user_id) for user_id in data}
+    except Exception as e:
+        print(f"Failed to load broadcast failed users list: {str(e)}")
+        return set()
+
+
+def save_failed_broadcast_users(user_ids):
+    try:
+        os.makedirs(os.path.dirname(BROADCAST_FAILED_USERS_PATH), exist_ok=True)
+        with open(BROADCAST_FAILED_USERS_PATH, 'w') as f:
+            json.dump(sorted({str(user_id) for user_id in user_ids}), f)
+    except Exception as e:
+        print(f"Failed to save broadcast failed users list: {str(e)}")
+
+
+def reset_failed_broadcast_users():
+    try:
+        if os.path.exists(BROADCAST_FAILED_USERS_PATH):
+            os.remove(BROADCAST_FAILED_USERS_PATH)
+    except Exception as e:
+        print(f"Failed to reset broadcast failed users list: {str(e)}")
+
+
 def create_broadcast_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('👥 All Paid Users', '✅ Active Paid Users')
     markup.row('⛔️ Expired Paid Users', '🧪 All Test Users')
     markup.row('✅🧪 Active Test Users', '⛔️🧪 Expired Test Users')
+    markup.row('🔄 Reset Failed Exclusions')
     markup.row('❌ Cancel')
     return markup
 
@@ -78,6 +113,9 @@ def get_user_ids(filter_type):
             if active_paid_ids:
                 user_ids -= active_paid_ids
 
+            failed_user_ids = load_failed_broadcast_users()
+            if failed_user_ids:
+                user_ids -= failed_user_ids
             return list(user_ids)
         except Exception as e:
             print(f"Error reading test configs: {str(e)}")
@@ -122,6 +160,9 @@ def get_user_ids(filter_type):
                     continue
                 process_user_record(item.get('username'), item)
         
+        failed_user_ids = load_failed_broadcast_users()
+        if failed_user_ids:
+            user_ids -= failed_user_ids
         return list(user_ids)
     except Exception as e:
         print(f"Error getting user IDs: {str(e)}")
@@ -139,6 +180,15 @@ def start_broadcast(message):
 def process_broadcast_target(message):
     if message.text == "❌ Cancel":
         bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    if message.text == "🔄 Reset Failed Exclusions":
+        reset_failed_broadcast_users()
+        bot.reply_to(
+            message,
+            "Failed-user exclusion list has been reset. All users will be eligible for the next broadcasts.",
+            reply_markup=create_main_markup(is_admin=True)
+        )
         return
         
     target_map = {
@@ -159,14 +209,15 @@ def process_broadcast_target(message):
         return
         
     target = target_map[message.text]
+    target_label = message.text
     msg = bot.reply_to(
         message,
         "Enter the message you want to broadcast:",
         reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
     )
-    bot.register_next_step_handler(msg, send_broadcast, target)
+    bot.register_next_step_handler(msg, send_broadcast, target, target_label)
 
-def send_broadcast(message, target):
+def send_broadcast(message, target, target_label):
     if message.text == "❌ Cancel":
         bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
         return
@@ -192,6 +243,8 @@ def send_broadcast(message, target):
         
     success_count = 0
     fail_count = 0
+    failed_user_ids = load_failed_broadcast_users()
+    newly_failed_user_ids = set()
     
     status_msg = bot.reply_to(message, f"Broadcasting message to {len(user_ids)} users...")
     
@@ -202,6 +255,7 @@ def send_broadcast(message, target):
         except Exception as e:
             print(f"Failed to send broadcast to {user_id}: {str(e)}")
             fail_count += 1
+            newly_failed_user_ids.add(str(user_id))
             
         # Update status every 10 users
         if (success_count + fail_count) % 10 == 0:
@@ -214,12 +268,17 @@ def send_broadcast(message, target):
             except:
                 pass
     
+    if newly_failed_user_ids:
+        failed_user_ids.update(newly_failed_user_ids)
+        save_failed_broadcast_users(failed_user_ids)
+
     final_report = (
         "📢 Broadcast Completed\n\n"
-        f"Target: {message.text}\n"
+        f"Target: {target_label}\n"
         f"Total Users: {len(user_ids)}\n"
         f"✅ Successful: {success_count}\n"
-        f"❌ Failed: {fail_count}"
+        f"❌ Failed: {fail_count}\n"
+        f"🚫 Excluded For Next Broadcasts: {len(failed_user_ids)}"
     )
     
     bot.reply_to(message, final_report, reply_markup=create_main_markup(is_admin=True))
