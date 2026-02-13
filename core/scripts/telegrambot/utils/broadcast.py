@@ -16,6 +16,34 @@ def create_broadcast_markup():
     return markup
 
 def get_user_ids(filter_type):
+    def get_active_paid_user_ids():
+        active_paid_ids = set()
+        api_client = APIClient()
+        users = api_client.get_users()
+        if users is None:
+            return active_paid_ids
+
+        def collect_active_paid(username, details):
+            if not username:
+                return
+            match = re.match(r'^(?:sell)?(\d+)t', username)
+            if not match:
+                return
+            blocked = details.get('blocked', False) if isinstance(details, dict) else False
+            if not blocked:
+                active_paid_ids.add(match.group(1))
+
+        if isinstance(users, dict):
+            for username, details in users.items():
+                collect_active_paid(username, details)
+        elif isinstance(users, list):
+            for item in users:
+                if not isinstance(item, dict):
+                    continue
+                collect_active_paid(item.get('username'), item)
+
+        return active_paid_ids
+
     # For test users, use the test_configs.json file
     test_config_path = "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
     
@@ -44,6 +72,12 @@ def get_user_ids(filter_type):
                     user_ids.add(telegram_id)
                 elif filter_type == 'expired_test' and expired:
                     user_ids.add(telegram_id)
+
+            # Exclude users who already have an active paid account.
+            active_paid_ids = get_active_paid_user_ids()
+            if active_paid_ids:
+                user_ids -= active_paid_ids
+
             return list(user_ids)
         except Exception as e:
             print(f"Error reading test configs: {str(e)}")
