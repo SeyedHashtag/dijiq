@@ -49,7 +49,7 @@ def get_user_ids(filter_type):
             print(f"Error reading test configs: {str(e)}")
             return []
     
-    # For regular users (format: {telegram_id}t{timestamp})
+    # For regular users (format: {telegram_id}t{timestamp} or sell{telegram_id}t{timestamp})
     api_client = APIClient()
     
     # Get all users using API
@@ -59,22 +59,34 @@ def get_user_ids(filter_type):
     
     try:
         user_ids = set()
-        
-        for username, details in users.items():
-            if not username:
-                continue
-                
-            if filter_type in ['all', 'active', 'expired']:
-                match = re.match(r'^(?:sell)?(\d+)t', username)
-                if match:
-                    telegram_id = match.group(1)
-                    
-                    if filter_type == 'all':
-                        user_ids.add(telegram_id)
-                    elif filter_type == 'active' and not details.get('blocked', False):
-                        user_ids.add(telegram_id)
-                    elif filter_type == 'expired' and details.get('blocked', True):
-                        user_ids.add(telegram_id)
+
+        def process_user_record(username, details):
+            if not username or filter_type not in ['all', 'active', 'expired']:
+                return
+
+            match = re.match(r'^(?:sell)?(\d+)t', username)
+            if not match:
+                return
+
+            telegram_id = match.group(1)
+            blocked = details.get('blocked', False) if isinstance(details, dict) else False
+
+            if filter_type == 'all':
+                user_ids.add(telegram_id)
+            elif filter_type == 'active' and not blocked:
+                user_ids.add(telegram_id)
+            elif filter_type == 'expired' and blocked:
+                user_ids.add(telegram_id)
+
+        # API may return either a dict keyed by username or a list of user objects.
+        if isinstance(users, dict):
+            for username, details in users.items():
+                process_user_record(username, details)
+        elif isinstance(users, list):
+            for item in users:
+                if not isinstance(item, dict):
+                    continue
+                process_user_record(item.get('username'), item)
         
         return list(user_ids)
     except Exception as e:
