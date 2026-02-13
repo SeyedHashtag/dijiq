@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 
 def create_broadcast_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('👥 All Users', '✅ Active Users')
-    markup.row('⛔️ Expired Users', '🧪 All Test Users')
+    markup.row('👥 All Paid Users', '✅ Active Paid Users')
+    markup.row('⛔️ Expired Paid Users', '🧪 All Test Users')
     markup.row('✅🧪 Active Test Users', '⛔️🧪 Expired Test Users')
     markup.row('❌ Cancel')
     return markup
@@ -108,9 +108,9 @@ def process_broadcast_target(message):
         return
         
     target_map = {
-        '👥 All Users': 'all',
-        '✅ Active Users': 'active',
-        '⛔️ Expired Users': 'expired',
+        '👥 All Paid Users': 'all',
+        '✅ Active Paid Users': 'active',
+        '⛔️ Expired Paid Users': 'expired',
         '🧪 All Test Users': 'all_test',
         '✅🧪 Active Test Users': 'active_test',
         '⛔️🧪 Expired Test Users': 'expired_test'
