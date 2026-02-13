@@ -1,22 +1,2 @@
-## v1.12.17
-👤 added Telegram username support in reseller management
-🧾 added admin debt adjustment tools and active purchased-config checks for reseller approvals
-
-## v1.12.16
-🧹 Orders expire after some time
-
-## v1.12.13
-🤖 hardened Telegram bot polling with retry/backoff on network timeouts
-♻️ prevented transient Telegram API failures from crashing the bot process
-
-## v1.12.8
-📊 expanded Server Info with business metrics (revenue windows, order status breakdowns, AOV, top plans)
-
-## v1.12.7
-💾 added automated backups every 6 hours (sent to admins)
-🔒 guarded backups to prevent overlapping runs
-
-## v1.12.6
-🔔 added traffic quota alerts via Telegram bot (80/90%)
-⏱️ scheduled traffic checks in background (every 2 hours)
-🌐 added multilingual traffic usage alert text
+## v1.12.18
+🤖 Improved broadcast system
