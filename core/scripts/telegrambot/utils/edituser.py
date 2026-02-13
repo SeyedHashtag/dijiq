@@ -185,7 +185,7 @@ def process_show_user(message):
     if ipv4_url:
         caption += f"IPv4 URL: `{ipv4_url}`\n\n"
 
-    caption += f"Subscription URL: `{sub_url}`"
+    caption += f"Subscription URL:\n`{sub_url}`"
     
     bot.send_photo(
         message.chat.id,

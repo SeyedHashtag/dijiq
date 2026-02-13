@@ -168,7 +168,7 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
 
             success_message += (
-                f"Subscription URL: `{sub_url}`\n\n"
+                f"Subscription URL:\n`{sub_url}`\n\n"
                 f"Scan the QR code to configure your VPN client."
             )
             # Send the QR code with config details

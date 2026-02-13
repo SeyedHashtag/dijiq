@@ -222,7 +222,7 @@ def process_add_user_step4(call):
         if ipv4_url:
             success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
             
-        success_message += f"Subscription URL: {sub_url}"
+        success_message += f"Subscription URL:\n{sub_url}"
         
         bot.send_photo(call.message.chat.id, photo=bio, caption=success_message, parse_mode="Markdown", reply_markup=create_main_markup())
 

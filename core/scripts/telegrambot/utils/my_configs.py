@@ -218,7 +218,7 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         if ipv4_url:
             caption += f"IPv4 URL: `{ipv4_url}`\n\n"
             
-        caption += f"Subscription URL: `{sub_url}`"
+        caption += f"Subscription URL:\n`{sub_url}`"
         
         # Send QR code with details
         if is_callback:
