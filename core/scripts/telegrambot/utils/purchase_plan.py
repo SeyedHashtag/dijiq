@@ -5,7 +5,14 @@ from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.common import create_main_markup
 from utils.edit_plans import load_plans
 from utils.payments import CryptoPayment
-from utils.payment_records import add_payment_record, update_payment_status, get_payment_record, load_payments, claim_payment_for_processing
+from utils.payment_records import (
+    add_payment_record,
+    update_payment_status,
+    get_payment_record,
+    load_payments,
+    claim_payment_for_processing,
+    get_user_payments,
+)
 from utils.adduser import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
@@ -16,6 +23,7 @@ import io
 import os
 from dotenv import load_dotenv
 import uuid
+import logging
 
 # New: Global dictionary for user states
 user_data = {}
@@ -148,8 +156,10 @@ def handle_purchase_selection(call):
                             p.get('status') == 'completed' for p in user_payments.values()
                         )
                         show_card_to_card = has_completed
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.getLogger('dijiq.payments').warning(
+                            f"Failed to determine previous customer status for user {user_id}: {e}"
+                        )
             
             markup = types.InlineKeyboardMarkup(row_width=1)
             methods_count = 0
