@@ -118,6 +118,6 @@ def get_user_payments(user_id):
     payments = load_payments()
     user_payments = {}
     for payment_id, payment_data in payments.items():
-        if payment_data.get('user_id') == user_id:
+        if str(payment_data.get('user_id')) == str(user_id):
             user_payments[payment_id] = payment_data
     return user_payments

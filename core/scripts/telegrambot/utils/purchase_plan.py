@@ -145,7 +145,7 @@ def handle_purchase_selection(call):
                     try:
                         user_payments = get_user_payments(user_id)
                         has_completed = any(
-                            p.get('status') == 'completed' for p in user_payments.values()
+                            str(p.get('status', '')).lower() == 'completed' for p in user_payments.values()
                         )
                         show_card_to_card = has_completed
                     except Exception:
