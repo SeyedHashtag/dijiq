@@ -138,15 +138,18 @@ def handle_purchase_selection(call):
             
             # Determine if card-to-card should be shown based on mode
             show_card_to_card = False
-            if card_to_card_configured and card_to_card_mode == 'on':
-                show_card_to_card = True
-            elif card_to_card_configured and card_to_card_mode == 'previous_customers':
-                user_payments = get_user_payments(user_id)
-                has_completed = any(
-                    p.get('status') == 'completed' for p in user_payments.values()
-                )
-                show_card_to_card = has_completed
-            # If mode is 'off', show_card_to_card stays False
+            if card_to_card_configured:
+                if card_to_card_mode == 'on':
+                    show_card_to_card = True
+                elif card_to_card_mode == 'previous_customers':
+                    try:
+                        user_payments = get_user_payments(user_id)
+                        has_completed = any(
+                            p.get('status') == 'completed' for p in user_payments.values()
+                        )
+                        show_card_to_card = has_completed
+                    except Exception:
+                        pass
             
             markup = types.InlineKeyboardMarkup(row_width=1)
             methods_count = 0
