@@ -134,13 +134,26 @@ def handle_purchase_selection(call):
             load_dotenv(env_path)
             crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
             card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
+            card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
+            
+            # Determine if card-to-card should be shown based on mode
+            show_card_to_card = False
+            if card_to_card_configured and card_to_card_mode == 'on':
+                show_card_to_card = True
+            elif card_to_card_configured and card_to_card_mode == 'previous_customers':
+                user_payments = get_user_payments(user_id)
+                has_completed = any(
+                    p.get('status') == 'completed' for p in user_payments.values()
+                )
+                show_card_to_card = has_completed
+            # If mode is 'off', show_card_to_card stays False
             
             markup = types.InlineKeyboardMarkup(row_width=1)
             methods_count = 0
             if crypto_configured:
                 markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"payment_method:crypto:{plan_gb}"))
                 methods_count += 1
-            if card_to_card_configured:
+            if show_card_to_card:
                 markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"payment_method:card_to_card:{plan_gb}"))
                 methods_count += 1
             

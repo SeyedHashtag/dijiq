@@ -16,7 +16,7 @@ def create_cancel_markup():
 def create_payment_method_selection_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Card to Card (Iran)"))
-    markup.row(types.KeyboardButton("💱 Exchange Rate"))
+    markup.row(types.KeyboardButton("🔀 Card to Card Mode"), types.KeyboardButton("💱 Exchange Rate"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -38,6 +38,8 @@ def process_payment_method_selection(message):
         setup_crypto(message)
     elif message.text == "💳 Card to Card (Iran)":
         setup_card_to_card(message)
+    elif message.text == "🔀 Card to Card Mode":
+        setup_card_to_card_mode(message)
     elif message.text == "💱 Exchange Rate":
         setup_exchange_rate(message)
     else:
@@ -236,3 +238,62 @@ def process_exchange_rate(message):
             f"❌ Error updating exchange rate: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )
+
+
+MODE_LABELS = {
+    'on': '✅ On (All Customers)',
+    'off': '❌ Off (Disabled)',
+    'previous_customers': '👤 Previous Customers Only'
+}
+
+def setup_card_to_card_mode(message):
+    load_dotenv(env_path, override=True)
+    current_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
+    current_label = MODE_LABELS.get(current_mode, MODE_LABELS['on'])
+
+    status_text = (
+        "🔀 Card to Card Mode Settings\n\n"
+        f"Current Mode: {current_label}\n\n"
+        "Select a new mode:"
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("✅ On (All Customers)", callback_data="c2c_mode:on"),
+        types.InlineKeyboardButton("❌ Off (Disabled)", callback_data="c2c_mode:off"),
+        types.InlineKeyboardButton("👤 Previous Customers Only", callback_data="c2c_mode:previous_customers")
+    )
+
+    bot.reply_to(
+        message,
+        status_text,
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('c2c_mode:'))
+def handle_card_to_card_mode_selection(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, text="Not authorized.")
+        return
+
+    mode = call.data.split(':')[1]
+    if mode not in ('on', 'off', 'previous_customers'):
+        bot.answer_callback_query(call.id, text="Invalid mode.")
+        return
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+
+        set_key(env_path, 'CARD_TO_CARD_MODE', mode)
+        load_dotenv(env_path, override=True)
+
+        mode_label = MODE_LABELS.get(mode, mode)
+        bot.edit_message_text(
+            f"✅ Card to Card mode updated to: {mode_label}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
