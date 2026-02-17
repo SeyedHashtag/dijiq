@@ -1,57 +1,7 @@
-import requests
-import json
-import os
-from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-
-class APIClient:
-    def __init__(self):
-        load_dotenv()
-        
-        self.base_url = os.getenv('URL')
-        self.token = os.getenv('TOKEN')
-        
-        if not self.base_url or not self.token:
-            print("Warning: API URL or TOKEN not found in environment variables.")
-            return
-            
-        if self.base_url and not self.base_url.endswith('/'):
-            self.base_url += '/'
-            
-        self.users_endpoint = f"{self.base_url}api/v1/users/"
-        
-        self.headers = {
-            'accept': 'application/json',
-            'Authorization': self.token
-        }
-    
-    def get_users(self):
-        try:
-            response = requests.get(self.users_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching users: {e}")
-            return None
-    
-    def delete_user(self, username):
-        try:
-            user_endpoint = f"{self.users_endpoint}{username}"
-            response = requests.delete(user_endpoint, headers=self.headers)
-            response.raise_for_status()
-            
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return "User deleted successfully."
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Error deleting user: {e}")
-            if e.response and e.response.status_code == 404:
-                return f"Error: User '{username}' not found."
-            return f"Error: Failed to delete user. {str(e)}"
+from utils.api_client import APIClient
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_delete")
@@ -81,9 +31,8 @@ def process_delete_user(message):
     # Just attempt to delete the user directly
     bot.send_chat_action(message.chat.id, 'typing')
     result = api_client.delete_user(username)
-    
-    # Check if there was an error message returned
-    if isinstance(result, str) and result.startswith("Error:"):
-        bot.reply_to(message, result, reply_markup=create_main_markup(is_admin=True))
+
+    if result is None:
+        bot.reply_to(message, f"Error: Failed to delete user '{username}'. They may not exist.", reply_markup=create_main_markup(is_admin=True))
     else:
         bot.reply_to(message, f"User '{username}' removed successfully.", reply_markup=create_main_markup(is_admin=True))

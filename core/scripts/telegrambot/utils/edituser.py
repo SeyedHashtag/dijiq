@@ -1,97 +1,11 @@
-#show and edituser file
+# show and edit user file
 
 import qrcode
 import io
-import json
-import os
-import requests
-from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-
-
-class APIClient:
-    def __init__(self):
-        load_dotenv()
-        
-        self.base_url = os.getenv('URL')
-        self.token = os.getenv('TOKEN')
-        
-        if not self.base_url or not self.token:
-            print("Warning: API URL or TOKEN not found in environment variables.")
-            return
-            
-        if self.base_url and not self.base_url.endswith('/'):
-            self.base_url += '/'
-            
-        self.users_endpoint = f"{self.base_url}api/v1/users/"
-        
-        self.headers = {
-            'accept': 'application/json',
-            'Authorization': self.token
-        }
-    
-    def get_users(self):
-        try:
-            response = requests.get(self.users_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching users: {e}")
-            return None
-    
-    def get_user(self, username):
-        """Get user details using API endpoint"""
-        try:
-            user_endpoint = f"{self.users_endpoint}{username}"
-            response = requests.get(user_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error getting user details: {e}")
-            if e.response and e.response.status_code == 404:
-                return {"error": f"User '{username}' not found."}
-            return {"error": f"Failed to get user details: {str(e)}"}
-    
-    def update_user(self, username, data):
-        """Update user using API endpoint with PATCH"""
-        try:
-            user_endpoint = f"{self.users_endpoint}{username}"
-            
-            headers = self.headers.copy()
-            headers['Content-Type'] = 'application/json'
-            
-            response = requests.patch(user_endpoint, headers=headers, json=data)
-            response.raise_for_status()
-            
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return {"message": "User updated successfully."}
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Error updating user: {e}")
-            if e.response and e.response.status_code == 404:
-                return {"error": f"User '{username}' not found."}
-            return {"error": f"Failed to update user: {str(e)}"}
-    
-    def reset_user(self, username):
-        """Reset user traffic data"""
-        return self.update_user(username, {
-            "renew_creation_date": True,
-            "blocked": False
-        })
-    
-    def get_user_uri(self, username):
-        try:
-            user_uri_endpoint = f"{self.base_url}api/v1/users/{username}/uri"
-            response = requests.get(user_uri_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error getting user URI: {e}")
-            return None
+from utils.api_client import APIClient
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
@@ -117,9 +31,9 @@ def process_show_user(message):
     
     # Just attempt to get the user directly
     user_details = api_client.get_user(username)
-    
-    if "error" in user_details:
-        bot.reply_to(message, user_details["error"])
+
+    if user_details is None:
+        bot.reply_to(message, f"User '{username}' not found or API error.")
         return
     
     # Use the provided username directly
@@ -212,15 +126,15 @@ def handle_edit_callback(call):
     elif action == 'renew_password':
         # Use API to renew password
         result = api_client.update_user(username, {"renew_password": True})
-        if "error" in result:
-            bot.send_message(call.message.chat.id, result["error"])
+        if result is None:
+            bot.send_message(call.message.chat.id, f"Failed to renew password for user '{username}'.")
         else:
             bot.send_message(call.message.chat.id, f"Password for user '{username}' renewed successfully.")
     elif action == 'renew_creation':
         # Use API to renew creation date
         result = api_client.update_user(username, {"renew_creation_date": True})
-        if "error" in result:
-            bot.send_message(call.message.chat.id, result["error"])
+        if result is None:
+            bot.send_message(call.message.chat.id, f"Failed to renew creation date for user '{username}'.")
         else:
             bot.send_message(call.message.chat.id, f"Creation date for user '{username}' renewed successfully.")
     elif action == 'block_user':
@@ -231,8 +145,8 @@ def handle_edit_callback(call):
     elif action == 'reset_user':
         # Use API to reset user
         result = api_client.reset_user(username)
-        if "error" in result:
-            bot.send_message(call.message.chat.id, result["error"])
+        if result is None:
+            bot.send_message(call.message.chat.id, f"Failed to reset user '{username}'.")
         else:
             bot.send_message(call.message.chat.id, f"User '{username}' reset successfully.")
 
@@ -244,9 +158,9 @@ def handle_block_confirmation(call):
     # Use API to set block status
     is_blocked = block_status == 'true'
     result = api_client.update_user(username, {"blocked": is_blocked})
-    
-    if "error" in result:
-        bot.send_message(call.message.chat.id, result["error"])
+
+    if result is None:
+        bot.send_message(call.message.chat.id, f"Failed to update block status for user '{username}'.")
     else:
         status = "blocked" if is_blocked else "unblocked"
         bot.send_message(call.message.chat.id, f"User '{username}' {status} successfully.")
@@ -261,9 +175,9 @@ def process_edit_username(message, username):
     
     api_client = APIClient()
     result = api_client.update_user(username, {"new_username": new_username})
-    
-    if "error" in result:
-        bot.reply_to(message, result["error"])
+
+    if result is None:
+        bot.reply_to(message, f"Failed to update username for '{username}'.")
     else:
         bot.reply_to(message, f"Username updated from '{username}' to '{new_username}' successfully.")
 
@@ -272,9 +186,9 @@ def process_edit_traffic(message, username):
         new_traffic_limit = int(message.text.strip())
         api_client = APIClient()
         result = api_client.update_user(username, {"new_traffic_limit": new_traffic_limit})
-        
-        if "error" in result:
-            bot.reply_to(message, result["error"])
+
+        if result is None:
+            bot.reply_to(message, f"Failed to update traffic limit for user '{username}'.")
         else:
             bot.reply_to(message, f"Traffic limit for user '{username}' updated to {new_traffic_limit} GB successfully.")
     except ValueError:
@@ -285,9 +199,9 @@ def process_edit_expiration(message, username):
         new_expiration_days = int(message.text.strip())
         api_client = APIClient()
         result = api_client.update_user(username, {"new_expiration_days": new_expiration_days})
-        
-        if "error" in result:
-            bot.reply_to(message, result["error"])
+
+        if result is None:
+            bot.reply_to(message, f"Failed to update expiration days for user '{username}'.")
         else:
             bot.reply_to(message, f"Expiration days for user '{username}' updated to {new_expiration_days} days successfully.")
     except ValueError:

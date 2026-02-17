@@ -1,91 +1,9 @@
 import qrcode
 import io
-import json
-import os
-import requests
 from telebot import types
 from utils.command import *
 from utils.common import create_main_markup
-from dotenv import load_dotenv
-
-
-class APIClient:
-    def __init__(self):
-        load_dotenv()
-        
-        self.base_url = os.getenv('URL')
-        self.token = os.getenv('TOKEN')
-        
-        if not self.base_url or not self.token:
-            print("Warning: API URL or TOKEN not found in environment variables.")
-            return
-            
-        if self.base_url and not self.base_url.endswith('/'):
-            self.base_url += '/'
-            
-        self.users_endpoint = f"{self.base_url}api/v1/users/"
-        
-        self.headers = {
-            'accept': 'application/json',
-            'Authorization': self.token
-        }
-    
-    def get_users(self):
-        try:
-            response = requests.get(self.users_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching users: {e}")
-            return None
-
-    def get_user(self, username):
-        try:
-            user_endpoint = f"{self.users_endpoint}{username}"
-            response = requests.get(user_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching user {username}: {e}")
-            return None
-    
-    def add_user(self, username, traffic_limit, expiration_days, unlimited=False):
-        data = {
-            "username": username,
-            "traffic_limit": traffic_limit,
-            "expiration_days": expiration_days,
-            "unlimited": unlimited
-        }
-        
-        post_headers = self.headers.copy()
-        post_headers['Content-Type'] = 'application/json'
-        
-        try:
-            response = requests.post(
-                self.users_endpoint, 
-                headers=post_headers, 
-                json=data
-            )
-            response.raise_for_status()
-            
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return response.text
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Error adding user: {e}")
-            return None
-    
-    def get_user_uri(self, username):
-        try:
-            user_uri_endpoint = f"{self.base_url}api/v1/users/{username}/uri"
-            response = requests.get(user_uri_endpoint, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error getting user URI: {e}")
-            return None
+from utils.api_client import APIClient
 
 
 def create_cancel_markup(back_step=None):

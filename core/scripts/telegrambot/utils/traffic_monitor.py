@@ -4,7 +4,7 @@ import re
 import threading
 from datetime import datetime
 
-from utils.adduser import APIClient
+from utils.api_client import APIClient
 from utils.command import bot
 from utils.language import get_user_language
 from utils.translations import get_message_text

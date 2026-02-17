@@ -13,7 +13,7 @@ from utils.payment_records import (
     claim_payment_for_processing,
     get_user_payments,
 )
-from utils.adduser import APIClient
+from utils.api_client import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 from utils.referral import add_referral_reward

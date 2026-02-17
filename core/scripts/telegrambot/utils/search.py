@@ -1,15 +1,20 @@
 from telebot import types
 from utils.command import *
+from utils.api_client import APIClient
 
 @bot.inline_handler(lambda query: is_admin(query.from_user.id))
 def handle_inline_query(query):
-    command = f"python3 {CLI_PATH} list-users"
-    result = run_cli_command(command)
-    try:
-        users = json.loads(result)
-    except json.JSONDecodeError:
+    api_client = APIClient()
+    raw_users = api_client.get_users()
+    if raw_users is None:
         bot.answer_inline_query(query.id, results=[], switch_pm_text="Error retrieving users.", switch_pm_user_id=query.from_user.id)
         return
+
+    # Normalise to a dict keyed by username for uniform downstream access
+    if isinstance(raw_users, list):
+        users = {u.get('username', ''): u for u in raw_users if isinstance(u, dict)}
+    else:
+        users = raw_users
 
     query_text = query.query.lower()
     results = []

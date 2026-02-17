@@ -4,7 +4,7 @@ import datetime
 from telebot import types
 from utils.command import bot
 from utils.common import create_main_markup
-from utils.adduser import APIClient
+from utils.api_client import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode

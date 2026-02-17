@@ -16,7 +16,7 @@ from utils.reseller import (
     get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD
 )
 from utils.edit_plans import load_plans
-from utils.adduser import APIClient
+from utils.api_client import APIClient
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.purchase_plan import user_data

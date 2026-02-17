@@ -1,7 +1,7 @@
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-from utils.adduser import APIClient
+from utils.api_client import APIClient
 import re
 import json
 import os
