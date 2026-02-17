@@ -226,6 +226,30 @@ def set_reseller_debt(user_id, amount):
         return False
 
 
+def delete_reseller(user_id):
+    """Delete a reseller record from the system."""
+    user_id = str(user_id)
+    with reseller_lock:
+        try:
+            if os.path.exists(RESELLERS_FILE):
+                with open(RESELLERS_FILE, 'r') as f:
+                    resellers = json.load(f)
+            else:
+                return False
+        except Exception:
+            return False
+
+        if user_id not in resellers:
+            return False
+
+        del resellers[user_id]
+        
+        os.makedirs(os.path.dirname(RESELLERS_FILE), exist_ok=True)
+        with open(RESELLERS_FILE, 'w') as f:
+            json.dump(resellers, f, indent=4)
+        return True
+
+
 def apply_reseller_payment(user_id, amount):
     user_id = str(user_id)
     with reseller_lock:

@@ -862,6 +862,15 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
             )
         )
 
+    # Add delete button for rejected resellers
+    if status == "rejected":
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_delete"),
+                callback_data=f"admin_reseller_ui:delete:{reseller_id}:{return_status}:{return_page}",
+            )
+        )
+
     markup.add(
         types.InlineKeyboardButton(
             get_message_text(language, "admin_action_adjust_debt"),
@@ -1285,6 +1294,73 @@ def handle_admin_reseller_ui(call):
         set_reseller_debt(reseller_id, _normalize_debt_amount(new_amount))
         context = _admin_view_context(call.from_user.id)
         _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
+        return
+
+    if action == "delete":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+            return
+
+        # Show confirmation dialog
+        msg = get_message_text(language, "admin_delete_confirm").format(user_id=reseller_id)
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton(
+                get_button_text(language, "yes"),
+                callback_data=f"admin_reseller_ui:deleteconfirm:{reseller_id}:{return_status}:{return_page}",
+            ),
+            types.InlineKeyboardButton(
+                get_button_text(language, "no"),
+                callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+            ),
+        )
+        bot.edit_message_text(
+            msg,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown",
+        )
+        return
+
+    if action == "deleteconfirm":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        from utils.reseller import delete_reseller
+        success = delete_reseller(reseller_id)
+        if success:
+            bot.edit_message_text(
+                get_message_text(language, "admin_reseller_deleted").format(user_id=reseller_id),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+            )
+            # Show the list again after a short delay or let admin navigate back
+            _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+        else:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
         return
 
     bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
