@@ -17,6 +17,8 @@ def _safe_float_env(key, default):
 DEBT_WARNING_THRESHOLD = _safe_float_env('RESELLER_DEBT_WARNING_THRESHOLD', 20.0)
 DEBT_SUSPEND_THRESHOLD = _safe_float_env('RESELLER_DEBT_SUSPEND_THRESHOLD', 50.0)
 DEBT_REMINDER_INTERVAL_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_REMINDER_INTERVAL_HOURS', 24.0))
+DEBT_SUSPEND_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_SUSPEND_DEADLINE_HOURS', 48.0))
+DEBT_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_BAN_DEADLINE_HOURS', 72.0))
 
 
 def _safe_float(value, default=0.0):
@@ -263,6 +265,37 @@ def apply_reseller_payment(user_id, amount):
         return True, new_debt
 
 
+def _compute_debt_state_with_deadline(debt, debt_since, now):
+    """Compute debt state considering time-based deadlines.
+    
+    Returns (debt_state, suspend_deadline_passed, ban_deadline_passed)
+    """
+    debt_amount = _safe_float(debt, 0.0)
+    
+    if debt_amount < DEBT_WARNING_THRESHOLD:
+        return 'active', False, False
+    
+    # Calculate time since debt started
+    debt_since_dt = _parse_time(debt_since)
+    hours_in_debt = 0.0
+    if debt_since_dt:
+        hours_in_debt = (now - debt_since_dt).total_seconds() / 3600
+    
+    suspend_deadline_passed = hours_in_debt >= DEBT_SUSPEND_DEADLINE_HOURS
+    ban_deadline_passed = hours_in_debt >= DEBT_BAN_DEADLINE_HOURS
+    
+    if debt_amount >= DEBT_SUSPEND_THRESHOLD:
+        # High debt - always suspended state
+        return 'suspended', suspend_deadline_passed, ban_deadline_passed
+    elif debt_amount >= DEBT_WARNING_THRESHOLD:
+        # Warning level debt
+        if suspend_deadline_passed:
+            return 'suspended', True, ban_deadline_passed
+        return 'warning', False, ban_deadline_passed
+    
+    return 'active', False, False
+
+
 def evaluate_reseller_debt_policies():
     with reseller_lock:
         try:
@@ -276,41 +309,79 @@ def evaluate_reseller_debt_policies():
 
         now = datetime.now()
         reminder_delta = timedelta(hours=DEBT_REMINDER_INTERVAL_HOURS)
+        suspend_delta = timedelta(hours=DEBT_SUSPEND_DEADLINE_HOURS)
+        ban_delta = timedelta(hours=DEBT_BAN_DEADLINE_HOURS)
         events = []
         changed = False
 
         for user_id, record in resellers.items():
             current = _ensure_reseller_defaults(record)
             debt = _safe_float(current.get('debt', 0.0))
-            debt_state = current.get('debt_state', 'active')
-
+            
+            # Track original status before any automatic changes
+            original_status = current.get('status', 'pending')
+            
             if debt > 0 and not current.get('debt_since'):
                 current['debt_since'] = _now_str()
 
+            # Compute debt state with deadline consideration
+            debt_since = current.get('debt_since')
+            debt_state, suspend_deadline_passed, ban_deadline_passed = _compute_debt_state_with_deadline(
+                debt, debt_since, now
+            )
+            current['debt_state'] = debt_state
+
+            # Automatic status changes based on deadlines (only for approved resellers with debt)
+            auto_suspended = False
+            auto_banned = False
+            
+            if debt > 0 and original_status == 'approved':
+                if ban_deadline_passed:
+                    # Ban reseller after 72 hours of debt
+                    if current.get('status') != 'banned':
+                        current['status'] = 'banned'
+                        auto_banned = True
+                        changed = True
+                elif suspend_deadline_passed:
+                    # Suspend reseller after 48 hours of debt
+                    if current.get('status') == 'approved':
+                        current['status'] = 'suspended'
+                        auto_suspended = True
+                        changed = True
+            
+            # If debt is cleared, restore approved status if it was auto-suspended
+            if debt <= 0 and current.get('status') == 'suspended':
+                current['status'] = 'approved'
+                changed = True
+
+            # Reminder logic
             remind_due = False
-            if debt > 0 and debt_state in {'warning', 'suspended'} and current.get('status') == 'approved':
+            if debt > 0 and debt_state in {'warning', 'suspended'} and current.get('status') in {'approved', 'suspended'}:
                 last_reminded_at = _parse_time(current.get('debt_last_reminded_at'))
                 if not last_reminded_at or (now - last_reminded_at) >= reminder_delta:
                     remind_due = True
                     current['debt_last_reminded_at'] = _now_str()
                     changed = True
 
+            # Admin alert logic
             alert_level = 'none'
             if debt_state == 'warning' and debt > 0:
                 alert_level = 'warning'
             elif debt_state == 'suspended' and debt > 0:
                 alert_level = 'suspended'
+            elif auto_banned:
+                alert_level = 'banned'
 
             admin_alert_due = False
             previous_alert_level = str(current.get('debt_last_admin_alert_level', 'none'))
             if alert_level != previous_alert_level:
-                if alert_level in {'warning', 'suspended'} and current.get('status') == 'approved':
+                if alert_level in {'warning', 'suspended', 'banned'}:
                     admin_alert_due = True
                 current['debt_last_admin_alert_level'] = alert_level
                 current['debt_last_admin_alert_at'] = _now_str()
                 changed = True
 
-            if debt <= 0 and current.get('status') == 'approved' and previous_alert_level != 'none':
+            if debt <= 0 and previous_alert_level != 'none':
                 current['debt_last_admin_alert_level'] = 'none'
                 current['debt_last_admin_alert_at'] = _now_str()
                 changed = True
@@ -319,15 +390,22 @@ def evaluate_reseller_debt_policies():
                 changed = True
                 resellers[user_id] = current
 
-            if remind_due or admin_alert_due:
-                debt_since = _parse_time(current.get('debt_since'))
+            # Build event for notifications
+            if remind_due or admin_alert_due or auto_suspended or auto_banned:
+                debt_since_dt = _parse_time(current.get('debt_since'))
+                debt_age_hours = 0.0
                 debt_age_days = 0
-                if debt_since:
-                    debt_age_days = max(0, (now - debt_since).days)
+                if debt_since_dt:
+                    debt_age_hours = (now - debt_since_dt).total_seconds() / 3600
+                    debt_age_days = max(0, (now - debt_since_dt).days)
 
                 unlock_amount = 0.0
                 if debt_state == 'suspended':
                     unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+
+                # Calculate time remaining until deadlines
+                hours_until_suspend = max(0, DEBT_SUSPEND_DEADLINE_HOURS - debt_age_hours)
+                hours_until_ban = max(0, DEBT_BAN_DEADLINE_HOURS - debt_age_hours)
 
                 events.append({
                     'user_id': str(user_id),
@@ -335,11 +413,18 @@ def evaluate_reseller_debt_policies():
                     'debt_state': debt_state,
                     'status': current.get('status', 'pending'),
                     'debt_age_days': debt_age_days,
+                    'debt_age_hours': debt_age_hours,
                     'debt_since': current.get('debt_since'),
                     'last_payment_at': current.get('last_payment_at'),
                     'unlock_amount': unlock_amount,
                     'notify_user': remind_due,
                     'notify_admin': admin_alert_due,
+                    'auto_suspended': auto_suspended,
+                    'auto_banned': auto_banned,
+                    'hours_until_suspend': hours_until_suspend if not suspend_deadline_passed else 0,
+                    'hours_until_ban': hours_until_ban if not ban_deadline_passed else 0,
+                    'suspend_deadline_passed': suspend_deadline_passed,
+                    'ban_deadline_passed': ban_deadline_passed,
                 })
 
         if changed:

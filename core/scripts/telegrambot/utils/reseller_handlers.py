@@ -29,7 +29,14 @@ def _get_approved_reseller_data(user_id):
 
 
 def _is_reseller_suspended(reseller_data):
-    return reseller_data and reseller_data.get('debt_state') == 'suspended' and float(reseller_data.get('debt', 0.0)) > 0
+    """Check if reseller is suspended (either by status or debt state)."""
+    if not reseller_data:
+        return False
+    # Check if status is explicitly suspended
+    if reseller_data.get('status') == 'suspended':
+        return True
+    # Check if debt state is suspended and has debt
+    return reseller_data.get('debt_state') == 'suspended' and float(reseller_data.get('debt', 0.0)) > 0
 
 
 def _debt_state_label(debt_state):
@@ -83,8 +90,8 @@ def reseller_panel(message):
     
     status = reseller_data.get('status') if reseller_data else None
     
-    if status == 'approved':
-        # Show Reseller Menu
+    if status in ('approved', 'suspended'):
+        # Show Reseller Menu (suspended can still access panel but with restrictions)
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton(get_button_text(language, "generate_config"), callback_data="reseller:generate"),
@@ -95,7 +102,7 @@ def reseller_panel(message):
         debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
         intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}")
         intro += "\n" + get_message_text(language, "reseller_debt_status_line").format(debt_state=debt_state_text)
-        if _is_reseller_suspended(reseller_data):
+        if _is_reseller_suspended(reseller_data) or status == 'suspended':
             intro += "\n" + get_message_text(language, "reseller_suspended_intro_notice")
         bot.reply_to(message, intro, reply_markup=markup)
         
@@ -605,7 +612,7 @@ def handle_reseller_stats(call):
 
 # Admin Management Handlers
 
-ADMIN_RESELLER_STATUS_ORDER = ["pending", "banned", "approved", "rejected"]
+ADMIN_RESELLER_STATUS_ORDER = ["pending", "suspended", "banned", "approved", "rejected"]
 ADMIN_RESELLER_PAGE_SIZE = 8
 ADMIN_RESELLER_MAX_DEBT = 100000.0
 ADMIN_RESELLER_DEFAULT_LIST_STATUS = "pending"
@@ -618,6 +625,8 @@ def _admin_status_icon(status):
         return "✅"
     if status == "pending":
         return "⏳"
+    if status == "suspended":
+        return "⚠️"
     if status == "banned":
         return "🚫"
     return "❌"
@@ -626,6 +635,7 @@ def _admin_status_icon(status):
 def _admin_status_label(language, status):
     status_key = {
         "pending": "admin_status_pending",
+        "suspended": "admin_status_suspended",
         "banned": "admin_status_banned",
         "approved": "admin_status_approved",
         "rejected": "admin_status_rejected",
@@ -816,14 +826,14 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
     status = (reseller_data or {}).get("status", "rejected")
     markup = types.InlineKeyboardMarkup(row_width=2)
 
-    if status in ("pending", "rejected"):
+    if status in ("pending", "rejected", "suspended"):
         markup.add(
             types.InlineKeyboardButton(
                 get_message_text(language, "admin_action_approve"),
                 callback_data=f"admin_reseller_ui:action:{reseller_id}:approve",
             )
         )
-    if status in ("pending", "approved"):
+    if status in ("pending", "approved", "suspended"):
         markup.add(
             types.InlineKeyboardButton(
                 get_message_text(language, "admin_action_reject"),
@@ -837,7 +847,14 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
                 callback_data=f"admin_reseller_ui:action:{reseller_id}:unban",
             )
         )
-    else:
+    if status == "suspended":
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_ban"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:ban",
+            )
+        )
+    elif status != "banned":
         markup.add(
             types.InlineKeyboardButton(
                 get_message_text(language, "admin_action_ban"),
