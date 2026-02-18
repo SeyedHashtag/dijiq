@@ -95,11 +95,11 @@ def reseller_panel(message):
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton(get_button_text(language, "generate_config"), callback_data="reseller:generate"),
-            types.InlineKeyboardButton(get_button_text(language, "my_debt"), callback_data="reseller:debt")
+            types.InlineKeyboardButton(get_button_text(language, "reseller_my_customers"), callback_data="reseller:my_customers:0")
         )
         markup.add(
             types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"),
-            types.InlineKeyboardButton(get_button_text(language, "reseller_my_customers"), callback_data="reseller:my_customers:0")
+            types.InlineKeyboardButton(get_button_text(language, "my_debt"), callback_data="reseller:debt")
         )
         debt = float(reseller_data.get('debt', 0.0))
         debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
