@@ -8,11 +8,3 @@
 ✨ Add 'Back' option to broadcast markup and handle back navigation in process_broadcast_target
 ✨ Enhance reseller customer management with detailed config display and navigation
 🌐 Add reseller client traffic and days alert messages in translations
-
-## v1.12.24
-✨ Add 'My Customers' button and functionality for resellers with pagination and translations
-🗑️ Add delete functionality for resellers with confirmation dialog and translations
-♻️ Consolidate API client functionality into a single module and update imports across the project
-
-## v1.12.23
-✨ Implement debt suspension and ban deadlines for resellers with notifications
