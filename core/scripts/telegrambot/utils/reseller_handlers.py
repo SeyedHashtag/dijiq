@@ -971,8 +971,8 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
     for status in ADMIN_RESELLER_STATUS_ORDER:
         items = grouped.get(status, [])
         status_text = _admin_status_label(language, status)
-        page = active_page if status == active_status else 0
-        visible, total_pages, page = _paginate(items, page)
+
+        # Status header button — clicking it expands this section
         markup.add(
             types.InlineKeyboardButton(
                 get_message_text(language, "admin_reseller_section_button").format(
@@ -980,52 +980,58 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
                     status_label=status_text,
                     count=len(items),
                 ),
-                callback_data="admin_reseller_ui:noop",
+                callback_data=f"admin_reseller_ui:list:{status}:0",
             )
         )
-        if not visible:
-            markup.add(
-                types.InlineKeyboardButton(
-                    get_message_text(language, "admin_reseller_no_entries"),
-                    callback_data="admin_reseller_ui:noop",
-                )
-            )
-        else:
-            for rid, data in visible:
+
+        # Only show entries for the currently active/expanded status
+        if status == active_status:
+            page = active_page
+            visible, total_pages, page = _paginate(items, page)
+
+            if not visible:
                 markup.add(
                     types.InlineKeyboardButton(
-                        get_message_text(language, "admin_reseller_row_compact").format(
-                            status_icon=_admin_status_icon(status),
-                            user_id=rid,
-                            username_display=_username_display(language, data),
-                            debt=_safe_float(data.get("debt", 0.0)),
-                        ),
-                        callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
+                        get_message_text(language, "admin_reseller_no_entries"),
+                        callback_data="admin_reseller_ui:noop",
                     )
                 )
-        if total_pages > 1:
-            nav_buttons = []
-            if page > 0:
+            else:
+                for rid, data in visible:
+                    markup.add(
+                        types.InlineKeyboardButton(
+                            get_message_text(language, "admin_reseller_row_compact").format(
+                                status_icon=_admin_status_icon(status),
+                                user_id=rid,
+                                username_display=_username_display(language, data),
+                                debt=_safe_float(data.get("debt", 0.0)),
+                            ),
+                            callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
+                        )
+                    )
+            if total_pages > 1:
+                nav_buttons = []
+                if page > 0:
+                    nav_buttons.append(
+                        types.InlineKeyboardButton(
+                            get_message_text(language, "admin_prev_page"),
+                            callback_data=f"admin_reseller_ui:list:{status}:{page - 1}",
+                        )
+                    )
                 nav_buttons.append(
                     types.InlineKeyboardButton(
-                        get_message_text(language, "admin_prev_page"),
-                        callback_data=f"admin_reseller_ui:list:{status}:{page - 1}",
+                        get_message_text(language, "admin_page_indicator").format(page=page + 1, total=total_pages),
+                        callback_data="admin_reseller_ui:noop",
                     )
                 )
-            nav_buttons.append(
-                types.InlineKeyboardButton(
-                    get_message_text(language, "admin_page_indicator").format(page=page + 1, total=total_pages),
-                    callback_data="admin_reseller_ui:noop",
-                )
-            )
-            if page < total_pages - 1:
-                nav_buttons.append(
-                    types.InlineKeyboardButton(
-                        get_message_text(language, "admin_next_page"),
-                        callback_data=f"admin_reseller_ui:list:{status}:{page + 1}",
+                if page < total_pages - 1:
+                    nav_buttons.append(
+                        types.InlineKeyboardButton(
+                            get_message_text(language, "admin_next_page"),
+                            callback_data=f"admin_reseller_ui:list:{status}:{page + 1}",
+                        )
                     )
-                )
-            markup.row(*nav_buttons)
+                markup.row(*nav_buttons)
 
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     return markup
