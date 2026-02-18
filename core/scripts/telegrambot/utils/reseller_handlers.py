@@ -675,7 +675,16 @@ def handle_reseller_my_customers(call):
         entries=entries_text
     )
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Add a clickable button for each customer on this page
+    for i, cfg in enumerate(page_configs, start=start + 1):
+        username = cfg.get('username', 'N/A')
+        gb = cfg.get('gb', '?')
+        days = cfg.get('days', '?')
+        btn_label = f"👤 {i}. {username} — {gb}GB/{days}d"
+        markup.add(types.InlineKeyboardButton(btn_label, callback_data=f"reseller:cfg:{username}:{page}"))
+
+    # Navigation row
     nav_buttons = []
     if page > 0:
         nav_buttons.append(
@@ -703,6 +712,146 @@ def handle_reseller_my_customers(call):
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
 def handle_reseller_customers_noop(call):
     bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:cfg:"))
+def handle_reseller_customer_config(call):
+    """Show the config card for a specific customer of the reseller."""
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+
+    # Validate reseller access (both approved and suspended can view configs)
+    reseller_data = get_reseller_data(user_id)
+    if not reseller_data or reseller_data.get('status') not in ('approved', 'suspended'):
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+
+    # Parse callback data: reseller:cfg:{username}:{page}
+    parts = call.data.split(":")
+    if len(parts) < 4:
+        bot.answer_callback_query(call.id, "Invalid request.")
+        return
+
+    username = parts[2]
+    try:
+        return_page = int(parts[3])
+    except (ValueError, IndexError):
+        return_page = 0
+
+    bot.answer_callback_query(call.id)
+
+    # Fetch live config data from API
+    api_client = APIClient()
+    user_config = api_client.get_user(username)
+
+    back_markup = types.InlineKeyboardMarkup()
+    back_markup.add(
+        types.InlineKeyboardButton(
+            get_button_text(language, "reseller_back_to_customers"),
+            callback_data=f"reseller:my_customers:{return_page}"
+        )
+    )
+
+    if not user_config:
+        bot.edit_message_text(
+            f"⚠️ Could not retrieve data for `{username}`. The config may have been deleted.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=back_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    # Extract stats
+    is_blocked = bool(user_config.get('blocked', False))
+    upload_bytes = user_config.get('upload_bytes', 0) or 0
+    download_bytes = user_config.get('download_bytes', 0) or 0
+    max_download_bytes = user_config.get('max_download_bytes', 0) or 0
+    expiration_days = user_config.get('expiration_days', 0)
+    account_creation_date = user_config.get('account_creation_date', 'N/A')
+    status = user_config.get('status', 'Unknown')
+
+    upload_gb = upload_bytes / (1024 ** 3)
+    download_gb = download_bytes / (1024 ** 3)
+    total_usage_gb = upload_gb + download_gb
+    max_traffic_gb = max_download_bytes / (1024 ** 3)
+
+    traffic_limit_display = f"{max_traffic_gb:.2f} GB" if max_traffic_gb > 0 else "Unlimited"
+
+    if upload_bytes == 0 and download_bytes == 0:
+        traffic_message = "**Traffic Data:**\nNo traffic data available."
+    else:
+        traffic_message = (
+            f"🔼 Upload: {upload_gb:.2f} GB\n"
+            f"🔽 Download: {download_gb:.2f} GB\n"
+            f"📊 Total Usage: {total_usage_gb:.2f} GB"
+        )
+        if max_traffic_gb > 0:
+            traffic_message += f" / {max_traffic_gb:.2f} GB"
+        traffic_message += f"\n🌐 Status: {status}"
+
+    formatted_details = (
+        f"\n🆔 Username: `{username}`\n"
+        f"📊 Traffic Limit: {traffic_limit_display}\n"
+        f"📅 Days Remaining: {expiration_days}\n"
+        f"⏳ Creation Date: {account_creation_date}\n"
+        f"💡 Status: {'❌ Blocked/Expired' if is_blocked else '✅ Active'}\n\n"
+        f"{traffic_message}"
+    )
+
+    if is_blocked:
+        message_text = f"❌ **Configuration expired/blocked**\n{formatted_details}"
+        bot.edit_message_text(
+            message_text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=back_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    # Active config — fetch subscription URL and send QR code
+    user_uri_data = api_client.get_user_uri(username)
+    if not user_uri_data or 'normal_sub' not in user_uri_data:
+        bot.edit_message_text(
+            f"⚠️ Could not generate subscription URL for `{username}`.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=back_markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    sub_url = user_uri_data['normal_sub']
+    ipv4_url = user_uri_data.get('ipv4', '')
+
+    caption = f"{formatted_details}\n\n"
+    if ipv4_url:
+        caption += f"IPv4 URL: `{ipv4_url}`\n\n"
+    caption += f"Subscription URL:\n`{sub_url}`"
+
+    try:
+        qr_code = qrcode.make(sub_url)
+        bio = io.BytesIO()
+        qr_code.save(bio, 'PNG')
+        bio.seek(0)
+
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.send_photo(
+            call.message.chat.id,
+            photo=bio,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=back_markup
+        )
+    except Exception as e:
+        bot.send_message(
+            call.message.chat.id,
+            caption,
+            parse_mode="Markdown",
+            reply_markup=back_markup
+        )
+
 
 # Admin Management Handlers
 

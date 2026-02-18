@@ -39,7 +39,8 @@ BUTTON_TRANSLATIONS = {
         "set_wallet": "💼 Set Wallet",
         "withdraw": "💸 Withdraw",
         "yes": "✅ Yes",
-        "no": "❌ No"
+        "no": "❌ No",
+        "reseller_back_to_customers": "⬅️ Back to Customers"
     },
     "fa": {
         "my_configs": "📱 پیکربندی‌های من",
@@ -67,7 +68,8 @@ BUTTON_TRANSLATIONS = {
         "set_wallet": "💼 تنظیم کیف پول",
         "withdraw": "💸 برداشت",
         "yes": "✅ بله",
-        "no": "❌ خیر"
+        "no": "❌ خیر",
+        "reseller_back_to_customers": "⬅️ بازگشت به مشتریان"
     },
     "tk": {
         "my_configs": "📱 Meniň sazlamalarym",
@@ -95,7 +97,8 @@ BUTTON_TRANSLATIONS = {
         "set_wallet": "💼 Gapjyk sora",
         "withdraw": "💸 Çykarmak",
         "yes": "✅ Hawa",
-        "no": "❌ Ýok"
+        "no": "❌ Ýok",
+        "reseller_back_to_customers": "⬅️ Müşderilere dolan"
     },
     "ru": {
         "my_configs": "📱 Мои конфиги",
@@ -123,7 +126,8 @@ BUTTON_TRANSLATIONS = {
         "set_wallet": "💼 Установить кошелек",
         "withdraw": "💸 Вывести",
         "yes": "✅ Да",
-        "no": "❌ Нет"
+        "no": "❌ Нет",
+        "reseller_back_to_customers": "⬅️ К клиентам"
     }
 }
 
