@@ -676,13 +676,13 @@ def handle_reseller_my_customers(call):
     )
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    # Add a clickable button for each customer on this page
+    # Add numbered buttons for each customer on this page in a single row
+    row_buttons = []
     for i, cfg in enumerate(page_configs, start=start + 1):
         username = cfg.get('username', 'N/A')
-        gb = cfg.get('gb', '?')
-        days = cfg.get('days', '?')
-        btn_label = f"👤 {i}. {username} — {gb}GB/{days}d"
-        markup.add(types.InlineKeyboardButton(btn_label, callback_data=f"reseller:cfg:{username}:{page}"))
+        row_buttons.append(types.InlineKeyboardButton(f"{i}", callback_data=f"reseller:cfg:{username}:{page}"))
+    if row_buttons:
+        markup.row(*row_buttons)
 
     # Navigation row
     nav_buttons = []
