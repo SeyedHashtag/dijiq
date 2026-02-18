@@ -701,13 +701,26 @@ def handle_reseller_my_customers(call):
         markup.row(*nav_buttons)
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
 
-    bot.edit_message_text(
-        msg,
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
+    if call.message.photo or call.message.document or call.message.sticker:
+        # The current message is a media message; delete it and send a fresh text message
+        try:
+            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        except Exception:
+            pass
+        bot.send_message(
+            call.message.chat.id,
+            msg,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+    else:
+        bot.edit_message_text(
+            msg,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
 def handle_reseller_customers_noop(call):
