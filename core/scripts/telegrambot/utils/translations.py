@@ -281,6 +281,8 @@ MESSAGE_TRANSLATIONS = {
         "enter_reseller_customer_username": "Please enter a username for your customer (max 8 characters, alphanumeric):",
         "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters.",
         "traffic_quota_alert": "⚠️ **Traffic Usage Alert**\n\n📱 Username: `{username}`\n📊 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Status: {percent}% of your quota used\n\nPlease consider purchasing a new plan if needed.",
+        "reseller_client_traffic_alert": "📊 **Client Traffic Alert**\n\n📱 Client: `{username}`\n📦 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 {percent}% of data quota used\n\nConsider contacting your client to renew their plan.",
+        "reseller_client_days_alert": "📅 **Client Days Alert**\n\n📱 Client: `{username}`\n🗓 Days elapsed: {days_used} / {total_days} days\n⏳ Days remaining: {days_remaining}\n🚦 {percent}% of plan duration used\n\nConsider contacting your client to renew their plan.",
         "reseller_no_configs_created": "📦 You haven't created any customer configs yet.",
         "reseller_customers_list_header": "📦 **My Customers**\n\nTotal configs created: {total}\nPage {page}/{total_pages}\n\n{entries}"
     },
@@ -426,6 +428,8 @@ MESSAGE_TRANSLATIONS = {
         "enter_reseller_customer_username": "Пожалуйста, введите имя пользователя для вашего клиента (макс. 8 символов, буквенно-цифровые):",
         "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов.",
         "traffic_quota_alert": "⚠️ **Предупреждение о трафике**\n\n📱 Имя пользователя: `{username}`\n📊 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% вашего лимита\n\nПри необходимости приобретите новый план.",
+        "reseller_client_traffic_alert": "📊 **Предупреждение о трафике клиента**\n\n📱 Клиент: `{username}`\n📦 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% квоты данных\n\nСвяжитесь с клиентом для продления плана.",
+        "reseller_client_days_alert": "📅 **Предупреждение о сроке клиента**\n\n📱 Клиент: `{username}`\n🗓 Прошло дней: {days_used} / {total_days} дней\n⏳ Осталось дней: {days_remaining}\n🚦 Использовано {percent}% длительности плана\n\nСвяжитесь с клиентом для продления плана.",
         "reseller_no_configs_created": "📦 Вы ещё не создали ни одного конфига для клиентов.",
         "reseller_customers_list_header": "📦 **Мои клиенты**\n\nВсего создано конфигов: {total}\nСтраница {page}/{total_pages}\n\n{entries}"
     },
@@ -571,6 +575,8 @@ MESSAGE_TRANSLATIONS = {
         "enter_reseller_customer_username": "لطفاً یک نام کاربری برای مشتری خود وارد کنید (حداکثر 8 کاراکتر، حروف و اعداد):",
         "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر.",
         "traffic_quota_alert": "⚠️ **هشدار مصرف ترافیک**\n\n📱 نام کاربری: `{username}`\n📊 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 استفاده: {percent}% از سهمیه شما\n\nدر صورت نیاز، لطفاً یک طرح جدید خریداری کنید.",
+        "reseller_client_traffic_alert": "📊 **هشدار ترافیک مشتری**\n\n📱 مشتری: `{username}`\n📦 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 {percent}% از سهمیه داده استفاده شده\n\nبرای تمدید طرح با مشتری تماس بگیرید.",
+        "reseller_client_days_alert": "📅 **هشدار روزهای مشتری**\n\n📱 مشتری: `{username}`\n🗓 روزهای سپری‌شده: {days_used} / {total_days} روز\n⏳ روزهای باقی‌مانده: {days_remaining}\n🚦 {percent}% از مدت طرح استفاده شده\n\nبرای تمدید طرح با مشتری تماس بگیرید.",
         "reseller_no_configs_created": "📦 شما هنوز هیچ کانفیگی برای مشتریان ایجاد نکرده‌اید.",
         "reseller_customers_list_header": "📦 **مشتریان من**\n\nمجموع کانفیگ‌های ایجاد شده: {total}\nصفحه {page}/{total_pages}\n\n{entries}"
     },
@@ -716,6 +722,8 @@ MESSAGE_TRANSLATIONS = {
         "enter_reseller_customer_username": "Müşderiňiz üçin ulanyjy adyny giriziň (maksimum 8 simwol, harp we san):",
         "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly.",
         "traffic_quota_alert": "⚠️ **Trafik Ulanyş Duýduryşy**\n\n📱 Ulanyjy ady: `{username}`\n📊 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Ulanylyş: {percent}%\n\nZerur bolsa täze meýilnama satyn alyň.",
+        "reseller_client_traffic_alert": "📊 **Müşderi Trafik Duýduryşy**\n\n📱 Müşderi: `{username}`\n📦 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Maglumat kwotasynyň {percent}% ulanylan\n\nMeýilnamany täzelemek üçin müşderi bilen habarlaşyň.",
+        "reseller_client_days_alert": "📅 **Müşderi Gün Duýduryşy**\n\n📱 Müşderi: `{username}`\n🗓 Geçen günler: {days_used} / {total_days} gün\n⏳ Galan günler: {days_remaining}\n🚦 Meýilnama möhletiniň {percent}% ulanylan\n\nMeýilnamany täzelemek üçin müşderi bilen habarlaşyň.",
         "reseller_no_configs_created": "📦 Siz heniz müşderiler üçin sazlama döretmediňiz.",
         "reseller_customers_list_header": "📦 **Meniň Müşderilerim**\n\nJemi döredilen sazlamalar: {total}\nSahypa {page}/{total_pages}\n\n{entries}"
     }
