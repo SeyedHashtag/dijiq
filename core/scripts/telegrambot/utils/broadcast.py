@@ -46,8 +46,7 @@ def create_broadcast_markup():
     markup.row('👥 All Paid Users', '✅ Active Paid Users')
     markup.row('⛔️ Expired Paid Users', '🧪 All Test Users')
     markup.row('✅🧪 Active Test Users', '⛔️🧪 Expired Test Users')
-    markup.row('🔄 Reset Failed Exclusions')
-    markup.row('🔙 Back', '❌ Cancel')
+    markup.row('🔄 Reset Failed Exclusions', '❌ Cancel')
     return markup
 
 def get_user_ids(filter_type):
@@ -178,10 +177,6 @@ def start_broadcast(message):
     bot.register_next_step_handler(msg, process_broadcast_target)
 
 def process_broadcast_target(message):
-    if message.text == "🔙 Back":
-        bot.reply_to(message, "Returning to main menu.", reply_markup=create_main_markup(is_admin=True))
-        return
-
     if message.text == "❌ Cancel":
         bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
         return
