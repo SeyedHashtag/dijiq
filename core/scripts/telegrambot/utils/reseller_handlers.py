@@ -97,7 +97,10 @@ def reseller_panel(message):
             types.InlineKeyboardButton(get_button_text(language, "generate_config"), callback_data="reseller:generate"),
             types.InlineKeyboardButton(get_button_text(language, "my_debt"), callback_data="reseller:debt")
         )
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"))
+        markup.add(
+            types.InlineKeyboardButton(get_button_text(language, "reseller_stats"), callback_data="reseller:stats"),
+            types.InlineKeyboardButton(get_button_text(language, "reseller_my_customers"), callback_data="reseller:my_customers:0")
+        )
         debt = float(reseller_data.get('debt', 0.0))
         debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
         intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}")
@@ -609,6 +612,97 @@ def handle_reseller_stats(call):
         reply_markup=markup,
         parse_mode="Markdown"
     )
+
+RESELLER_CUSTOMERS_PAGE_SIZE = 5
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:my_customers:"))
+def handle_reseller_my_customers(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_approved_reseller_data(user_id)
+
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+
+    try:
+        page = int(call.data.split(":")[2])
+    except (IndexError, ValueError):
+        page = 0
+
+    configs = list(reseller_data.get('configs', []))
+    # Show newest configs first
+    configs = list(reversed(configs))
+    total = len(configs)
+
+    if total == 0:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+        bot.edit_message_text(
+            get_message_text(language, "reseller_no_configs_created"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+        return
+
+    total_pages = max(1, (total + RESELLER_CUSTOMERS_PAGE_SIZE - 1) // RESELLER_CUSTOMERS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+
+    start = page * RESELLER_CUSTOMERS_PAGE_SIZE
+    end = start + RESELLER_CUSTOMERS_PAGE_SIZE
+    page_configs = configs[start:end]
+
+    entries_lines = []
+    for i, cfg in enumerate(page_configs, start=start + 1):
+        username = cfg.get('username', 'N/A')
+        gb = cfg.get('gb', '?')
+        days = cfg.get('days', '?')
+        price = cfg.get('price', 0)
+        timestamp = cfg.get('timestamp', 'N/A')
+        entries_lines.append(
+            f"{i}. `{username}`\n"
+            f"   📊 {gb} GB | 📅 {days}d | 💰 ${float(price):.2f}\n"
+            f"   🕒 {timestamp}"
+        )
+
+    entries_text = "\n\n".join(entries_lines)
+
+    msg = get_message_text(language, "reseller_customers_list_header").format(
+        total=total,
+        page=page + 1,
+        total_pages=total_pages,
+        entries=entries_text
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(
+            types.InlineKeyboardButton("⬅️", callback_data=f"reseller:my_customers:{page - 1}")
+        )
+    nav_buttons.append(
+        types.InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="reseller:my_customers_noop")
+    )
+    if page < total_pages - 1:
+        nav_buttons.append(
+            types.InlineKeyboardButton("➡️", callback_data=f"reseller:my_customers:{page + 1}")
+        )
+    if nav_buttons:
+        markup.row(*nav_buttons)
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+
+    bot.edit_message_text(
+        msg,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
+def handle_reseller_customers_noop(call):
+    bot.answer_callback_query(call.id)
 
 # Admin Management Handlers
 

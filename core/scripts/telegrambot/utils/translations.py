@@ -34,6 +34,7 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 My Debt",
         "settle_debt": "💳 Settle Debt",
         "reseller_stats": "📊 My Stats",
+        "reseller_my_customers": "📦 My Customers",
         "manage_resellers": "💼 Manage Resellers",
         "set_wallet": "💼 Set Wallet",
         "withdraw": "💸 Withdraw",
@@ -61,6 +62,7 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 بدهی من",
         "settle_debt": "💳 تسویه حساب",
         "reseller_stats": "📊 آمار من",
+        "reseller_my_customers": "📦 مشتریان من",
         "manage_resellers": "💼 مدیریت نمایندگان",
         "set_wallet": "💼 تنظیم کیف پول",
         "withdraw": "💸 برداشت",
@@ -88,6 +90,7 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 Meniň bergim",
         "settle_debt": "💳 Bergini üzmek",
         "reseller_stats": "📊 Statistikam",
+        "reseller_my_customers": "📦 Meniň Müşderilerim",
         "manage_resellers": "💼 Satyjylary dolandyrmak",
         "set_wallet": "💼 Gapjyk sora",
         "withdraw": "💸 Çykarmak",
@@ -115,6 +118,7 @@ BUTTON_TRANSLATIONS = {
         "my_debt": "💰 Мой долг",
         "settle_debt": "💳 Погасить долг",
         "reseller_stats": "📊 Моя статистика",
+        "reseller_my_customers": "📦 Мои клиенты",
         "manage_resellers": "💼 Управление реселлерами",
         "set_wallet": "💼 Установить кошелек",
         "withdraw": "💸 Вывести",
@@ -276,7 +280,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_status_suspended": "Suspended",
         "enter_reseller_customer_username": "Please enter a username for your customer (max 8 characters, alphanumeric):",
         "invalid_username_format": "Invalid username. It must be alphanumeric and max 8 characters.",
-        "traffic_quota_alert": "⚠️ **Traffic Usage Alert**\n\n📱 Username: `{username}`\n📊 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Status: {percent}% of your quota used\n\nPlease consider purchasing a new plan if needed."
+        "traffic_quota_alert": "⚠️ **Traffic Usage Alert**\n\n📱 Username: `{username}`\n📊 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Status: {percent}% of your quota used\n\nPlease consider purchasing a new plan if needed.",
+        "reseller_no_configs_created": "📦 You haven't created any customer configs yet.",
+        "reseller_customers_list_header": "📦 **My Customers**\n\nTotal configs created: {total}\nPage {page}/{total_pages}\n\n{entries}"
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\n🚀 **Как это работает:**\n1️⃣ Приглашайте друзей по вашей уникальной ссылке.\n2️⃣ Получайте **20%** комиссии со всех их покупок!\n3️⃣ Выводите заработанные средства на свой **Litecoin (LTC)** кошелек при достижении **$2.00**.\n\n📊 **Ваша статистика:**\n👥 Приглашенные пользователи: {count}\n💰 Общий заработок: ${total_earnings:.2f}\n💳 Доступный баланс: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -419,7 +425,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_status_suspended": "Приостановлен",
         "enter_reseller_customer_username": "Пожалуйста, введите имя пользователя для вашего клиента (макс. 8 символов, буквенно-цифровые):",
         "invalid_username_format": "Неверное имя пользователя. Оно должно быть буквенно-цифровым и содержать не более 8 символов.",
-        "traffic_quota_alert": "⚠️ **Предупреждение о трафике**\n\n📱 Имя пользователя: `{username}`\n📊 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% вашего лимита\n\nПри необходимости приобретите новый план."
+        "traffic_quota_alert": "⚠️ **Предупреждение о трафике**\n\n📱 Имя пользователя: `{username}`\n📊 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% вашего лимита\n\nПри необходимости приобретите новый план.",
+        "reseller_no_configs_created": "📦 Вы ещё не создали ни одного конфига для клиентов.",
+        "reseller_customers_list_header": "📦 **Мои клиенты**\n\nВсего создано конфигов: {total}\nСтраница {page}/{total_pages}\n\n{entries}"
     },
     "fa": {
         "referral_stats": "💰 **کسب درآمد کریپتویی**\n\n🚀 **نحوه کار:**\n۱️⃣ دوستان خود را با لینک اختصاصی خود دعوت کنید.\n۲️⃣ **۲۰٪** کمیسیون از تمام خریدهای آنها دریافت کنید!\n۳️⃣ درآمد خود را پس از رسیدن به **۲ دلار** به کیف پول **لایت‌کوین (LTC)** خود برداشت کنید.\n\n📊 **آمار شما:**\n👥 کاربران دعوت شده: {count}\n💰 مجموع درآمد: ${total_earnings:.2f}\n💳 موجودی قابل برداشت: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
@@ -562,7 +570,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_status_suspended": "معلق",
         "enter_reseller_customer_username": "لطفاً یک نام کاربری برای مشتری خود وارد کنید (حداکثر 8 کاراکتر، حروف و اعداد):",
         "invalid_username_format": "نام کاربری نامعتبر است. باید حروف و اعداد باشد و حداکثر 8 کاراکتر.",
-        "traffic_quota_alert": "⚠️ **هشدار مصرف ترافیک**\n\n📱 نام کاربری: `{username}`\n📊 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 استفاده: {percent}% از سهمیه شما\n\nدر صورت نیاز، لطفاً یک طرح جدید خریداری کنید."
+        "traffic_quota_alert": "⚠️ **هشدار مصرف ترافیک**\n\n📱 نام کاربری: `{username}`\n📊 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 استفاده: {percent}% از سهمیه شما\n\nدر صورت نیاز، لطفاً یک طرح جدید خریداری کنید.",
+        "reseller_no_configs_created": "📦 شما هنوز هیچ کانفیگی برای مشتریان ایجاد نکرده‌اید.",
+        "reseller_customers_list_header": "📦 **مشتریان من**\n\nمجموع کانفیگ‌های ایجاد شده: {total}\nصفحه {page}/{total_pages}\n\n{entries}"
     },
     "tk": {
         "referral_stats": "💰 **Kripto Gazan**\n\n🚀 **Bu nähili işleýär:**\n1️⃣ Dostlaryňyzy ýörite baglanyşygyňyz bilen çagyryň.\n2️⃣ Olaryň ähli satyn almalaryndan **20%** komissiýa alyň!\n3️⃣ Gazananlaryňyzy **$2.00** ýetende **Litecoin (LTC)** gapjygyňyza çykaryň.\n\n📊 **Siziň Statistikaňyz:**\n👥 Çagyrylan Ulanyjylar: {count}\n💰 Jemi Gazanç: ${total_earnings:.2f}\n💳 Elýeterli Balans: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
@@ -705,7 +715,9 @@ MESSAGE_TRANSLATIONS = {
         "admin_status_suspended": "Togtadylan",
         "enter_reseller_customer_username": "Müşderiňiz üçin ulanyjy adyny giriziň (maksimum 8 simwol, harp we san):",
         "invalid_username_format": "Nädogry ulanyjy ady. Harp we san bolmaly we iň köp 8 simwol bolmaly.",
-        "traffic_quota_alert": "⚠️ **Trafik Ulanyş Duýduryşy**\n\n📱 Ulanyjy ady: `{username}`\n📊 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Ulanylyş: {percent}%\n\nZerur bolsa täze meýilnama satyn alyň."
+        "traffic_quota_alert": "⚠️ **Trafik Ulanyş Duýduryşy**\n\n📱 Ulanyjy ady: `{username}`\n📊 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Ulanylyş: {percent}%\n\nZerur bolsa täze meýilnama satyn alyň.",
+        "reseller_no_configs_created": "📦 Siz heniz müşderiler üçin sazlama döretmediňiz.",
+        "reseller_customers_list_header": "📦 **Meniň Müşderilerim**\n\nJemi döredilen sazlamalar: {total}\nSahypa {page}/{total_pages}\n\n{entries}"
     }
 }
 
