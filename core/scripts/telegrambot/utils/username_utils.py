@@ -64,15 +64,9 @@ def build_user_note(
     note_text="",
     timestamp=None,
 ):
-    """Build note payload as a compact JSON string."""
-    payload = {
-        "username": str(username),
-        "traffic_limit": int(traffic_limit),
-        "expiration_days": int(expiration_days),
-        "password": str(password or ""),
-        "creation_date": str(creation_date or ""),
-        "unlimited": bool(unlimited),
-        "note": str(note_text or ""),
-        "timestamp": timestamp or format_username_timestamp(),
-    }
-    return json.dumps(payload, ensure_ascii=False)
+    """Build note as a formatted string."""
+    ts = timestamp or format_username_timestamp()
+    note_str = str(note_text or "")
+    if note_str:
+        return f"t{ts}n{note_str}e-"
+    return f"t{ts}ne-"
