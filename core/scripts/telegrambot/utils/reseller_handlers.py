@@ -1040,26 +1040,18 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
             page = active_page
             visible, total_pages, page = _paginate(items, page)
 
-            if not visible:
+            for rid, data in visible:
                 markup.add(
                     types.InlineKeyboardButton(
-                        get_message_text(language, "admin_reseller_no_entries"),
-                        callback_data="admin_reseller_ui:noop",
+                        get_message_text(language, "admin_reseller_row_compact").format(
+                            status_icon=_admin_status_icon(status),
+                            user_id=rid,
+                            username_display=_username_display(language, data),
+                            debt=_safe_float(data.get("debt", 0.0)),
+                        ),
+                        callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
                     )
                 )
-            else:
-                for rid, data in visible:
-                    markup.add(
-                        types.InlineKeyboardButton(
-                            get_message_text(language, "admin_reseller_row_compact").format(
-                                status_icon=_admin_status_icon(status),
-                                user_id=rid,
-                                username_display=_username_display(language, data),
-                                debt=_safe_float(data.get("debt", 0.0)),
-                            ),
-                            callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
-                        )
-                    )
             if total_pages > 1:
                 nav_buttons = []
                 if page > 0:
