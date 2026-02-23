@@ -2,7 +2,7 @@ import json
 import os
 import datetime
 from telebot import types
-from utils.command import bot
+from utils.command import bot, is_admin
 from utils.common import create_main_markup
 from utils.api_client import APIClient
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
@@ -35,23 +35,76 @@ def save_test_configs(configs):
 
 def has_used_test_config(user_id):
     configs = load_test_configs()
-    return str(user_id) in configs
+    key = str(user_id)
+    if key not in configs:
+        return False
+    entry = configs[key]
+    reset_at_str = entry.get('reset_at')
+    if reset_at_str:
+        # User was reset — check if they have received a new test config since the reset
+        used_at_str = entry.get('used_at')
+        if used_at_str:
+            try:
+                used_at = datetime.datetime.strptime(used_at_str, '%Y-%m-%d %H:%M:%S')
+                reset_at = datetime.datetime.strptime(reset_at_str, '%Y-%m-%d %H:%M:%S')
+                # If used_at is older than reset_at, the user has not yet collected their new test config
+                if used_at <= reset_at:
+                    return False
+            except Exception:
+                return False
+    return True
 
 def mark_test_config_used(user_id, username=None, language=None, telegram_username=None):
     configs = load_test_configs()
-    entry = {
-        'used_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'telegram_id': user_id
-    }
+    key = str(user_id)
+    # Preserve existing history fields (reset_at, reset_count, original used_at, etc.)
+    existing = configs.get(key, {})
+    entry = dict(existing)
+    entry['used_at'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    entry['telegram_id'] = user_id
     if username:
         entry['username'] = username
     if language:
         entry['language'] = language
     if telegram_username:
         entry['telegram_username'] = telegram_username
-        
-    configs[str(user_id)] = entry
+
+    configs[key] = entry
     save_test_configs(configs)
+
+
+def reset_test_users(mode='expired'):
+    """
+    Mark test users as eligible to receive a new test config.
+
+    mode='expired'  — only reset users whose test config has expired (>30 days old)
+    mode='all'      — reset every user in the database
+
+    Returns the number of users that were reset.
+    """
+    configs = load_test_configs()
+    now = datetime.datetime.now()
+    reset_ts = now.strftime('%Y-%m-%d %H:%M:%S')
+    count = 0
+    for key, entry in configs.items():
+        # Skip users who are already in a reset-eligible state
+        if not has_used_test_config(key):
+            continue
+        if mode == 'expired':
+            used_at_str = entry.get('used_at')
+            if not used_at_str:
+                continue
+            try:
+                used_at = datetime.datetime.strptime(used_at_str, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                continue
+            if (now - used_at).days < 30:
+                continue  # Config still active, skip
+        entry['reset_at'] = reset_ts
+        entry['reset_count'] = entry.get('reset_count', 0) + 1
+        count += 1
+    save_test_configs(configs)
+    return count
 
 @bot.message_handler(func=lambda message: any(
     message.text == translations["test_config"] 
@@ -213,3 +266,85 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 parse_mode="Markdown"
             )
         return False
+
+
+# ─── Admin: Reset Test Accounts ───────────────────────────────────────────────
+
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧪 Manage Test Accounts')
+def reset_test_accounts_menu(message):
+    """Admin command: show reset mode selection."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("⏰ Reset Expired Only", callback_data="reset_test:expired"),
+        types.InlineKeyboardButton("♻️ Reset All", callback_data="reset_test:all"),
+    )
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"))
+    bot.reply_to(
+        message,
+        "🔄 *Reset Test Account Eligibility*\n\n"
+        "Choose which users to reset:\n"
+        "• *Expired Only* — users whose 30-day test config has already expired\n"
+        "• *Reset All* — every user in the database (including active ones)\n\n"
+        "The `test_configs.json` database is *kept intact* for broadcasting.",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reset_test:"))
+def handle_reset_test_selection(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    mode = call.data.split(":", 1)[1]
+
+    if mode == "cancel":
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            "❌ Reset cancelled.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+
+    # Ask for confirmation before proceeding
+    label = "expired users only" if mode == "expired" else "ALL users"
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Confirm", callback_data=f"reset_test_confirm:{mode}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"),
+    )
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"⚠️ You are about to reset test eligibility for *{label}*.\n\n"
+        "The original database entries will be preserved. Reset users will be able to request a new test config.",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reset_test_confirm:"))
+def handle_reset_test_confirm(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    mode = call.data.split(":", 1)[1]
+    bot.answer_callback_query(call.id)
+
+    count = reset_test_users(mode=mode)
+
+    label = "expired" if mode == "expired" else "all"
+    bot.edit_message_text(
+        f"✅ *Reset complete!*\n\n"
+        f"• Mode: `{label}`\n"
+        f"• Users reset: *{count}*\n\n"
+        f"These users can now request a new test config. "
+        f"Their entries in the database are preserved for broadcasting.",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown"
+    )

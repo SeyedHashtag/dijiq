@@ -13,7 +13,7 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         markup.row('💾 Backup Server', '💳 Payment Settings')
         markup.row('📝 Edit Plans', '📢 Broadcast Message')
         markup.row('📞 Edit Support', '🔄 Update Keyboards')
-        markup.row('💼 Manage Resellers')
+        markup.row('💼 Manage Resellers', '🧪 Manage Test Accounts')
     else:
         # Non-admin menu with translations
         markup.row(
