@@ -1,5 +1,5 @@
 from telebot import types
-from utils.command import bot, is_admin
+from utils.command import bot, is_admin, ADMIN_USER_IDS
 from utils.common import create_main_markup
 from utils.api_client import APIClient
 import re
@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta
 
 BROADCAST_FAILED_USERS_PATH = "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
+BROADCAST_LOGS_DIR = "/etc/dijiq/core/scripts/telegrambot/broadcast_logs"
 
 
 def load_failed_broadcast_users():
@@ -40,6 +41,98 @@ def reset_failed_broadcast_users():
             os.remove(BROADCAST_FAILED_USERS_PATH)
     except Exception as e:
         print(f"Failed to reset broadcast failed users list: {str(e)}")
+
+
+def generate_broadcast_log(target_label, total_users, success_users, failed_by_error, excluded_count, broadcast_text, admin_id):
+    """
+    Generate a formatted log file for the broadcast and return the file path.
+    
+    Args:
+        target_label: The target category label
+        total_users: Total number of users targeted
+        success_users: List of user IDs that received the message successfully
+        failed_by_error: Dict mapping error messages to lists of user IDs
+        excluded_count: Number of users excluded from future broadcasts
+        broadcast_text: The broadcast message content
+        admin_id: The admin ID who initiated the broadcast
+    
+    Returns:
+        Path to the generated log file
+    """
+    timestamp = datetime.now()
+    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    timestamp_file = timestamp.strftime("%Y%m%d_%H%M%S")
+    
+    # Create logs directory if it doesn't exist
+    os.makedirs(BROADCAST_LOGS_DIR, exist_ok=True)
+    
+    # Generate log filename
+    log_filename = f"broadcast_{timestamp_file}_admin{admin_id}.txt"
+    log_filepath = os.path.join(BROADCAST_LOGS_DIR, log_filename)
+    
+    # Calculate counts
+    success_count = len(success_users)
+    fail_count = sum(len(users) for users in failed_by_error.values())
+    
+    # Build log content
+    lines = []
+    lines.append("═" * 50)
+    lines.append("         BROADCAST LOG REPORT")
+    lines.append("═" * 50)
+    lines.append(f"Timestamp: {timestamp_str}")
+    lines.append(f"Target: {target_label}")
+    lines.append(f"Total Users: {total_users}")
+    lines.append("")
+    lines.append("═" * 50)
+    lines.append("           SUMMARY")
+    lines.append("═" * 50)
+    lines.append(f"✅ Successful: {success_count}")
+    lines.append(f"❌ Failed: {fail_count}")
+    lines.append(f"🚫 Excluded: {excluded_count}")
+    lines.append("")
+    
+    # Detailed Results Section
+    lines.append("═" * 50)
+    lines.append("         DETAILED RESULTS")
+    lines.append("═" * 50)
+    lines.append("")
+    
+    # Successful users
+    if success_users:
+        lines.append(f"✅ SUCCESSFUL ({success_count} users):")
+        # Format user IDs in rows of 10 for readability
+        success_str = ", ".join(str(uid) for uid in success_users)
+        lines.append(success_str)
+        lines.append("")
+    
+    # Failed users grouped by error
+    if failed_by_error:
+        for error_msg, user_list in failed_by_error.items():
+            count = len(user_list)
+            lines.append(f"❌ FAILED - {error_msg} ({count} users):")
+            user_str = ", ".join(str(uid) for uid in user_list)
+            lines.append(user_str)
+            lines.append("")
+    
+    # Broadcast message section
+    lines.append("═" * 50)
+    lines.append("         BROADCAST MESSAGE")
+    lines.append("═" * 50)
+    # Truncate message if too long for the log
+    if len(broadcast_text) > 1000:
+        lines.append(broadcast_text[:1000] + "... (truncated)")
+    else:
+        lines.append(broadcast_text)
+    lines.append("")
+    lines.append("═" * 50)
+    lines.append("              END OF REPORT")
+    lines.append("═" * 50)
+    
+    # Write to file
+    with open(log_filepath, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
+    
+    return log_filepath
 
 
 def create_broadcast_markup():
@@ -258,9 +351,12 @@ def send_broadcast(message, target, target_label):
             reply_markup=create_main_markup(is_admin=True)
         )
         return
+    
+    admin_id = message.from_user.id
         
-    success_count = 0
-    fail_count = 0
+    # Track users by result
+    success_users = []  # List of user IDs that received the message
+    failed_by_error = {}  # Dict: error_message -> list of user IDs
     failed_user_ids = load_failed_broadcast_users()
     newly_failed_user_ids = set()
     
@@ -269,27 +365,71 @@ def send_broadcast(message, target, target_label):
     for user_id in user_ids:
         try:
             bot.send_message(int(user_id), broadcast_text)
-            success_count += 1
+            success_users.append(str(user_id))
             time.sleep(0.05)  # Rate limit: ~20 messages/second to avoid Telegram throttling
         except Exception as e:
-            print(f"Failed to send broadcast to {user_id}: {str(e)}")
-            fail_count += 1
+            error_msg = str(e)
+            # Simplify common error messages for grouping
+            if "blocked" in error_msg.lower():
+                error_key = "Bot was blocked by the user"
+            elif "deactivated" in error_msg.lower():
+                error_key = "User is deactivated"
+            elif "chat not found" in error_msg.lower():
+                error_key = "Chat not found"
+            elif "user is bot" in error_msg.lower():
+                error_key = "User is a bot"
+            elif "forbidden" in error_msg.lower():
+                error_key = "Forbidden - User unavailable"
+            elif "bad request" in error_msg.lower():
+                error_key = "Bad Request"
+            else:
+                error_key = error_msg[:50]  # Truncate long error messages
+            
+            # Add user ID to the appropriate error group
+            if error_key not in failed_by_error:
+                failed_by_error[error_key] = []
+            failed_by_error[error_key].append(str(user_id))
             newly_failed_user_ids.add(str(user_id))
+            print(f"Failed to send broadcast to {user_id}: {error_msg}")
             
         # Update status every 10 users
-        if (success_count + fail_count) % 10 == 0:
+        processed = len(success_users) + sum(len(u) for u in failed_by_error.values())
+        if processed % 10 == 0:
             try:
                 bot.edit_message_text(
-                    f"Broadcasting: {success_count + fail_count}/{len(user_ids)} completed...",
+                    f"Broadcasting: {processed}/{len(user_ids)} completed...",
                     chat_id=status_msg.chat.id,
                     message_id=status_msg.message_id
                 )
             except:
                 pass
     
+    # Update failed users list
     if newly_failed_user_ids:
         failed_user_ids.update(newly_failed_user_ids)
         save_failed_broadcast_users(failed_user_ids)
+    
+    # Calculate counts
+    success_count = len(success_users)
+    fail_count = sum(len(users) for users in failed_by_error.values())
+    
+    # Generate and send log file
+    log_filepath = generate_broadcast_log(
+        target_label=target_label,
+        total_users=len(user_ids),
+        success_users=success_users,
+        failed_by_error=failed_by_error,
+        excluded_count=len(failed_user_ids),
+        broadcast_text=broadcast_text,
+        admin_id=admin_id
+    )
+    
+    # Build summary for admin message
+    error_summary = ""
+    if failed_by_error:
+        error_summary = "\n\n📋 Error Breakdown:"
+        for error_msg, users in failed_by_error.items():
+            error_summary += f"\n  • {error_msg}: {len(users)}"
 
     final_report = (
         "📢 Broadcast Completed\n\n"
@@ -298,6 +438,20 @@ def send_broadcast(message, target, target_label):
         f"✅ Successful: {success_count}\n"
         f"❌ Failed: {fail_count}\n"
         f"🚫 Excluded For Next Broadcasts: {len(failed_user_ids)}"
+        f"{error_summary}\n\n"
+        f"📄 Detailed log file sent below."
     )
     
     bot.reply_to(message, final_report, reply_markup=create_main_markup(is_admin=True))
+    
+    # Send the log file to the admin
+    try:
+        with open(log_filepath, 'rb') as log_file:
+            bot.send_document(
+                message.chat.id,
+                log_file,
+                caption=f"📊 Broadcast Log - {target_label}"
+            )
+    except Exception as e:
+        print(f"Failed to send broadcast log file: {str(e)}")
+        bot.reply_to(message, f"⚠️ Could not send log file: {str(e)}")
