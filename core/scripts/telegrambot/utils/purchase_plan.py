@@ -266,8 +266,8 @@ def handle_crypto_payment(call, plan_gb):
         plans = load_plans()
         if plan_gb in plans:
             plan = plans[plan_gb]
-            if plan.get(\'target\', \'both\') == \'reseller\':
-                bot.answer_callback_query(call.id, text=\'This plan is for resellers only.\')
+            if plan.get('target', 'both') == 'reseller':
+                bot.answer_callback_query(call.id, text='This plan is for resellers only.')
                 return
             payment_handler = CryptoPayment()
             payment_response = payment_handler.create_payment(
