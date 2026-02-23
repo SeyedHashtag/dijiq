@@ -177,22 +177,8 @@ def handle_purchase_selection(call):
             card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
             card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
             
-            # Determine if card-to-card should be shown based on mode
-            show_card_to_card = False
-            if card_to_card_configured:
-                if card_to_card_mode == 'on':
-                    show_card_to_card = True
-                elif card_to_card_mode == 'previous_customers':
-                    try:
-                        user_payments = get_user_payments(user_id)
-                        has_completed = any(
-                            p.get('status') == 'completed' for p in user_payments.values()
-                        )
-                        show_card_to_card = has_completed
-                    except Exception as e:
-                        logging.getLogger('dijiq.payments').warning(
-                            f"Failed to determine previous customer status for user {user_id}: {e}"
-                        )
+            # Always show card-to-card if configured
+            show_card_to_card = bool(card_to_card_configured)
             
             markup = types.InlineKeyboardMarkup(row_width=1)
             methods_count = 0
@@ -249,6 +235,22 @@ def handle_payment_method_selection(call, data=None):
         if method == 'crypto':
             handle_crypto_payment(call, plan_gb)
         elif method == 'card_to_card':
+            env_path = os.path.join(os.path.dirname(__file__), '.env')
+            load_dotenv(env_path)
+            card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
+            if card_to_card_mode == 'previous_customers':
+                try:
+                    user_payments = get_user_payments(user_id)
+                    has_completed = any(
+                        p.get('status') == 'completed' for p in user_payments.values()
+                    )
+                    if not has_completed:
+                        bot.answer_callback_query(call.id, text=get_message_text(language, "card_to_card_second_purchase"), show_alert=False)
+                        return
+                except Exception as e:
+                    logging.getLogger('dijiq.payments').warning(
+                        f"Failed to determine previous customer status for user {user_id}: {e}"
+                    )
             handle_card_to_card_payment(call, plan_gb)
         else:
             bot.answer_callback_query(call.id, text=get_message_text(language, "invalid_payment_method"))
