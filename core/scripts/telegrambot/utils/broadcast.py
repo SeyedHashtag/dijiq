@@ -5,6 +5,7 @@ from utils.api_client import APIClient
 import re
 import json
 import os
+import time
 from datetime import datetime, timedelta
 
 BROADCAST_FAILED_USERS_PATH = "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
@@ -269,6 +270,7 @@ def send_broadcast(message, target, target_label):
         try:
             bot.send_message(int(user_id), broadcast_text)
             success_count += 1
+            time.sleep(0.05)  # Rate limit: ~20 messages/second to avoid Telegram throttling
         except Exception as e:
             print(f"Failed to send broadcast to {user_id}: {str(e)}")
             fail_count += 1
