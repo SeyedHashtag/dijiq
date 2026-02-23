@@ -92,17 +92,17 @@ def _create_reseller_username(api_client, user_id):
     return allocate_username("r", user_id, extract_existing_usernames(users))
 
 
-def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_username):
+def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_username, unlimited=False):
     username = _create_reseller_username(api_client, user_id)
     note_payload = build_user_note(
         username=username,
         traffic_limit=gb,
         expiration_days=days,
-        unlimited=False,
+        unlimited=unlimited,
         note_text=chosen_username,
         timestamp=format_username_timestamp(),
     )
-    result = api_client.add_user(username, int(gb), int(days), note=note_payload)
+    result = api_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
     if result is None:
         result = api_client.add_user(username, int(gb), int(days))
         if result is not None:
@@ -316,7 +316,8 @@ def handle_reseller_buy(call):
         'state': 'waiting_reseller_username',
         'gb': gb,
         'days': days,
-        'price': price
+        'price': price,
+        'unlimited': plan.get('unlimited', False)
     }
     
     bot.edit_message_text(
@@ -358,7 +359,8 @@ def handle_reseller_confirm_buy(call):
         'state': 'waiting_reseller_username',
         'gb': gb,
         'days': days,
-        'price': price
+        'price': price,
+        'unlimited': plan.get('unlimited', False)
     }
 
     bot.edit_message_text(
@@ -395,6 +397,7 @@ def handle_reseller_username_input(message):
     gb = data['gb']
     days = data['days']
     price = data['price']
+    unlimited = data.get('unlimited', False)
     
     # Create user
     api_client = APIClient()
@@ -404,6 +407,7 @@ def handle_reseller_username_input(message):
         gb,
         days,
         chosen_username,
+        unlimited=unlimited,
     )
     
     if result:
