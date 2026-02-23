@@ -9,6 +9,13 @@ from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode
 import io
+import logging
+from utils.username_utils import (
+    allocate_username,
+    extract_existing_usernames,
+    build_user_note,
+    format_username_timestamp,
+)
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 
@@ -45,16 +52,6 @@ def mark_test_config_used(user_id, username=None, language=None, telegram_userna
         
     configs[str(user_id)] = entry
     save_test_configs(configs)
-
-def format_datetime_string():
-    """Generate a datetime string for the username"""
-    now = datetime.datetime.now()
-    return now.strftime("%Y%m%d%H%M%S")
-
-def create_username_from_user_id(user_id):
-    """Create a username for test config using the required format: test{telegram numeric id}t{exact date and time}"""
-    time_str = format_datetime_string()
-    return f"test{user_id}t{time_str}"
 
 @bot.message_handler(func=lambda message: any(
     message.text == translations["test_config"] 
@@ -123,15 +120,38 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
     if has_used_test_config(user_id):
         return False
 
-    # Create a username for the test config
-    username = create_username_from_user_id(user_id)
-
     # Constants for test config
     TEST_TRAFFIC_GB = 1  # 1 GB
     TEST_DAYS = 30       # 30 days
 
     api_client = APIClient()
-    result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
+    existing_usernames = extract_existing_usernames(api_client.get_users())
+    username = allocate_username("t", user_id, existing_usernames)
+    timestamp = format_username_timestamp()
+    note_payload = build_user_note(
+        username=username,
+        traffic_limit=TEST_TRAFFIC_GB,
+        expiration_days=TEST_DAYS,
+        unlimited=True,
+        note_text="test_config",
+        timestamp=timestamp,
+    )
+
+    result = api_client.add_user(
+        username,
+        TEST_TRAFFIC_GB,
+        TEST_DAYS,
+        unlimited=True,
+        note=note_payload,
+    )
+    if result is None:
+        result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
+        if result is not None:
+            logging.getLogger("dijiq.usernames").warning(
+                "Created test user without note fallback. user_id=%s username=%s",
+                user_id,
+                username,
+            )
 
     if result:
         # Mark the test config as used (save username as well)

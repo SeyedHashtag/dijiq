@@ -100,14 +100,17 @@ class APIClient:
         """Return a single user's detail dict, or ``None`` if not found / on failure."""
         return self._get(f"{self.users_endpoint}{username}")
 
-    def add_user(self, username: str, traffic_limit: int, expiration_days: int, unlimited: bool = False):
+    def add_user(self, username: str, traffic_limit: int, expiration_days: int, unlimited: bool = False, note: str | None = None):
         """Create a new user. Returns response data or ``None`` on failure."""
-        return self._post(self.users_endpoint, {
+        payload = {
             "username": username,
             "traffic_limit": traffic_limit,
             "expiration_days": expiration_days,
             "unlimited": unlimited,
-        })
+        }
+        if note is not None:
+            payload["note"] = note
+        return self._post(self.users_endpoint, payload)
 
     def update_user(self, username: str, data: dict):
         """Patch one or more fields of an existing user.

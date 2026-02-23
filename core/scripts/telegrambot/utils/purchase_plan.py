@@ -24,6 +24,12 @@ import os
 from dotenv import load_dotenv
 import uuid
 import logging
+from utils.username_utils import (
+    allocate_username,
+    build_user_note,
+    extract_existing_usernames,
+    format_username_timestamp,
+)
 
 # New: Global dictionary for user states
 user_data = {}
@@ -36,15 +42,37 @@ def _debt_state_label_key(debt_state):
         return 'debt_state_warning'
     return 'debt_state_active'
 
-def format_datetime_string():
-    """Generate a datetime string in the format required for username"""
-    now = datetime.datetime.now()
-    return now.strftime("%Y%m%d%H%M%S")
+def create_sale_username(api_client, user_id):
+    users = api_client.get_users()
+    return allocate_username("s", user_id, extract_existing_usernames(users))
 
-def create_username_from_user_id(user_id):
-    """Create a username using the required format: sell{telegram numeric id}t{exact date and time}"""
-    time_str = format_datetime_string()
-    return f"sell{user_id}t{time_str}"
+
+def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
+    username = create_sale_username(api_client, user_id)
+    note_payload = build_user_note(
+        username=username,
+        traffic_limit=plan_gb,
+        expiration_days=days,
+        unlimited=unlimited,
+        note_text="sale",
+        timestamp=format_username_timestamp(),
+    )
+    result = api_client.add_user(
+        username,
+        int(plan_gb),
+        int(days),
+        unlimited=unlimited,
+        note=note_payload,
+    )
+    if result is None:
+        result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+        if result is not None:
+            logging.getLogger("dijiq.usernames").warning(
+                "Created sale user without note fallback. user_id=%s username=%s",
+                user_id,
+                username,
+            )
+    return username, result
 
 def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, payment_method, telegram_username=None):
     """Send a notification to all admins about a successful payment"""
@@ -495,9 +523,14 @@ def handle_admin_approval(call):
                  else:
                      unlimited = False
             
-            username = create_username_from_user_id(user_to_notify)
             api_client = APIClient()
-            result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+            username, result = create_sale_user_with_note(
+                api_client,
+                user_to_notify,
+                plan_gb,
+                days,
+                unlimited,
+            )
             if result:
                 update_payment_status(payment_id, 'completed')
                 add_referral_reward(payment_record['user_id'], payment_record['price'])
@@ -613,9 +646,14 @@ def handle_check_payment(call):
                 else:
                     unlimited = False
         
-        username = create_username_from_user_id(user_id)
         api_client = APIClient()
-        result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+        username, result = create_sale_user_with_note(
+            api_client,
+            user_id,
+            plan_gb,
+            days,
+            unlimited,
+        )
         if result:
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
             add_referral_reward(user_id, price)
@@ -703,9 +741,14 @@ def process_payment_webhook(request_data):
                     else:
                         unlimited = False
                 
-                username = create_username_from_user_id(user_id)
                 api_client = APIClient()
-                result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+                username, result = create_sale_user_with_note(
+                    api_client,
+                    user_id,
+                    plan_gb,
+                    days,
+                    unlimited,
+                )
                 if result:
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     telegram_username = None
@@ -811,9 +854,14 @@ def check_pending_payments():
                             else:
                                 unlimited = False
                         
-                        username = create_username_from_user_id(user_id)
                         api_client = APIClient()
-                        add_result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+                        username, add_result = create_sale_user_with_note(
+                            api_client,
+                            user_id,
+                            plan_gb,
+                            days,
+                            unlimited,
+                        )
                         
                         if add_result:
                             telegram_username = None

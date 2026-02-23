@@ -4,8 +4,8 @@ import uuid
 import qrcode
 import io
 import os
-import datetime
 import re
+import logging
 from dotenv import load_dotenv
 
 from utils.command import bot, ADMIN_USER_IDS, is_admin
@@ -20,6 +20,12 @@ from utils.api_client import APIClient
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.purchase_plan import user_data
+from utils.username_utils import (
+    allocate_username,
+    build_user_note,
+    extract_existing_usernames,
+    format_username_timestamp,
+)
 
 def _get_approved_reseller_data(user_id):
     reseller_data = get_reseller_data(user_id)
@@ -54,6 +60,7 @@ def _has_active_purchased_config(user_id):
         return False
 
     paid_patterns = (
+        re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),  # current purchased usernames
         re.compile(rf"^{user_id}t"),      # legacy purchased usernames
         re.compile(rf"^sell{user_id}t"),  # current purchased usernames
     )
@@ -78,6 +85,33 @@ def _has_active_purchased_config(user_id):
                 return True
 
     return False
+
+
+def _create_reseller_username(api_client, user_id):
+    users = api_client.get_users()
+    return allocate_username("r", user_id, extract_existing_usernames(users))
+
+
+def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_username):
+    username = _create_reseller_username(api_client, user_id)
+    note_payload = build_user_note(
+        username=username,
+        traffic_limit=gb,
+        expiration_days=days,
+        unlimited=False,
+        note_text=chosen_username,
+        timestamp=format_username_timestamp(),
+    )
+    result = api_client.add_user(username, int(gb), int(days), note=note_payload)
+    if result is None:
+        result = api_client.add_user(username, int(gb), int(days))
+        if result is not None:
+            logging.getLogger("dijiq.usernames").warning(
+                "Created reseller user without note fallback. reseller_id=%s username=%s",
+                user_id,
+                username,
+            )
+    return username, result
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -362,13 +396,15 @@ def handle_reseller_username_input(message):
     days = data['days']
     price = data['price']
     
-    # Generate final username: reseller{reseller_id}t{timestamp}{chosen_username}
-    timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-    username = f"reseller{user_id}t{timestamp}{chosen_username}"
-    
     # Create user
     api_client = APIClient()
-    result = api_client.add_user(username, int(gb), int(days))
+    username, result = _create_reseller_user_with_note(
+        api_client,
+        user_id,
+        gb,
+        days,
+        chosen_username,
+    )
     
     if result:
         # Add debt

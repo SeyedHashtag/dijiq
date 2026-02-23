@@ -33,40 +33,41 @@ def my_configs(message):
     user_configs = []
 
     try:
-        # The patterns are {telegram_id}t{timestamp} and sell{telegram_id}t{timestamp}
-        pattern = f"^{user_id}t"
-        sell_pattern = f"^sell{user_id}t"
+        # Supported patterns include new formats (s{id}, t{id}) and legacy timestamped formats.
+        paid_patterns = (
+            re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),
+            re.compile(rf"^{user_id}t"),
+            re.compile(rf"^sell{user_id}t"),
+        )
+        test_patterns = (
+            re.compile(rf"^t{user_id}[a-z]*$", re.IGNORECASE),
+            re.compile(rf"^test{user_id}t"),
+        )
 
         # Handle both list and dictionary responses from API
         if isinstance(users, dict):
             # If users is a dictionary, iterate through items
             for username, user_data in users.items():
-                if username and (re.match(pattern, username) or re.match(sell_pattern, username)):
+                if username and any(pattern.match(username) for pattern in paid_patterns):
                     user_configs.append((username, user_data))
 
             # Check if we found any configs for this user
             if not user_configs:
-                # Also check for test configs: test{telegram_id}t{timestamp}
-                test_pattern = f"^test{user_id}t"
-
                 for username, user_data in users.items():
-                    if username and re.match(test_pattern, username):
+                    if username and any(pattern.match(username) for pattern in test_patterns):
                         user_configs.append((username, user_data))
         elif isinstance(users, list):
             # If users is a list, iterate through items
             for user in users:
                 username = user.get('username')
-                if username and (re.match(pattern, username) or re.match(sell_pattern, username)):
+                if username and any(pattern.match(username) for pattern in paid_patterns):
                     user_configs.append((username, user))
 
             # Check if we found any configs for this user
             if not user_configs:
-                # Also check for test configs: test{telegram_id}t{timestamp}
-                test_pattern = f"^test{user_id}t"
-
                 for user in users:
                     username = user.get('username')
-                    if username and re.match(test_pattern, username):
+                    if username and any(pattern.match(username) for pattern in test_patterns):
                         user_configs.append((username, user))
 
         if not user_configs:

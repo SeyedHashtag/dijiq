@@ -49,6 +49,27 @@ def create_broadcast_markup():
     markup.row('🔄 Reset Failed Exclusions', '❌ Cancel')
     return markup
 
+
+def _extract_paid_telegram_id(username):
+    """Extract paid-user Telegram ID from new and legacy username formats."""
+    if not username:
+        return None
+
+    match = re.match(r'^s(\d+)[a-z]*$', username, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    match = re.match(r'^(\d+)t', username)
+    if match:
+        return match.group(1)
+
+    match = re.match(r'^sell(\d+)t', username)
+    if match:
+        return match.group(1)
+
+    return None
+
+
 def get_user_ids(filter_type):
     def get_active_paid_user_ids():
         active_paid_ids = set()
@@ -58,14 +79,12 @@ def get_user_ids(filter_type):
             return active_paid_ids
 
         def collect_active_paid(username, details):
-            if not username:
-                return
-            match = re.match(r'^(?:sell)?(\d+)t', username)
-            if not match:
+            telegram_id = _extract_paid_telegram_id(username)
+            if telegram_id is None:
                 return
             blocked = details.get('blocked', False) if isinstance(details, dict) else False
             if not blocked:
-                active_paid_ids.add(match.group(1))
+                active_paid_ids.add(telegram_id)
 
         if isinstance(users, dict):
             for username, details in users.items():
@@ -120,7 +139,7 @@ def get_user_ids(filter_type):
             print(f"Error reading test configs: {str(e)}")
             return []
     
-    # For regular users (format: {telegram_id}t{timestamp} or sell{telegram_id}t{timestamp})
+    # For regular paid users (new and legacy formats).
     api_client = APIClient()
     
     # Get all users using API
@@ -135,11 +154,10 @@ def get_user_ids(filter_type):
             if not username or filter_type not in ['all', 'active', 'expired']:
                 return
 
-            match = re.match(r'^(?:sell)?(\d+)t', username)
-            if not match:
+            telegram_id = _extract_paid_telegram_id(username)
+            if telegram_id is None:
                 return
 
-            telegram_id = match.group(1)
             blocked = details.get('blocked', False) if isinstance(details, dict) else False
 
             if filter_type == 'all':

@@ -39,6 +39,14 @@ def _extract_telegram_id(username):
     if not username:
         return None
 
+    match = re.match(r'^s(\d+)[a-z]*$', username, flags=re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+
+    match = re.match(r'^t(\d+)[a-z]*$', username, flags=re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+
     match = re.match(r'^(\d+)t', username)
     if match:
         return int(match.group(1))
@@ -76,12 +84,16 @@ def _iter_users(users):
 def _extract_reseller_id(username):
     """Extract the reseller's Telegram ID from a reseller-created config username.
 
-    Reseller configs use the format: reseller{reseller_id}t{timestamp}{chosen_username}
+    Reseller configs use new format r{reseller_id}[suffix] and legacy
+    format reseller{reseller_id}t{timestamp}{chosen_username}.
     Returns the reseller's integer Telegram ID, or None if the username is not a
     reseller-created config.
     """
     if not username:
         return None
+    match = re.match(r'^r(\d+)[a-z]*$', username, flags=re.IGNORECASE)
+    if match:
+        return int(match.group(1))
     match = re.match(r'^reseller(\d+)t', username)
     if match:
         return int(match.group(1))
