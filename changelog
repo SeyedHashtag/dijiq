@@ -1,3 +1,6 @@
+## v1.12.29
+🐛 Fix string escaping in handle_crypto_payment function for clarity
+
 ## v1.12.28
 ♻️ Simplify admin reseller list markup generation by removing unnecessary conditional checks
 ✨ Add reseller settlement threshold functionality and update related debt logic
@@ -6,6 +9,3 @@
 ✨ Add Telegram bot handlers for comprehensive reseller management (requests, approvals, debt tracking, configuration generation)
 ✨ Add username utility functions for Telegram bot (unique allocation, extraction, metadata formatting)
 ✨ Add receipt prompt message ID to user data for payment handling
-
-## v1.12.27
-✨ Enhance username handling
