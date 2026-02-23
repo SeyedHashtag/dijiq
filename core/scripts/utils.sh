@@ -50,7 +50,7 @@ check_core_version() {
 check_version() {
     local_version=$(cat $LOCALVERSION)
     latest_version=$(curl -s $LATESTVERSION)
-    latest_changelog=$(curl -s $LASTESTCHANGE)
+    latest_changelog=$(curl -s $LASTESTCHANGE | awk '/^## v/ {count++; if (count > 2) exit} {print}')
 
     if version_greater_equal "$local_version" "$latest_version"; then
         echo -e "Panel Version: ${cyan}$local_version${NC}"
