@@ -355,7 +355,8 @@ def handle_card_to_card_payment(call, plan_gb):
         user_data[user_id] = {
             'state': 'waiting_receipt',
             'plan_gb': plan_gb,
-            'price': price
+            'price': price,
+            'receipt_prompt_message_id': call.message.message_id,
         }
     except Exception as e:
         user_id = call.from_user.id
@@ -367,6 +368,9 @@ def process_receipt_photo(message, plan_gb, price):
     try:
         user_id = message.from_user.id
         language = get_user_language(user_id)
+        receipt_prompt_message_id = None
+        if user_id in user_data:
+            receipt_prompt_message_id = user_data[user_id].get('receipt_prompt_message_id')
         file_id = message.photo[-1].file_id
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -436,6 +440,15 @@ def process_receipt_photo(message, plan_gb, price):
                     )
             except Exception as e:
                 print(f"Failed to send notification to admin {admin_id}: {str(e)}")
+        if receipt_prompt_message_id:
+            try:
+                bot.edit_message_reply_markup(
+                    chat_id=message.chat.id,
+                    message_id=receipt_prompt_message_id,
+                    reply_markup=None
+                )
+            except Exception:
+                pass
         bot.reply_to(message, get_message_text(language, "receipt_submitted"))
         # New: Clear state after processing
         if user_id in user_data:

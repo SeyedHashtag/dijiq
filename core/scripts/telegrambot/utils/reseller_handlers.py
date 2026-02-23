@@ -602,7 +602,8 @@ def handle_reseller_payment(call):
             'plan_gb': 'Settlement',
             'price': amount_to_pay,
             'type': 'settlement',
-            'cancel_callback': 'reseller:cancel'
+            'cancel_callback': 'reseller:cancel',
+            'receipt_prompt_message_id': call.message.message_id,
         }
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:cancel")
