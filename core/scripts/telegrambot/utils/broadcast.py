@@ -43,16 +43,16 @@ def reset_failed_broadcast_users():
         print(f"Failed to reset broadcast failed users list: {str(e)}")
 
 
-def generate_broadcast_log(target_label, total_users, success_users, failed_by_error, excluded_count, broadcast_text, admin_id):
+def generate_broadcast_log(target_label, total_users, success_users, failed_by_error, excluded_by_reason, broadcast_text, admin_id):
     """
     Generate a formatted log file for the broadcast and return the file path.
     
     Args:
         target_label: The target category label
-        total_users: Total number of users targeted
+        total_users: Total number of users in the raw pool (before exclusions)
         success_users: List of user IDs that received the message successfully
         failed_by_error: Dict mapping error messages to lists of user IDs
-        excluded_count: Number of users excluded from future broadcasts
+        excluded_by_reason: Dict mapping exclusion reason -> list of user IDs
         broadcast_text: The broadcast message content
         admin_id: The admin ID who initiated the broadcast
     
@@ -73,6 +73,8 @@ def generate_broadcast_log(target_label, total_users, success_users, failed_by_e
     # Calculate counts
     success_count = len(success_users)
     fail_count = sum(len(users) for users in failed_by_error.values())
+    excluded_count = sum(len(users) for users in excluded_by_reason.values())
+    sent_count = success_count + fail_count
     
     # Build log content
     lines = []
@@ -81,14 +83,15 @@ def generate_broadcast_log(target_label, total_users, success_users, failed_by_e
     lines.append("═" * 50)
     lines.append(f"Timestamp: {timestamp_str}")
     lines.append(f"Target: {target_label}")
-    lines.append(f"Total Users: {total_users}")
+    lines.append(f"Pool Size (before exclusions): {total_users}")
+    lines.append(f"Actually Sent To: {sent_count}")
     lines.append("")
     lines.append("═" * 50)
     lines.append("           SUMMARY")
     lines.append("═" * 50)
     lines.append(f"✅ Successful: {success_count}")
     lines.append(f"❌ Failed: {fail_count}")
-    lines.append(f"🚫 Excluded: {excluded_count}")
+    lines.append(f"🚫 Excluded (skipped): {excluded_count}")
     lines.append("")
     
     # Detailed Results Section
@@ -100,7 +103,6 @@ def generate_broadcast_log(target_label, total_users, success_users, failed_by_e
     # Successful users
     if success_users:
         lines.append(f"✅ SUCCESSFUL ({success_count} users):")
-        # Format user IDs in rows of 10 for readability
         success_str = ", ".join(str(uid) for uid in success_users)
         lines.append(success_str)
         lines.append("")
@@ -111,6 +113,15 @@ def generate_broadcast_log(target_label, total_users, success_users, failed_by_e
             count = len(user_list)
             lines.append(f"❌ FAILED - {error_msg} ({count} users):")
             user_str = ", ".join(str(uid) for uid in user_list)
+            lines.append(user_str)
+            lines.append("")
+    
+    # Excluded users grouped by reason
+    if excluded_by_reason:
+        for reason, user_list in excluded_by_reason.items():
+            count = len(user_list)
+            lines.append(f"🚫 EXCLUDED - {reason} ({count} users):")
+            user_str = ", ".join(str(uid) for uid in sorted(user_list))
             lines.append(user_str)
             lines.append("")
     
@@ -196,10 +207,11 @@ def get_user_ids(filter_type):
     
     if filter_type in ['all_test', 'active_test', 'expired_test']:
         user_ids = set()
+        excluded_by_reason = {}
         try:
             if not os.path.exists(test_config_path):
                 print(f"Test config file not found: {test_config_path}")
-                return []
+                return [], {}
             with open(test_config_path, 'r') as f:
                 test_users = json.load(f)
             now = datetime.now()
@@ -220,18 +232,25 @@ def get_user_ids(filter_type):
                 elif filter_type == 'expired_test' and expired:
                     user_ids.add(telegram_id)
 
+            total_pool = set(user_ids)  # snapshot before exclusions
+
             # Exclude users who already have an active paid account.
             active_paid_ids = get_active_paid_user_ids()
-            if active_paid_ids:
-                user_ids -= active_paid_ids
+            paid_overlap = user_ids & active_paid_ids
+            if paid_overlap:
+                user_ids -= paid_overlap
+                excluded_by_reason["Has active paid account"] = list(paid_overlap)
 
             failed_user_ids = load_failed_broadcast_users()
-            if failed_user_ids:
-                user_ids -= failed_user_ids
-            return list(user_ids)
+            failed_overlap = user_ids & failed_user_ids
+            if failed_overlap:
+                user_ids -= failed_overlap
+                excluded_by_reason["Previously failed (blocked/deactivated)"] = list(failed_overlap)
+
+            return list(user_ids), excluded_by_reason
         except Exception as e:
             print(f"Error reading test configs: {str(e)}")
-            return []
+            return [], {}
     
     # For regular paid users (new and legacy formats).
     api_client = APIClient()
@@ -272,12 +291,15 @@ def get_user_ids(filter_type):
                 process_user_record(item.get('username'), item)
         
         failed_user_ids = load_failed_broadcast_users()
-        if failed_user_ids:
-            user_ids -= failed_user_ids
-        return list(user_ids)
+        excluded_by_reason = {}
+        failed_overlap = user_ids & failed_user_ids
+        if failed_overlap:
+            user_ids -= failed_overlap
+            excluded_by_reason["Previously failed (blocked/deactivated)"] = list(failed_overlap)
+        return list(user_ids), excluded_by_reason
     except Exception as e:
         print(f"Error getting user IDs: {str(e)}")
-        return []
+        return [], {}
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📢 Broadcast Message')
 def start_broadcast(message):
@@ -342,9 +364,10 @@ def send_broadcast(message, target, target_label):
         )
         return
         
-    user_ids = get_user_ids(target)
+    user_ids, excluded_by_reason = get_user_ids(target)
+    total_pool = len(user_ids) + sum(len(v) for v in excluded_by_reason.values())
     
-    if not user_ids:
+    if not user_ids and not excluded_by_reason:
         bot.reply_to(
             message,
             "No users found in the selected category.",
@@ -352,15 +375,38 @@ def send_broadcast(message, target, target_label):
         )
         return
     
+    if not user_ids:
+        # All users were excluded — generate a log so admin can see who was excluded
+        admin_id = message.from_user.id
+        log_filepath = generate_broadcast_log(
+            target_label=target_label,
+            total_users=total_pool,
+            success_users=[],
+            failed_by_error={},
+            excluded_by_reason=excluded_by_reason,
+            broadcast_text=broadcast_text,
+            admin_id=admin_id
+        )
+        bot.reply_to(
+            message,
+            f"⚠️ All {total_pool} users in this category are currently excluded (blocked/deactivated or have active paid accounts). No messages sent.\n\n📄 Exclusion log sent below.",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+        try:
+            with open(log_filepath, 'rb') as log_file:
+                bot.send_document(message.chat.id, log_file, caption=f"📊 Exclusion Log - {target_label}")
+        except Exception as e:
+            print(f"Failed to send exclusion log file: {str(e)}")
+        return
+
     admin_id = message.from_user.id
         
     # Track users by result
     success_users = []  # List of user IDs that received the message
     failed_by_error = {}  # Dict: error_message -> list of user IDs
-    failed_user_ids = load_failed_broadcast_users()
     newly_failed_user_ids = set()
     
-    status_msg = bot.reply_to(message, f"Broadcasting message to {len(user_ids)} users...")
+    status_msg = bot.reply_to(message, f"Broadcasting message to {len(user_ids)} users (pool: {total_pool} total, {total_pool - len(user_ids)} pre-excluded)...")
     
     for user_id in user_ids:
         try:
@@ -406,8 +452,9 @@ def send_broadcast(message, target, target_label):
     
     # Update failed users list
     if newly_failed_user_ids:
-        failed_user_ids.update(newly_failed_user_ids)
-        save_failed_broadcast_users(failed_user_ids)
+        existing_failed = load_failed_broadcast_users()
+        existing_failed.update(newly_failed_user_ids)
+        save_failed_broadcast_users(existing_failed)
     
     # Calculate counts
     success_count = len(success_users)
@@ -416,29 +463,37 @@ def send_broadcast(message, target, target_label):
     # Generate and send log file
     log_filepath = generate_broadcast_log(
         target_label=target_label,
-        total_users=len(user_ids),
+        total_users=total_pool,
         success_users=success_users,
         failed_by_error=failed_by_error,
-        excluded_count=len(failed_user_ids),
+        excluded_by_reason=excluded_by_reason,
         broadcast_text=broadcast_text,
         admin_id=admin_id
     )
     
     # Build summary for admin message
+    excluded_total = sum(len(v) for v in excluded_by_reason.values())
     error_summary = ""
     if failed_by_error:
         error_summary = "\n\n📋 Error Breakdown:"
         for error_msg, users in failed_by_error.items():
             error_summary += f"\n  • {error_msg}: {len(users)}"
+    
+    excluded_summary = ""
+    if excluded_by_reason:
+        excluded_summary = "\n\n🚫 Exclusion Breakdown:"
+        for reason, users in excluded_by_reason.items():
+            excluded_summary += f"\n  • {reason}: {len(users)}"
 
     final_report = (
         "📢 Broadcast Completed\n\n"
         f"Target: {target_label}\n"
-        f"Total Users: {len(user_ids)}\n"
+        f"Pool Size: {total_pool}\n"
         f"✅ Successful: {success_count}\n"
         f"❌ Failed: {fail_count}\n"
-        f"🚫 Excluded For Next Broadcasts: {len(failed_user_ids)}"
-        f"{error_summary}\n\n"
+        f"🚫 Pre-excluded (skipped): {excluded_total}"
+        f"{error_summary}"
+        f"{excluded_summary}\n\n"
         f"📄 Detailed log file sent below."
     )
     
