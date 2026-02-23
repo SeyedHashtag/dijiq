@@ -38,8 +38,10 @@ def check_version():
         
         if not version_greater_equal(local_version, latest_version):
             print(f"Latest Version: {latest_version}")
-            print(f"{latest_version} Version Change Log:")
-            print(latest_changelog)
+            print(f"Recent Change Log (last 2 versions):")
+            sections = [s for s in latest_changelog.split("## v") if s.strip()]
+            for section in sections[:2]:
+                print(f"## v{section.strip()}")
     except Exception as e:
         print(f"Error checking version: {e}", file=sys.stderr)
         sys.exit(1)

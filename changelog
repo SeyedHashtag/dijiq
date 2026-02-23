@@ -1,3 +1,9 @@
+## v1.12.30
+✨ Enhance test account management with reset functionality and admin commands
+✨ Add detailed logging for broadcast messages and handle error reporting
+✨ SSH menu only shows last 2 versions in changelog when prompting user to update.
+🐛 Implement rate limiting in send_broadcast function to prevent Telegram throttling
+
 ## v1.12.29
 🐛 Fix string escaping in handle_crypto_payment function for clarity
 
