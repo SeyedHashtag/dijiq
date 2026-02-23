@@ -1,8 +1,11 @@
+## v1.12.28
+♻️ Simplify admin reseller list markup generation by removing unnecessary conditional checks
+✨ Add reseller settlement threshold functionality and update related debt logic
+✨ Implement Telegram bot plan purchase flow with payment method selection and translation utilities
+✨ Add modules for user plan purchasing, reseller management, and plan editing functionality
+✨ Add Telegram bot handlers for comprehensive reseller management (requests, approvals, debt tracking, configuration generation)
+✨ Add username utility functions for Telegram bot (unique allocation, extraction, metadata formatting)
+✨ Add receipt prompt message ID to user data for payment handling
+
 ## v1.12.27
 ✨ Enhance username handling
-
-## v1.12.26
-✨ Improve admin reseller list markup with expandable sections and better pagination handling
-✨ Enhance reseller customer handling by supporting media message deletion and fresh text message sending
-✨ Update customer buttons in reseller handler to use numbered inline buttons in a single row
-♻️ Update broadcast markup to remove 'Back' option and streamline navigation
