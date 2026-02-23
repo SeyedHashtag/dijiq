@@ -17,6 +17,7 @@ def create_payment_method_selection_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Card to Card (Iran)"))
     markup.row(types.KeyboardButton("🔀 Card to Card Mode"), types.KeyboardButton("💱 Exchange Rate"))
+    markup.row(types.KeyboardButton("🏢 Reseller Settlement Threshold"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -42,6 +43,8 @@ def process_payment_method_selection(message):
         setup_card_to_card_mode(message)
     elif message.text == "💱 Exchange Rate":
         setup_exchange_rate(message)
+    elif message.text == "🏢 Reseller Settlement Threshold":
+        setup_reseller_settlement_threshold(message)
     else:
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
@@ -297,3 +300,67 @@ def handle_card_to_card_mode_selection(call):
         )
     except Exception as e:
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+def setup_reseller_settlement_threshold(message):
+    load_dotenv(env_path, override=True)
+    current_threshold = os.getenv('RESELLER_SETTLEMENT_THRESHOLD', '2.0')
+    
+    status_text = "Current Reseller Settlement Threshold:\n"
+    status_text += f"Amount: {current_threshold} USD\n\n"
+    status_text += "Please enter the new threshold amount in USD (e.g., 2.0 or 5.5):"
+    
+    msg = bot.reply_to(
+        message,
+        status_text,
+        reply_markup=create_cancel_markup()
+    )
+    bot.register_next_step_handler(msg, process_reseller_settlement_threshold)
+
+def process_reseller_settlement_threshold(message):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    threshold_str = message.text.strip()
+    
+    if not threshold_str:
+        msg = bot.reply_to(
+            message,
+            "Threshold cannot be empty. Please enter a valid number:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_reseller_settlement_threshold)
+        return
+
+    try:
+        threshold_val = float(threshold_str)
+        if threshold_val < 0:
+            raise ValueError("Threshold cannot be negative.")
+    except ValueError:
+        msg = bot.reply_to(
+            message,
+            "Invalid amount. Please enter a valid positive number:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_reseller_settlement_threshold)
+        return
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+        
+        set_key(env_path, 'RESELLER_SETTLEMENT_THRESHOLD', str(threshold_val))
+        load_dotenv(env_path, override=True)
+        
+        bot.reply_to(
+            message,
+            "✅ Reseller Settlement Threshold has been updated successfully!",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"❌ Error updating threshold: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
