@@ -180,14 +180,12 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
     api_client = APIClient()
     existing_usernames = extract_existing_usernames(api_client.get_users())
     username = allocate_username("t", user_id, existing_usernames)
-    timestamp = format_username_timestamp()
     note_payload = build_user_note(
         username=username,
         traffic_limit=TEST_TRAFFIC_GB,
         expiration_days=TEST_DAYS,
         unlimited=True,
         note_text="test_config",
-        timestamp=timestamp,
     )
 
     result = api_client.add_user(

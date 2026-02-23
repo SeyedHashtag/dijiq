@@ -55,7 +55,6 @@ def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
         expiration_days=days,
         unlimited=unlimited,
         note_text="sale",
-        timestamp=format_username_timestamp(),
     )
     result = api_client.add_user(
         username,

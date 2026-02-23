@@ -100,7 +100,6 @@ def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_userna
         expiration_days=days,
         unlimited=unlimited,
         note_text=chosen_username,
-        timestamp=format_username_timestamp(),
     )
     result = api_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
     if result is None:

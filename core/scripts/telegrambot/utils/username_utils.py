@@ -7,6 +7,11 @@ def format_username_timestamp():
     return datetime.datetime.now().strftime("%y%m%d%H%M%S")
 
 
+def format_readable_timestamp():
+    """Return human-readable timestamp in YYYY-MM-DD HH:MM format."""
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
 def extract_existing_usernames(users_payload):
     """Collect usernames from API responses (dict or list forms)."""
     usernames = set()
@@ -64,9 +69,7 @@ def build_user_note(
     note_text="",
     timestamp=None,
 ):
-    """Build note as a formatted string."""
-    ts = timestamp or format_username_timestamp()
-    note_str = str(note_text or "")
-    if note_str:
-        return f"t{ts}n{note_str}e-"
-    return f"t{ts}ne-"
+    """Build note as a human-readable formatted string."""
+    ts = timestamp or format_readable_timestamp()
+    note_str = str(note_text or "N/A")
+    return f"📅 {ts} | 📝 {note_str} | ✏️ "
