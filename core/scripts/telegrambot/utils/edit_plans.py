@@ -33,7 +33,13 @@ def create_plans_markup():
     plans_text = "📋 Current Plans:\n\n"
     for i, (gb, details) in enumerate(sorted_plans, 1):
         unlimited_text = " (Unlimited)" if details.get("unlimited") else " (Single User)"
-        plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d{unlimited_text}\n"
+        target = details.get("target", "both")
+        target_text = ""
+        if target == "reseller":
+            target_text = " [Reseller Only]"
+        elif target == "customer":
+            target_text = " [Customer Only]"
+        plans_text += f"{i}. {gb}GB - ${details['price']} - {details['days']}d{unlimited_text}{target_text}\n"
     
     # Create numbered buttons
     buttons = []
@@ -98,11 +104,13 @@ def handle_plan_select(call):
             )
             
             unlimited_text = "Yes" if plan.get("unlimited") else "Single User"
+            target = plan.get("target", "both").capitalize()
             bot.edit_message_text(
                 f"📦 Plan {gb}GB:\n\n"
                 f"💰 Price: ${plan['price']}\n"
                 f"📅 Days: {plan['days']}\n"
-                f"♾️ Unlimited Users: {unlimited_text}\n\n"
+                f"♾️ Unlimited Users: {unlimited_text}\n"
+                f"🎯 Target: {target}\n\n"
                 "Select an action:",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -137,6 +145,7 @@ def handle_edit_plan(call):
             types.InlineKeyboardButton("💰 Price", callback_data=f"edit_field:price:{gb}"),
             types.InlineKeyboardButton("📦 Size (GB)", callback_data=f"edit_field:gb:{gb}"),
             types.InlineKeyboardButton("📅 Days", callback_data=f"edit_field:days:{gb}"),
+            types.InlineKeyboardButton("🎯 Target", callback_data=f"edit_field:target:{gb}"),
             types.InlineKeyboardButton("⬅️ Back", callback_data=f"select_plan:{index}")
         )
         
@@ -167,6 +176,19 @@ def handle_edit_field(call):
         elif field == "days":
             msg = bot.send_message(call.message.chat.id, f"Enter new duration (days) for {gb}GB plan:")
             bot.register_next_step_handler(msg, process_update_days, gb)
+        elif field == "target":
+            markup = types.InlineKeyboardMarkup(row_width=3)
+            markup.add(
+                types.InlineKeyboardButton("Resellers", callback_data=f"update_target:reseller:{gb}"),
+                types.InlineKeyboardButton("Customers", callback_data=f"update_target:customer:{gb}"),
+                types.InlineKeyboardButton("Both", callback_data=f"update_target:both:{gb}")
+            )
+            bot.edit_message_text(
+                f"Select new target audience for {gb}GB plan:",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
             
     except Exception as e:
         print(f"DEBUG: Error in handle_edit_field: {str(e)}")
@@ -236,6 +258,34 @@ def process_update_days(message, gb):
              bot.reply_to(message, "❌ Plan not found.")
     except ValueError:
         bot.reply_to(message, "❌ Invalid duration. Please enter a valid number.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("update_target:"))
+def handle_update_target(call):
+    if not is_admin(call.from_user.id):
+        return
+    try:
+        bot.answer_callback_query(call.id)
+        _, target, gb = call.data.split(':')
+        
+        plans = load_plans()
+        if str(gb) in plans:
+            plans[str(gb)]['target'] = target
+            save_plans(plans)
+            
+            bot.edit_message_text(
+                f"✅ Target updated to {target.capitalize()}",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("⬅️ Back to Plan", callback_data=f"select_plan:{gb}"))
+            bot.send_message(call.message.chat.id, "Select an action:", reply_markup=markup)
+        else:
+             bot.edit_message_text("❌ Plan not found.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    except Exception as e:
+        print(f"DEBUG: Error in handle_update_target: {str(e)}")
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
 
 
@@ -370,17 +420,45 @@ def process_unlimited_choice(call):
     try:
         bot.answer_callback_query(call.id)
         _, choice, gb, price, days = call.data.split(':')
-        gb, price, days = int(gb), float(price), int(days)
         
+        markup = types.InlineKeyboardMarkup(row_width=3)
+        markup.add(
+            types.InlineKeyboardButton("Resellers", callback_data=f"newplan_target:reseller:{choice}:{gb}:{price}:{days}"),
+            types.InlineKeyboardButton("Customers", callback_data=f"newplan_target:customer:{choice}:{gb}:{price}:{days}"),
+            types.InlineKeyboardButton("Both", callback_data=f"newplan_target:both:{choice}:{gb}:{price}:{days}")
+        )
+        
+        bot.edit_message_text(
+            "👥 Who is this plan for?",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        bot.reply_to(
+            call.message,
+            f"? Error: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("newplan_target:"))
+def process_newplan_target(call):
+    if not is_admin(call.from_user.id):
+        return
+    try:
+        bot.answer_callback_query(call.id)
+        _, target, choice, gb, price, days = call.data.split(':')
+        gb, price, days = int(gb), float(price), int(days)
         unlimited = choice == 'yes'
         
         plans = load_plans()
-        plans[str(gb)] = {"price": price, "days": days, "unlimited": unlimited}
+        plans[str(gb)] = {"price": price, "days": days, "unlimited": unlimited, "target": target}
         save_plans(plans)
         
         unlimited_text = "Yes" if unlimited else "No"
         bot.edit_message_text(
-            f"✅ Plan saved successfully:\n{gb}GB - ${price} - {days} days\nUnlimited Users: {unlimited_text}",
+            f"✅ Plan saved successfully:\n{gb}GB - ${price} - {days} days\nUnlimited Users: {unlimited_text}\nTarget: {target.capitalize()}",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )

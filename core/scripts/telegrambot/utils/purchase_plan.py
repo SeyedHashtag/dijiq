@@ -113,6 +113,8 @@ def show_plans(chat_id, user_id, message_id=None):
     sorted_plans = sorted(plans.items(), key=lambda x: int(x[0]))
     markup = types.InlineKeyboardMarkup(row_width=1)
     for gb, details in sorted_plans:
+        if details.get('target', 'both') == 'reseller':
+            continue
         unlimited_text = get_message_text(language, "unlimited_users") if details.get("unlimited") else get_message_text(language, "single_user")
         button_text = f"{gb} GB - ${details['price']} - {details['days']} " + get_message_text(language, "days") + f"{unlimited_text}"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"purchase:{gb}"))
@@ -157,6 +159,9 @@ def handle_purchase_selection(call):
         plans = load_plans()
         if plan_gb in plans:
             plan = plans[plan_gb]
+            if plan.get('target', 'both') == 'reseller':
+                bot.answer_callback_query(call.id, text='This plan is for resellers only.')
+                return
             unlimited_text = "Yes" if plan.get("unlimited") else "No"
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
@@ -259,6 +264,9 @@ def handle_crypto_payment(call, plan_gb):
         plans = load_plans()
         if plan_gb in plans:
             plan = plans[plan_gb]
+            if plan.get(\'target\', \'both\') == \'reseller\':
+                bot.answer_callback_query(call.id, text=\'This plan is for resellers only.\')
+                return
             payment_handler = CryptoPayment()
             payment_response = payment_handler.create_payment(
                 plan['price'], plan_gb, user_id

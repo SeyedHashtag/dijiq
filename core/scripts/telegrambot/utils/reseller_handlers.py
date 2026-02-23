@@ -251,6 +251,8 @@ def handle_reseller_generate(call):
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     for gb, details in sorted_plans:
+        if details.get("target", "both") == "customer":
+            continue
         original_price = float(details['price'])
         discounted_price = original_price * 0.8
         button_text = f"{gb} GB - ${discounted_price:.2f} (20% OFF) - {details['days']} days"
@@ -288,6 +290,10 @@ def handle_reseller_buy(call):
         return
         
     plan = plans[gb]
+    if plan.get("target", "both") == "customer":
+        bot.answer_callback_query(call.id, "This plan is for customers only.")
+        return
+        
     original_price = float(plan['price'])
     price = original_price * 0.8  # 20% discount for resellers
     days = plan['days']
@@ -351,6 +357,10 @@ def handle_reseller_confirm_buy(call):
         return
 
     plan = plans[gb]
+    if plan.get("target", "both") == "customer":
+        bot.answer_callback_query(call.id, "This plan is for customers only.")
+        return
+        
     original_price = float(plan['price'])
     price = original_price * 0.8
     days = plan['days']
