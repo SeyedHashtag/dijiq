@@ -1,10 +1,8 @@
+## v1.12.27
+✨ Enhance username handling
+
 ## v1.12.26
 ✨ Improve admin reseller list markup with expandable sections and better pagination handling
 ✨ Enhance reseller customer handling by supporting media message deletion and fresh text message sending
 ✨ Update customer buttons in reseller handler to use numbered inline buttons in a single row
 ♻️ Update broadcast markup to remove 'Back' option and streamline navigation
-
-## v1.12.25
-✨ Add 'Back' option to broadcast markup and handle back navigation in process_broadcast_target
-✨ Enhance reseller customer management with detailed config display and navigation
-🌐 Add reseller client traffic and days alert messages in translations
