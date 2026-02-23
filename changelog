@@ -1,3 +1,7 @@
+## v1.12.31
+✨ Update timestamp formatting in user note functions for improved readability
+✨ Enhance broadcast logging with detailed exclusion reasons and improved summaries
+
 ## v1.12.30
 ✨ Enhance test account management with reset functionality and admin commands
 ✨ Add detailed logging for broadcast messages and handle error reporting
