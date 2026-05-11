@@ -37,4 +37,4 @@ pydantic-settings==2.14.0
 annotated-types==0.7.0
 
 # SSL / ACME management
-certbot==5.5.0
+certbot==5.6.0
