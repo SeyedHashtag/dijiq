@@ -19,7 +19,7 @@ pypng==0.20220715.0
 pillow==12.2.0
 
 # Cache / misc
-propcache==0.4.1
+propcache==0.5.2
 
 # Database
 pymongo==4.17.0
