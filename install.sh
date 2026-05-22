@@ -132,7 +132,7 @@ install_mongodb() {
 
 
 install_packages() {
-    local REQUIRED_PACKAGES=("jq" "curl" "pwgen" "python3" "python3-pip" "python3-venv" "bc" "zip" "unzip" "lsof" "gnupg" "lsb-release")
+    local REQUIRED_PACKAGES=("jq" "curl" "python3" "python3-pip" "python3-venv" "bc" "zip" "unzip" "lsof" "gnupg" "lsb-release")
     local MISSING_PACKAGES=()
     
     log_info "Checking required packages..."
