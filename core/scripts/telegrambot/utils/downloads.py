@@ -8,15 +8,11 @@ from utils.language import get_user_language
 DOWNLOAD_LINKS = {
     "karing": {
         "ios": "https://apps.apple.com/ca/app/karing/id6472431552",
-        "android": "https://github.com/KaringX/karing/releases/download/v1.2.14.1701/karing_1.2.14.1701_android_arm64-v8a.apk",
-        "windows": "https://github.com/KaringX/karing/releases/download/v1.2.14.1701/karing_1.2.14.1701_windows_x64.exe"
-    },
-    "singbox": {
-        "android": "https://github.com/SagerNet/sing-box/releases/download/v1.13.0-rc.3/SFA-1.13.0-rc.3-arm64-v8a.apk"
+        "windows": "https://github.com/KaringX/karing/releases/download/v1.2.18.2102/karing_1.2.18.2102_windows_x64.exe"
     },
     "v2ray": {
-        "windows": "https://github.com/2dust/v2rayN/releases/download/7.17.3/v2rayN-windows-64-SelfContained.zip",
-        "android": "https://github.com/2dust/v2rayNG/releases/download/2.0.9/v2rayNG_2.0.9_arm64-v8a.apk"
+        "windows": "https://github.com/2dust/v2rayN/releases/download/7.22.3/v2rayN-windows-64.zip",
+        "android": "https://github.com/2dust/v2rayNG/releases/download/2.2.0/v2rayNG_2.2.0_arm64-v8a.apk"
     }
 }
 
