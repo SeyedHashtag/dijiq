@@ -1,3 +1,7 @@
+## v1.12.33
+🐛 Add Markdown escaping for reseller details in admin view
+⬆️ Bump certifi from 2026.1.4 to 2026.5.20
+
 ## v1.12.32
 🐛 Prefer IPv4 URLs when generating QR codes for configuration links
 ✨ Update Karing and v2ray application download links
