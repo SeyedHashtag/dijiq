@@ -19,4 +19,4 @@ qrcode==8.2
 requests==2.33.0
 typing_extensions==4.15.0
 urllib3==2.7.0
-yarl==1.22.0
+yarl==1.23.0
