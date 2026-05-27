@@ -455,7 +455,7 @@ def handle_reseller_username_input(message):
         )
         
         if sub_url != 'N/A':
-            qr = qrcode.make(sub_url)
+            qr = qrcode.make(ipv4_url or sub_url)
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
@@ -891,10 +891,10 @@ def handle_reseller_customer_config(call):
     caption = f"{formatted_details}\n\n"
     if ipv4_url:
         caption += f"IPv4 URL: `{ipv4_url}`\n\n"
-    caption += f"Subscription URL:\n`{sub_url}`"
+    caption += f"Subscription URL:\n{sub_url}"
 
     try:
-        qr_code = qrcode.make(sub_url)
+        qr_code = qrcode.make(ipv4_url or sub_url)
         bio = io.BytesIO()
         qr_code.save(bio, 'PNG')
         bio.seek(0)

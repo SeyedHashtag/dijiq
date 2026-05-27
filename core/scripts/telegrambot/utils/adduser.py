@@ -124,8 +124,8 @@ def process_add_user_step4(call):
         sub_url = user_uri_data['normal_sub']
         ipv4_url = user_uri_data.get('ipv4', '')
 
-        # Generate QR code for subscription URL
-        qr_code = qrcode.make(sub_url)
+        # Generate QR code for IPv4 URL when available.
+        qr_code = qrcode.make(ipv4_url or sub_url)
         bio = io.BytesIO()
         qr_code.save(bio, 'PNG')
         bio.seek(0)

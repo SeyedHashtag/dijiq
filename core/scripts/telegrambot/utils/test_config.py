@@ -214,8 +214,8 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
             sub_url = user_uri_data['normal_sub']
             ipv4_url = user_uri_data.get('ipv4', '')
 
-            # Create QR code for subscription URL
-            qr = qrcode.make(sub_url)
+            # Create QR code for IPv4 URL when available.
+            qr = qrcode.make(ipv4_url or sub_url)
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
@@ -239,7 +239,7 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
 
             success_message += (
-                f"Subscription URL:\n`{sub_url}`\n\n"
+                f"Subscription URL:\n{sub_url}\n\n"
                 f"Scan the QR code to configure your VPN client."
             )
             # Send the QR code with config details

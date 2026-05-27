@@ -580,7 +580,7 @@ def handle_admin_approval(call):
                     ipv4_url = user_uri_data.get('ipv4', '')
                     ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
 
-                    qr = qrcode.make(sub_url)
+                    qr = qrcode.make(ipv4_url or sub_url)
                     bio = io.BytesIO()
                     qr.save(bio, 'PNG')
                     bio.seek(0)
@@ -686,7 +686,7 @@ def handle_check_payment(call):
                 ipv4_url = user_uri_data.get('ipv4', '')
                 ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
 
-                qr = qrcode.make(sub_url)
+                qr = qrcode.make(ipv4_url or sub_url)
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
                 bio.seek(0)
@@ -795,7 +795,7 @@ def process_payment_webhook(request_data):
                         parse_mode="Markdown"
                     )
                     if sub_url:
-                        qr = qrcode.make(sub_url)
+                        qr = qrcode.make(ipv4_url or sub_url)
                         bio = io.BytesIO()
                         qr.save(bio, 'PNG')
                         bio.seek(0)
@@ -905,7 +905,7 @@ def check_pending_payments():
                                 ipv4_url = user_uri_data.get('ipv4', '')
                                 ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
 
-                                qr = qrcode.make(sub_url)
+                                qr = qrcode.make(ipv4_url or sub_url)
                                 bio = io.BytesIO()
                                 qr.save(bio, 'PNG')
                                 bio.seek(0)

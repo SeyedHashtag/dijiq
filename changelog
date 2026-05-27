@@ -1,3 +1,7 @@
+## v1.12.32
+🐛 Prefer IPv4 URLs when generating QR codes for configuration links
+✨ Update Karing and v2ray application download links
+
 ## v1.12.31
 ✨ Update timestamp formatting in user note functions for improved readability
 ✨ Enhance broadcast logging with detailed exclusion reasons and improved summaries
