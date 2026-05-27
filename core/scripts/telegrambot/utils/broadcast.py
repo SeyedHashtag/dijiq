@@ -151,8 +151,29 @@ def create_broadcast_markup():
     markup.row('👥 All Paid Users', '✅ Active Paid Users')
     markup.row('⛔️ Expired Paid Users', '🧪 All Test Users')
     markup.row('✅🧪 Active Test Users', '⛔️🧪 Expired Test Users')
+    markup.row('🎯 Specific User IDs')
     markup.row('🔄 Reset Failed Exclusions', '❌ Cancel')
     return markup
+
+
+def parse_specific_user_ids(raw_user_ids):
+    tokens = re.split(r'[\s,]+', raw_user_ids.strip())
+    user_ids = []
+    invalid_tokens = []
+    seen = set()
+
+    for token in tokens:
+        if not token:
+            continue
+        if not token.isdigit():
+            invalid_tokens.append(token)
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        user_ids.append(token)
+
+    return user_ids, invalid_tokens
 
 
 def _extract_paid_telegram_id(username):
@@ -323,6 +344,15 @@ def process_broadcast_target(message):
             reply_markup=create_main_markup(is_admin=True)
         )
         return
+
+    if message.text == "🎯 Specific User IDs":
+        msg = bot.reply_to(
+            message,
+            "Enter one or more Telegram numeric user IDs, separated by commas, spaces, or new lines:",
+            reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
+        )
+        bot.register_next_step_handler(msg, process_specific_user_ids)
+        return
         
     target_map = {
         '👥 All Paid Users': 'all',
@@ -350,7 +380,38 @@ def process_broadcast_target(message):
     )
     bot.register_next_step_handler(msg, send_broadcast, target, target_label)
 
-def send_broadcast(message, target, target_label):
+def process_specific_user_ids(message):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    user_ids, invalid_tokens = parse_specific_user_ids(message.text or "")
+
+    if invalid_tokens or not user_ids:
+        invalid_preview = ""
+        if invalid_tokens:
+            invalid_preview = "\n\nInvalid entries: " + ", ".join(invalid_tokens[:10])
+            if len(invalid_tokens) > 10:
+                invalid_preview += f", ... ({len(invalid_tokens) - 10} more)"
+
+        msg = bot.reply_to(
+            message,
+            "Please enter only numeric Telegram user IDs separated by commas, spaces, or new lines."
+            f"{invalid_preview}",
+            reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
+        )
+        bot.register_next_step_handler(msg, process_specific_user_ids)
+        return
+
+    msg = bot.reply_to(
+        message,
+        f"Enter the message you want to send to {len(user_ids)} specific user(s):",
+        reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
+    )
+    bot.register_next_step_handler(msg, send_broadcast, None, "🎯 Specific User IDs", user_ids)
+
+
+def send_broadcast(message, target, target_label, explicit_user_ids=None):
     if message.text == "❌ Cancel":
         bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
         return
@@ -363,8 +424,13 @@ def send_broadcast(message, target, target_label):
             reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
         )
         return
-        
-    user_ids, excluded_by_reason = get_user_ids(target)
+
+    if explicit_user_ids is None:
+        user_ids, excluded_by_reason = get_user_ids(target)
+    else:
+        user_ids = list(explicit_user_ids)
+        excluded_by_reason = {}
+
     total_pool = len(user_ids) + sum(len(v) for v in excluded_by_reason.values())
     
     if not user_ids and not excluded_by_reason:
