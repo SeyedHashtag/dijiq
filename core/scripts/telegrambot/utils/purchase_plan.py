@@ -18,6 +18,7 @@ from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button
 from utils.language import get_user_language
 from utils.referral import add_referral_reward
 from utils.reseller import evaluate_reseller_debt_policies, DEBT_WARNING_THRESHOLD, DEBT_SUSPEND_THRESHOLD
+from utils.currency_format import format_toman_amount, format_usd_amount
 import qrcode
 import io
 import os
@@ -101,11 +102,11 @@ def send_admin_payment_notification(
             notification_message += (
                 f"📱 <b>{get_message_text(admin_language, 'username')}:</b> <code>{username}</code>\n"
                 f"📊 <b>{get_message_text(admin_language, 'plan_size')}:</b> {plan_gb} GB\n"
-                f"💵 <b>{get_message_text(admin_language, 'amount')}:</b> ${price}\n"
+                f"💵 <b>{get_message_text(admin_language, 'amount')}:</b> ${format_usd_amount(price)}\n"
             )
             if converted_amount is not None:
                 currency_label = converted_currency or "Tomans"
-                notification_message += f"💱 <b>Converted Amount:</b> {converted_amount} {currency_label}\n"
+                notification_message += f"💱 <b>Converted Amount:</b> {format_toman_amount(converted_amount)} {currency_label}\n"
 
             notification_message += (
                 f"💳 <b>{get_message_text(admin_language, 'payment_method_label')}:</b> {payment_method}\n"
@@ -132,7 +133,7 @@ def show_plans(chat_id, user_id, message_id=None):
         if details.get('target', 'both') == 'reseller':
             continue
         unlimited_text = get_message_text(language, "unlimited_users") if details.get("unlimited") else get_message_text(language, "single_user")
-        button_text = f"{gb} GB - ${details['price']} - {details['days']} " + get_message_text(language, "days") + f"{unlimited_text}"
+        button_text = f"{gb} GB - ${format_usd_amount(details['price'])} - {details['days']} " + get_message_text(language, "days") + f"{unlimited_text}"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"purchase:{gb}"))
     
     text = get_message_text(language, "select_plan")
@@ -181,7 +182,7 @@ def handle_purchase_selection(call):
             unlimited_text = "Yes" if plan.get("unlimited") else "No"
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
-            message += get_message_text(language, "price").format(price=plan['price'])
+            message += get_message_text(language, "price").format(price=format_usd_amount(plan['price']))
             message += get_message_text(language, "duration").format(days=plan['days'])
             message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
             message += get_message_text(language, "select_payment_method")
@@ -323,7 +324,7 @@ def handle_crypto_payment(call, plan_gb):
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
-            payment_message = get_message_text(language, "payment_instructions").format(price=plan['price'], payment_url=payment_url, payment_id=payment_id)
+            payment_message = get_message_text(language, "payment_instructions").format(price=format_usd_amount(plan['price']), payment_url=payment_url, payment_id=payment_id)
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton(get_button_text(language, "payment_link"), url=payment_url),
@@ -367,7 +368,7 @@ def handle_card_to_card_payment(call, plan_gb):
         price = plan['price']
         # Convert price to tomans using the exchange rate
         price_in_tomans = float(price) * float(exchange_rate)
-        message = get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number)
+        message = get_message_text(language, "card_to_card_payment").format(price=format_toman_amount(price_in_tomans), card_number=card_number)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
         bot.edit_message_text(
@@ -459,11 +460,11 @@ def process_receipt_photo(message, plan_gb, price):
             
         notification_message += (
             f"📊 <b>Plan:</b> {plan_gb} GB\n"
-            f"💵 <b>Amount:</b> ${price}\n"
+            f"💵 <b>Amount:</b> ${format_usd_amount(price)}\n"
         )
         if converted_amount is not None:
             currency_label = converted_currency or "Tomans"
-            notification_message += f"💱 <b>Converted Amount:</b> {converted_amount} {currency_label}\n"
+            notification_message += f"💱 <b>Converted Amount:</b> {format_toman_amount(converted_amount)} {currency_label}\n"
         notification_message += f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(

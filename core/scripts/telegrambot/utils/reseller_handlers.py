@@ -19,6 +19,7 @@ from utils.edit_plans import load_plans
 from utils.api_client import APIClient
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
+from utils.currency_format import format_toman_amount, format_usd_amount
 from utils.purchase_plan import user_data
 from utils.username_utils import (
     allocate_username,
@@ -136,7 +137,7 @@ def reseller_panel(message):
         )
         debt = float(reseller_data.get('debt', 0.0))
         debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
-        intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${debt:.2f}")
+        intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${format_usd_amount(debt)}")
         intro += "\n" + get_message_text(language, "reseller_debt_status_line").format(debt_state=debt_state_text)
         if _is_reseller_suspended(reseller_data) or status == 'suspended':
             intro += "\n" + get_message_text(language, "reseller_suspended_intro_notice")
@@ -254,7 +255,7 @@ def handle_reseller_generate(call):
             continue
         original_price = float(details['price'])
         discounted_price = original_price * 0.8
-        button_text = f"{gb} GB - ${discounted_price:.2f} (20% OFF) - {details['days']} days"
+        button_text = f"{gb} GB - ${format_usd_amount(discounted_price)} (20% OFF) - {details['days']} days"
         markup.add(types.InlineKeyboardButton(button_text, callback_data=f"reseller:buy:{gb}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
@@ -449,7 +450,7 @@ def handle_reseller_username_input(message):
             username=username,
             plan_gb=gb,
             days=days,
-            price=price,
+            price=format_usd_amount(price),
             sub_url=sub_url,
             ipv4_info=ipv4_info
         )
@@ -491,7 +492,7 @@ def handle_reseller_debt(call):
     
     bot.edit_message_text(
         (
-            f"{get_message_text(language, 'current_debt').replace('${debt}', f'${debt:.2f}')}\n"
+            f"{get_message_text(language, 'current_debt').replace('${debt}', f'${format_usd_amount(debt)}')}\n"
             f"{get_message_text(language, 'reseller_debt_status_line').format(debt_state=debt_state_text)}\n"
             f"{get_message_text(language, 'reseller_oldest_unpaid_date_line').format(debt_since=debt_since)}\n"
             f"{get_message_text(language, 'reseller_last_payment_date_line').format(last_payment_at=last_payment_at)}\n"
@@ -591,7 +592,7 @@ def handle_reseller_payment(call):
             )
             
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            bot.send_photo(call.message.chat.id, bio, caption=get_message_text(language, "payment_instructions").format(price=amount_to_pay, payment_url=payment_url, payment_id=payment_id), reply_markup=markup)
+            bot.send_photo(call.message.chat.id, bio, caption=get_message_text(language, "payment_instructions").format(price=format_usd_amount(amount_to_pay), payment_url=payment_url, payment_id=payment_id), reply_markup=markup)
 
     elif method == 'card':
         # Card to card logic
@@ -603,7 +604,7 @@ def handle_reseller_payment(call):
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
         
         bot.edit_message_text(
-             get_message_text(language, "card_to_card_payment").format(price=price_in_tomans, card_number=card_number),
+             get_message_text(language, "card_to_card_payment").format(price=format_toman_amount(price_in_tomans), card_number=card_number),
              chat_id=call.message.chat.id,
              message_id=call.message.message_id,
              parse_mode="Markdown",
@@ -650,9 +651,9 @@ def handle_reseller_stats(call):
         user_id=user_id,
         joined_date=reseller_data.get('created_at', 'N/A'),
         total_configs=total_configs,
-        total_value=f"{total_value:.2f}",
-        total_paid=f"{total_paid:.2f}",
-        current_debt=f"{current_debt:.2f}"
+        total_value=format_usd_amount(total_value),
+        total_paid=format_usd_amount(total_paid),
+        current_debt=format_usd_amount(current_debt)
     )
     
     markup = types.InlineKeyboardMarkup()
@@ -715,7 +716,7 @@ def handle_reseller_my_customers(call):
         timestamp = cfg.get('timestamp', 'N/A')
         entries_lines.append(
             f"{i}. `{username}`\n"
-            f"   📊 {gb} GB | 📅 {days}d | 💰 ${float(price):.2f}\n"
+            f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
             f"   🕒 {timestamp}"
         )
 
@@ -1124,7 +1125,7 @@ def _build_admin_reseller_detail_text(language, reseller_id, reseller_data):
         user_id=_escape_markdown(reseller_id),
         username_display=_escape_markdown(_username_display(language, reseller_data)),
         status=_escape_markdown(_admin_status_label(language, status)),
-        debt=f"{debt:.2f}",
+        debt=format_usd_amount(debt),
         debt_state=_escape_markdown(debt_state),
         configs_count=configs_count,
         created_at=_escape_markdown((reseller_data or {}).get("created_at", "N/A")),
@@ -1243,7 +1244,7 @@ def _render_admin_debt_adjust(call, reseller_id, return_status, return_page):
     current_debt = _safe_float(reseller_data.get("debt", 0.0))
     msg = get_message_text(language, "admin_debt_adjust_menu").format(
         user_id=reseller_id,
-        current_debt=f"{current_debt:.2f}",
+        current_debt=format_usd_amount(current_debt),
     )
 
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -1304,8 +1305,8 @@ def _render_admin_debt_confirm(call, reseller_id, new_amount):
     delta = normalized - old_debt
     msg = get_message_text(language, "admin_debt_confirm_message").format(
         user_id=reseller_id,
-        old_debt=f"{old_debt:.2f}",
-        new_debt=f"{normalized:.2f}",
+        old_debt=format_usd_amount(old_debt),
+        new_debt=format_usd_amount(normalized),
         delta=f"{delta:+.2f}",
     )
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -1368,8 +1369,8 @@ def handle_admin_custom_debt_input(message):
     context = _admin_view_context(message.from_user.id)
     confirmation = get_message_text(language, "admin_debt_confirm_message").format(
         user_id=reseller_id,
-        old_debt=f"{old_debt:.2f}",
-        new_debt=f"{normalized:.2f}",
+        old_debt=format_usd_amount(old_debt),
+        new_debt=format_usd_amount(normalized),
         delta=f"{delta:+.2f}",
     )
     markup = types.InlineKeyboardMarkup(row_width=2)
