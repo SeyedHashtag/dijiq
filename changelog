@@ -1,3 +1,8 @@
+## v1.12.35
+✨ Add specific user ID targeting for broadcasts
+✨ Add USD and Toman currency formatting utilities
+✨ Improve payment rejection notifications with detailed captions
+
 ## v1.12.34
 ♻️ Add converted rate to payment notifications
 
