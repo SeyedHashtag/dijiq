@@ -640,13 +640,16 @@ def handle_admin_approval(call):
             update_payment_status(payment_id, 'rejected')
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
+            current_caption = call.message.caption or ""
             
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
                  bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_rejected"))
+                 rejection_caption = f"{current_caption}\n\n❌ Settlement Payment {payment_id} rejected by {call.from_user.first_name}."
             else:
                  bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
+                 rejection_caption = f"{current_caption}\n\n❌ Payment {payment_id} rejected by {call.from_user.first_name}."
                  
-            bot.edit_message_caption(caption=f"❌ Payment {payment_id} rejected by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            bot.edit_message_caption(caption=rejection_caption, chat_id=call.message.chat.id, message_id=call.message.message_id)
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
