@@ -12,6 +12,7 @@ FILES_TO_BACKUP=(
     "/etc/dijiq/core/scripts/telegrambot/.env"
     "/etc/dijiq/core/scripts/telegrambot/plans.json"
     "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
+    "/etc/dijiq/core/scripts/telegrambot/test_settings.json"
     "/etc/dijiq/core/scripts/telegrambot/payments.json"
     "/etc/dijiq/core/scripts/telegrambot/support_info.json"
     "/etc/dijiq/core/scripts/telegrambot/user_languages.json"

@@ -24,8 +24,8 @@ def send_welcome(message):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
-        # Automatically create test config if not already used
-        if not has_used_test_config(user_id):
+        # Automatically create test config if not already used and creation is not disabled
+        if not is_test_creation_disabled() and not has_used_test_config(user_id):
             create_test_config(user_id, message.chat.id, is_automatic=True, language=get_user_language(user_id), telegram_username=message.from_user.username)
             
         markup = create_main_markup(is_admin=False, user_id=user_id)

@@ -18,6 +18,28 @@ from utils.username_utils import (
 )
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
+TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
+
+def load_test_settings():
+    try:
+        if os.path.exists(TEST_SETTINGS_FILE):
+            with open(TEST_SETTINGS_FILE, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"creation_disabled": False}
+
+def save_test_settings(settings):
+    os.makedirs(os.path.dirname(TEST_SETTINGS_FILE), exist_ok=True)
+    try:
+        with open(TEST_SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=4)
+    except Exception:
+        pass
+
+def is_test_creation_disabled():
+    settings = load_test_settings()
+    return settings.get("creation_disabled", False)
 
 def load_test_configs():
     try:
@@ -112,9 +134,19 @@ def reset_test_users(mode='expired'):
 ))
 def test_config(message):
     user_id = message.from_user.id
-      # Check if user has already used a test config
+    language = get_user_language(user_id)
+
+    # Check if test creation is disabled
+    if is_test_creation_disabled():
+        bot.reply_to(
+            message,
+            get_message_text(language, "test_config_disabled"),
+            reply_markup=create_main_markup(is_admin=False, user_id=user_id)
+        )
+        return
+
+    # Check if user has already used a test config
     if has_used_test_config(user_id):
-        language = get_user_language(user_id)
         bot.reply_to(
             message,
             get_message_text(language, "test_config_used"),
@@ -148,6 +180,16 @@ def handle_cancel_test_config(call):
 def handle_confirm_test_config(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    # Check if test creation is disabled
+    if is_test_creation_disabled():
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            get_message_text(language, "test_config_disabled"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
         bot.answer_callback_query(call.id)
@@ -169,6 +211,9 @@ def handle_confirm_test_config(call):
     create_test_config(user_id, call.message.chat.id, is_automatic=False, language=language, telegram_username=call.from_user.username)
 
 def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None):
+    # Check if test creation is disabled
+    if is_test_creation_disabled():
+        return False
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
         return False
@@ -270,20 +315,74 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧪 Manage Test Accounts')
 def reset_test_accounts_menu(message):
-    """Admin command: show reset mode selection."""
+    """Admin command: show reset and settings management."""
+    settings = load_test_settings()
+    disabled = settings.get("creation_disabled", False)
+    status_text = "🔴 *Disabled*" if disabled else "🟢 *Enabled*"
+    toggle_text = "✅ Enable Test Creation" if disabled else "🚫 Disable Test Creation"
+    toggle_action = "enable" if disabled else "disable"
+
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("⏰ Reset Expired Only", callback_data="reset_test:expired"),
         types.InlineKeyboardButton("♻️ Reset All", callback_data="reset_test:all"),
     )
+    markup.add(types.InlineKeyboardButton(toggle_text, callback_data=f"toggle_test_creation:{toggle_action}"))
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"))
     bot.reply_to(
         message,
-        "🔄 *Reset Test Account Eligibility*\n\n"
-        "Choose which users to reset:\n"
-        "• *Expired Only* — users whose 30-day test config has already expired\n"
-        "• *Reset All* — every user in the database (including active ones)\n\n"
-        "The `test_configs.json` database is *kept intact* for broadcasting.",
+        f"🔄 *Manage Test Accounts*\n\n"
+        f"Current test creation status: {status_text}\n\n"
+        f"Choose an option:\n"
+        f"• *Expired Only* — users whose 30-day test config has already expired\n"
+        f"• *Reset All* — every user in the database (including active ones)\n\n"
+        f"The `test_configs.json` database is *kept intact* for broadcasting.",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("toggle_test_creation:"))
+def handle_toggle_test_creation(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    action = call.data.split(":", 1)[1]
+    settings = load_test_settings()
+
+    if action == "enable":
+        settings["creation_disabled"] = False
+        msg = "🟢 Test account creation enabled."
+    else:
+        settings["creation_disabled"] = True
+        msg = "🔴 Test account creation disabled."
+
+    save_test_settings(settings)
+    bot.answer_callback_query(call.id, msg)
+
+    # Edit the message with updated status and controls
+    disabled = settings.get("creation_disabled", False)
+    status_text = "🔴 *Disabled*" if disabled else "🟢 *Enabled*"
+    toggle_text = "✅ Enable Test Creation" if disabled else "🚫 Disable Test Creation"
+    toggle_action = "enable" if disabled else "disable"
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("⏰ Reset Expired Only", callback_data="reset_test:expired"),
+        types.InlineKeyboardButton("♻️ Reset All", callback_data="reset_test:all"),
+    )
+    markup.add(types.InlineKeyboardButton(toggle_text, callback_data=f"toggle_test_creation:{toggle_action}"))
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"))
+
+    bot.edit_message_text(
+        f"🔄 *Manage Test Accounts*\n\n"
+        f"Current test creation status: {status_text}\n\n"
+        f"Choose an option:\n"
+        f"• *Expired Only* — users whose 30-day test config has already expired\n"
+        f"• *Reset All* — every user in the database (including active ones)\n\n"
+        f"The `test_configs.json` database is *kept intact* for broadcasting.",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
         reply_markup=markup,
         parse_mode="Markdown"
     )
