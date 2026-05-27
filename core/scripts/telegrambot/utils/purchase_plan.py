@@ -185,6 +185,7 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "price").format(price=format_usd_amount(plan['price']))
             message += get_message_text(language, "duration").format(days=plan['days'])
             message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
+            message += get_message_text(language, "purchase_connection_warning")
             message += get_message_text(language, "select_payment_method")
 
             # Check configured payment methods
@@ -325,6 +326,7 @@ def handle_crypto_payment(call, plan_gb):
             qr.save(bio, 'PNG')
             bio.seek(0)
             payment_message = get_message_text(language, "payment_instructions").format(price=format_usd_amount(plan['price']), payment_url=payment_url, payment_id=payment_id)
+            payment_message += get_message_text(language, "purchase_connection_warning")
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton(get_button_text(language, "payment_link"), url=payment_url),
@@ -369,6 +371,7 @@ def handle_card_to_card_payment(call, plan_gb):
         # Convert price to tomans using the exchange rate
         price_in_tomans = float(price) * float(exchange_rate)
         message = get_message_text(language, "card_to_card_payment").format(price=format_toman_amount(price_in_tomans), card_number=card_number)
+        message += get_message_text(language, "purchase_connection_warning")
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
         bot.edit_message_text(
