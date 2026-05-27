@@ -963,6 +963,10 @@ def _username_display(language, reseller_data):
     return get_message_text(language, "admin_username_unknown")
 
 
+def _escape_markdown(value):
+    return str(value).replace("\\", "\\\\").replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
+
+
 def _sort_resellers(items):
     def _id_key(reseller_id):
         as_str = str(reseller_id)
@@ -1114,15 +1118,15 @@ def _build_admin_reseller_detail_text(language, reseller_id, reseller_data):
     debt_state = get_message_text(language, _debt_state_label((reseller_data or {}).get("debt_state", "active")))
     configs_count = len((reseller_data or {}).get("configs", []))
     return get_message_text(language, "admin_reseller_details_extended").format(
-        user_id=reseller_id,
-        username_display=_username_display(language, reseller_data),
-        status=_admin_status_label(language, status),
+        user_id=_escape_markdown(reseller_id),
+        username_display=_escape_markdown(_username_display(language, reseller_data)),
+        status=_escape_markdown(_admin_status_label(language, status)),
         debt=f"{debt:.2f}",
-        debt_state=debt_state,
+        debt_state=_escape_markdown(debt_state),
         configs_count=configs_count,
-        created_at=(reseller_data or {}).get("created_at", "N/A"),
-        last_payment_at=(reseller_data or {}).get("last_payment_at", "N/A"),
-        debt_since=(reseller_data or {}).get("debt_since", "N/A"),
+        created_at=_escape_markdown((reseller_data or {}).get("created_at", "N/A")),
+        last_payment_at=_escape_markdown((reseller_data or {}).get("last_payment_at", "N/A")),
+        debt_since=_escape_markdown((reseller_data or {}).get("debt_since", "N/A")),
     )
 
 
@@ -1203,13 +1207,25 @@ def _render_admin_reseller_detail(call, reseller_id, return_status, return_page)
         return
 
     _set_admin_view_context(call.from_user.id, return_status, return_page)
-    bot.edit_message_text(
-        _build_admin_reseller_detail_text(language, reseller_id, reseller_data),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=_build_admin_reseller_detail_markup(language, reseller_id, reseller_data, return_status, return_page),
-        parse_mode="Markdown",
-    )
+    detail_text = _build_admin_reseller_detail_text(language, reseller_id, reseller_data)
+    detail_markup = _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, return_status, return_page)
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_text(
+            detail_text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=detail_markup,
+            parse_mode="Markdown",
+        )
+    except Exception:
+        logging.exception("Failed to render admin reseller detail with Markdown. reseller_id=%s", reseller_id)
+        bot.edit_message_text(
+            detail_text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=detail_markup,
+        )
 
 
 def _render_admin_debt_adjust(call, reseller_id, return_status, return_page):
