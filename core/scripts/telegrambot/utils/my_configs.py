@@ -208,8 +208,8 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         sub_url = user_uri_data['normal_sub']
         ipv4_url = user_uri_data.get('ipv4', '')
         
-        # Create QR code for subscription URL
-        qr_code = qrcode.make(sub_url)
+        # Create QR code for IPv4 URL when available.
+        qr_code = qrcode.make(ipv4_url or sub_url)
         bio = io.BytesIO()
         qr_code.save(bio, 'PNG')
         bio.seek(0)
@@ -219,7 +219,7 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         if ipv4_url:
             caption += f"IPv4 URL: `{ipv4_url}`\n\n"
             
-        caption += f"Subscription URL:\n`{sub_url}`"
+        caption += f"Subscription URL:\n{sub_url}"
         
         # Send QR code with details
         if is_callback:
