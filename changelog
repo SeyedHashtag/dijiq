@@ -1,3 +1,6 @@
+## v1.12.34
+♻️ Add converted rate to payment notifications
+
 ## v1.12.33
 🐛 Add Markdown escaping for reseller details in admin view
 ⬆️ Bump certifi from 2026.1.4 to 2026.5.20
