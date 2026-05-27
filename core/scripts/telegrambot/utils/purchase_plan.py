@@ -73,7 +73,18 @@ def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
             )
     return username, result
 
-def send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, payment_method, telegram_username=None):
+def send_admin_payment_notification(
+    user_id,
+    username,
+    plan_gb,
+    price,
+    payment_id,
+    payment_method,
+    telegram_username=None,
+    converted_amount=None,
+    converted_currency=None,
+    exchange_rate=None,
+):
     """Send a notification to all admins about a successful payment"""
     try:
         for admin_id in ADMIN_USER_IDS:
@@ -91,6 +102,12 @@ def send_admin_payment_notification(user_id, username, plan_gb, price, payment_i
                 f"📱 <b>{get_message_text(admin_language, 'username')}:</b> <code>{username}</code>\n"
                 f"📊 <b>{get_message_text(admin_language, 'plan_size')}:</b> {plan_gb} GB\n"
                 f"💵 <b>{get_message_text(admin_language, 'amount')}:</b> ${price}\n"
+            )
+            if converted_amount is not None:
+                currency_label = converted_currency or "Tomans"
+                notification_message += f"💱 <b>Converted Amount:</b> {converted_amount} {currency_label}\n"
+
+            notification_message += (
                 f"💳 <b>{get_message_text(admin_language, 'payment_method_label')}:</b> {payment_method}\n"
                 f"🔑 <b>{get_message_text(admin_language, 'payment_id_label')}:</b> <code>{payment_id}</code>\n"
                 f"📅 <b>{get_message_text(admin_language, 'timestamp')}:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -365,6 +382,9 @@ def handle_card_to_card_payment(call, plan_gb):
             'state': 'waiting_receipt',
             'plan_gb': plan_gb,
             'price': price,
+            'converted_amount': price_in_tomans,
+            'converted_currency': 'Tomans',
+            'exchange_rate': exchange_rate,
             'receipt_prompt_message_id': call.message.message_id,
         }
     except Exception as e:
@@ -378,8 +398,14 @@ def process_receipt_photo(message, plan_gb, price):
         user_id = message.from_user.id
         language = get_user_language(user_id)
         receipt_prompt_message_id = None
+        converted_amount = None
+        converted_currency = None
+        exchange_rate = None
         if user_id in user_data:
             receipt_prompt_message_id = user_data[user_id].get('receipt_prompt_message_id')
+            converted_amount = user_data[user_id].get('converted_amount')
+            converted_currency = user_data[user_id].get('converted_currency')
+            exchange_rate = user_data[user_id].get('exchange_rate')
         file_id = message.photo[-1].file_id
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -417,6 +443,10 @@ def process_receipt_photo(message, plan_gb, price):
                 'receipt_path': photo_path,
                 'payment_method': 'Card to Card'
             }
+        if converted_amount is not None:
+            payment_record['converted_amount'] = converted_amount
+            payment_record['converted_currency'] = converted_currency or 'Tomans'
+            payment_record['exchange_rate'] = exchange_rate
             
         add_payment_record(payment_id, payment_record)
         notification_message = (
@@ -430,8 +460,11 @@ def process_receipt_photo(message, plan_gb, price):
         notification_message += (
             f"📊 <b>Plan:</b> {plan_gb} GB\n"
             f"💵 <b>Amount:</b> ${price}\n"
-            f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
         )
+        if converted_amount is not None:
+            currency_label = converted_currency or "Tomans"
+            notification_message += f"💱 <b>Converted Amount:</b> {converted_amount} {currency_label}\n"
+        notification_message += f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_approval:approve:{payment_id}"),
@@ -525,7 +558,10 @@ def handle_admin_approval(call):
                     payment_record['price'], 
                     payment_id, 
                     payment_record.get('payment_method', 'Card to Card'), 
-                    telegram_username=telegram_username
+                    telegram_username=telegram_username,
+                    converted_amount=payment_record.get('converted_amount'),
+                    converted_currency=payment_record.get('converted_currency'),
+                    exchange_rate=payment_record.get('exchange_rate')
                 )
 
                  bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_approved"))
@@ -571,7 +607,10 @@ def handle_admin_approval(call):
                     payment_record['price'], 
                     payment_id, 
                     payment_record.get('payment_method', 'Card to Card'), 
-                    telegram_username=telegram_username
+                    telegram_username=telegram_username,
+                    converted_amount=payment_record.get('converted_amount'),
+                    converted_currency=payment_record.get('converted_currency'),
+                    exchange_rate=payment_record.get('exchange_rate')
                 )
 
                 user_uri_data = api_client.get_user_uri(username)
