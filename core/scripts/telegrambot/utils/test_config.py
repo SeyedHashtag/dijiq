@@ -1,6 +1,7 @@
 import json
 import os
 import datetime
+import time
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
@@ -19,6 +20,7 @@ from utils.username_utils import (
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
+TEST_WAITING_LIST_FILE = '/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json'
 
 def load_test_settings():
     try:
@@ -55,6 +57,21 @@ def save_test_configs(configs):
     with open(TEST_CONFIGS_FILE, 'w') as f:
         json.dump(configs, f, indent=4)
 
+def load_waiting_users():
+    try:
+        if os.path.exists(TEST_WAITING_LIST_FILE):
+            with open(TEST_WAITING_LIST_FILE, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    save_waiting_users({})
+    return {}
+
+def save_waiting_users(users):
+    os.makedirs(os.path.dirname(TEST_WAITING_LIST_FILE), exist_ok=True)
+    with open(TEST_WAITING_LIST_FILE, 'w') as f:
+        json.dump(users, f, indent=4)
+
 def has_used_test_config(user_id):
     configs = load_test_configs()
     key = str(user_id)
@@ -74,6 +91,24 @@ def has_used_test_config(user_id):
                     return False
             except Exception:
                 return False
+    return True
+
+def add_to_waiting_list(user_id, username=None, language=None):
+    if has_used_test_config(user_id):
+        return False
+
+    waiting_users = load_waiting_users()
+    key = str(user_id)
+    if key in waiting_users:
+        return False
+
+    waiting_users[key] = {
+        "telegram_id": user_id,
+        "telegram_username": username,
+        "language": language,
+        "added_at": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+    save_waiting_users(waiting_users)
     return True
 
 def mark_test_config_used(user_id, username=None, language=None, telegram_username=None):
@@ -138,9 +173,18 @@ def test_config(message):
 
     # Check if test creation is disabled
     if is_test_creation_disabled():
+        if has_used_test_config(user_id):
+            bot.reply_to(
+                message,
+                get_message_text(language, "test_config_used"),
+                reply_markup=create_main_markup(is_admin=False, user_id=user_id)
+            )
+            return
+
+        add_to_waiting_list(user_id, message.from_user.username, language)
         bot.reply_to(
             message,
-            get_message_text(language, "test_config_disabled"),
+            get_message_text(language, "test_config_waiting_list"),
             reply_markup=create_main_markup(is_admin=False, user_id=user_id)
         )
         return
@@ -182,9 +226,19 @@ def handle_confirm_test_config(call):
     language = get_user_language(user_id)
     # Check if test creation is disabled
     if is_test_creation_disabled():
+        if has_used_test_config(user_id):
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(
+                get_message_text(language, "test_config_used"),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            return
+
+        add_to_waiting_list(user_id, call.from_user.username, language)
         bot.answer_callback_query(call.id)
         bot.edit_message_text(
-            get_message_text(language, "test_config_disabled"),
+            get_message_text(language, "test_config_waiting_list"),
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )
@@ -210,9 +264,9 @@ def handle_confirm_test_config(call):
 
     create_test_config(user_id, call.message.chat.id, is_automatic=False, language=language, telegram_username=call.from_user.username)
 
-def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None):
+def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None, ignore_creation_disabled=False):
     # Check if test creation is disabled
-    if is_test_creation_disabled():
+    if is_test_creation_disabled() and not ignore_creation_disabled:
         return False
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
@@ -313,14 +367,13 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
 
 # ─── Admin: Reset Test Accounts ───────────────────────────────────────────────
 
-@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧪 Manage Test Accounts')
-def reset_test_accounts_menu(message):
-    """Admin command: show reset and settings management."""
+def build_test_accounts_menu():
     settings = load_test_settings()
     disabled = settings.get("creation_disabled", False)
     status_text = "🔴 *Disabled*" if disabled else "🟢 *Enabled*"
     toggle_text = "✅ Enable Test Creation" if disabled else "🚫 Disable Test Creation"
     toggle_action = "enable" if disabled else "disable"
+    waiting_count = len(load_waiting_users())
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -328,15 +381,59 @@ def reset_test_accounts_menu(message):
         types.InlineKeyboardButton("♻️ Reset All", callback_data="reset_test:all"),
     )
     markup.add(types.InlineKeyboardButton(toggle_text, callback_data=f"toggle_test_creation:{toggle_action}"))
+    markup.add(types.InlineKeyboardButton("👥 Manage Waiting Users", callback_data="manage_waiting"))
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"))
-    bot.reply_to(
-        message,
+
+    text = (
         f"🔄 *Manage Test Accounts*\n\n"
-        f"Current test creation status: {status_text}\n\n"
+        f"Current test creation status: {status_text}\n"
+        f"⏳ Waiting Users: *{waiting_count}*\n\n"
         f"Choose an option:\n"
         f"• *Expired Only* — users whose 30-day test config has already expired\n"
         f"• *Reset All* — every user in the database (including active ones)\n\n"
-        f"The `test_configs.json` database is *kept intact* for broadcasting.",
+        f"The `test_configs.json` database is *kept intact* for broadcasting."
+    )
+    return text, markup
+
+def build_waiting_management_menu():
+    waiting_count = len(load_waiting_users())
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("🎁 Create & Send Configs", callback_data="waiting_prompt:create"))
+    markup.add(types.InlineKeyboardButton("📢 Notify Eligibility", callback_data="waiting_prompt:notify"))
+    markup.add(types.InlineKeyboardButton("🗑️ Clear List", callback_data="waiting_action:clear"))
+    markup.add(types.InlineKeyboardButton("⬅️ Back", callback_data="waiting_action:back"))
+    text = (
+        f"👥 *Manage Waiting Users*\n\n"
+        f"⏳ Waiting Users: *{waiting_count}*\n\n"
+        "Choose an action:"
+    )
+    return text, markup
+
+def build_waiting_chunk_menu(action):
+    waiting_count = len(load_waiting_users())
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("20 Users", callback_data=f"waiting_chunk:{action}:20"),
+        types.InlineKeyboardButton("50 Users", callback_data=f"waiting_chunk:{action}:50"),
+    )
+    markup.add(
+        types.InlineKeyboardButton("100 Users", callback_data=f"waiting_chunk:{action}:100"),
+        types.InlineKeyboardButton("All Users", callback_data=f"waiting_chunk:{action}:all"),
+    )
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="waiting_chunk:cancel"))
+    text = (
+        f"There are {waiting_count} users currently in the waiting list. "
+        "Select how many users to process in this chunk:"
+    )
+    return text, markup
+
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧪 Manage Test Accounts')
+def reset_test_accounts_menu(message):
+    """Admin command: show reset and settings management."""
+    text, markup = build_test_accounts_menu()
+    bot.reply_to(
+        message,
+        text,
         reply_markup=markup,
         parse_mode="Markdown"
     )
@@ -360,33 +457,209 @@ def handle_toggle_test_creation(call):
     save_test_settings(settings)
     bot.answer_callback_query(call.id, msg)
 
-    # Edit the message with updated status and controls
-    disabled = settings.get("creation_disabled", False)
-    status_text = "🔴 *Disabled*" if disabled else "🟢 *Enabled*"
-    toggle_text = "✅ Enable Test Creation" if disabled else "🚫 Disable Test Creation"
-    toggle_action = "enable" if disabled else "disable"
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("⏰ Reset Expired Only", callback_data="reset_test:expired"),
-        types.InlineKeyboardButton("♻️ Reset All", callback_data="reset_test:all"),
-    )
-    markup.add(types.InlineKeyboardButton(toggle_text, callback_data=f"toggle_test_creation:{toggle_action}"))
-    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="reset_test:cancel"))
+    text, markup = build_test_accounts_menu()
 
     bot.edit_message_text(
-        f"🔄 *Manage Test Accounts*\n\n"
-        f"Current test creation status: {status_text}\n\n"
-        f"Choose an option:\n"
-        f"• *Expired Only* — users whose 30-day test config has already expired\n"
-        f"• *Reset All* — every user in the database (including active ones)\n\n"
-        f"The `test_configs.json` database is *kept intact* for broadcasting.",
+        text,
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup,
         parse_mode="Markdown"
     )
 
+@bot.callback_query_handler(func=lambda call: call.data == "manage_waiting")
+def handle_manage_waiting(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    text, markup = build_waiting_management_menu()
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        text,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("waiting_action:"))
+def handle_waiting_action(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    action = call.data.split(":", 1)[1]
+
+    if action == "back":
+        text, markup = build_test_accounts_menu()
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if action == "clear":
+        waiting_count = len(load_waiting_users())
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ Confirm", callback_data="waiting_action:clear_confirm"),
+            types.InlineKeyboardButton("❌ Cancel", callback_data="manage_waiting"),
+        )
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            f"⚠️ Clear all *{waiting_count}* waiting users?\n\nThis cannot be undone.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if action == "clear_confirm":
+        save_waiting_users({})
+        text, markup = build_waiting_management_menu()
+        bot.answer_callback_query(call.id, "Waiting list cleared.")
+        bot.edit_message_text(
+            f"✅ Waiting list cleared.\n\n{text}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("waiting_prompt:"))
+def handle_waiting_prompt(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    action = call.data.split(":", 1)[1]
+    if action not in ("create", "notify"):
+        bot.answer_callback_query(call.id, "Invalid action.")
+        return
+
+    text, markup = build_waiting_chunk_menu(action)
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        text,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("waiting_chunk:"))
+def handle_waiting_chunk(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized")
+        return
+
+    if call.data == "waiting_chunk:cancel":
+        text, markup = build_waiting_management_menu()
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        _, action, chunk_size = call.data.split(":", 2)
+    except ValueError:
+        bot.answer_callback_query(call.id, "Invalid chunk.")
+        return
+
+    if action not in ("create", "notify"):
+        bot.answer_callback_query(call.id, "Invalid action.")
+        return
+
+    waiting_users = load_waiting_users()
+    if not waiting_users:
+        text, markup = build_waiting_management_menu()
+        bot.answer_callback_query(call.id, "Waiting list is empty.")
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        return
+
+    if chunk_size == "all":
+        limit = len(waiting_users)
+    else:
+        try:
+            limit = int(chunk_size)
+        except ValueError:
+            bot.answer_callback_query(call.id, "Invalid chunk size.")
+            return
+
+    selected_users = list(waiting_users.items())[:limit]
+    processed_count = 0
+    failure_count = 0
+
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"⏳ Processing {len(selected_users)} waiting users...",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+
+    for user_key, user_data in selected_users:
+        user_id = user_data.get("telegram_id") or int(user_key)
+        language = user_data.get("language") or get_user_language(user_id)
+        telegram_username = user_data.get("telegram_username")
+        success = False
+
+        try:
+            if action == "create":
+                success = create_test_config(
+                    user_id,
+                    user_id,
+                    is_automatic=True,
+                    language=language,
+                    telegram_username=telegram_username,
+                    ignore_creation_disabled=True,
+                )
+            elif action == "notify":
+                bot.send_message(user_id, get_message_text(language, "test_config_waitlist_eligible"))
+                success = True
+        except Exception as e:
+            print(f"Waiting list {action} failed for {user_id}: {e}")
+            success = False
+
+        if success:
+            waiting_users.pop(user_key, None)
+            save_waiting_users(waiting_users)
+            processed_count += 1
+        else:
+            failure_count += 1
+
+        time.sleep(0.1)
+
+    remaining_count = len(waiting_users)
+    text, markup = build_waiting_management_menu()
+    bot.edit_message_text(
+        f"✅ *Waiting list chunk complete!*\n\n"
+        f"• Action: `{action}`\n"
+        f"• Processed: *{processed_count}*\n"
+        f"• Failed: *{failure_count}*\n"
+        f"• Remaining in waiting list: *{remaining_count}*\n\n"
+        f"{text}",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reset_test:"))
 def handle_reset_test_selection(call):
