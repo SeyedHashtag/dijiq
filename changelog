@@ -1,3 +1,6 @@
+## v1.12.40
+♻️ Normalize project file line endings
+
 ## v1.12.39
 ✨ Add VPN server management and user handling improvements to the Telegram bot
 ✨ Require Telegram usernames for reseller requests
