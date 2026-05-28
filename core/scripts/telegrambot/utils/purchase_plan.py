@@ -12,8 +12,9 @@ from utils.payment_records import (
     load_payments,
     claim_payment_for_processing,
     get_user_payments,
+    update_payment_record_fields,
 )
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 from utils.referral import add_referral_reward
@@ -44,12 +45,21 @@ def _debt_state_label_key(debt_state):
     return 'debt_state_active'
 
 def create_sale_username(api_client, user_id):
-    users = api_client.get_users()
-    return allocate_username("s", user_id, extract_existing_usernames(users))
+    multi_api = MultiServerAPI()
+    usernames = multi_api.get_all_usernames()
+    if not usernames and api_client is not None:
+        users = api_client.get_users()
+        usernames = extract_existing_usernames(users)
+    return allocate_username("s", user_id, usernames)
 
 
 def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
-    username = create_sale_username(api_client, user_id)
+    multi_api = MultiServerAPI()
+    target_client = multi_api.select_server_for_new_user() or api_client
+    if target_client is None:
+        return None, None, None
+
+    username = create_sale_username(target_client, user_id)
     note_payload = build_user_note(
         username=username,
         traffic_limit=plan_gb,
@@ -57,7 +67,7 @@ def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
         unlimited=unlimited,
         note_text="sale",
     )
-    result = api_client.add_user(
+    result = target_client.add_user(
         username,
         int(plan_gb),
         int(days),
@@ -65,14 +75,14 @@ def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
         note=note_payload,
     )
     if result is None:
-        result = api_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+        result = target_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
         if result is not None:
             logging.getLogger("dijiq.usernames").warning(
                 "Created sale user without note fallback. user_id=%s username=%s",
                 user_id,
                 username,
             )
-    return username, result
+    return username, result, target_client
 
 def send_admin_payment_notification(
     user_id,
@@ -586,7 +596,7 @@ def handle_admin_approval(call):
                      unlimited = False
             
             api_client = APIClient()
-            username, result = create_sale_user_with_note(
+            username, result, api_client = create_sale_user_with_note(
                 api_client,
                 user_to_notify,
                 plan_gb,
@@ -594,6 +604,7 @@ def handle_admin_approval(call):
                 unlimited,
             )
             if result:
+                update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
                 update_payment_status(payment_id, 'completed')
                 add_referral_reward(payment_record['user_id'], payment_record['price'])
                 
@@ -715,7 +726,7 @@ def handle_check_payment(call):
                     unlimited = False
         
         api_client = APIClient()
-        username, result = create_sale_user_with_note(
+        username, result, api_client = create_sale_user_with_note(
             api_client,
             user_id,
             plan_gb,
@@ -723,6 +734,7 @@ def handle_check_payment(call):
             unlimited,
         )
         if result:
+            update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
@@ -810,7 +822,7 @@ def process_payment_webhook(request_data):
                         unlimited = False
                 
                 api_client = APIClient()
-                username, result = create_sale_user_with_note(
+                username, result, api_client = create_sale_user_with_note(
                     api_client,
                     user_id,
                     plan_gb,
@@ -818,6 +830,7 @@ def process_payment_webhook(request_data):
                     unlimited,
                 )
                 if result:
+                    update_payment_record_fields(record_key, {"username": username, "server_id": api_client.server_id})
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     telegram_username = None
                     try:
@@ -923,7 +936,7 @@ def check_pending_payments():
                                 unlimited = False
                         
                         api_client = APIClient()
-                        username, add_result = create_sale_user_with_note(
+                        username, add_result, api_client = create_sale_user_with_note(
                             api_client,
                             user_id,
                             plan_gb,
@@ -932,6 +945,7 @@ def check_pending_payments():
                         )
                         
                         if add_result:
+                            update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
                             telegram_username = None
                             try:
                                 chat = bot.get_chat(user_id)

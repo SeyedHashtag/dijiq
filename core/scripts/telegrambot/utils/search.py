@@ -1,20 +1,18 @@
 from telebot import types
 from utils.command import *
-from utils.api_client import APIClient
+from utils.api_client import MultiServerAPI
 
 @bot.inline_handler(lambda query: is_admin(query.from_user.id))
 def handle_inline_query(query):
-    api_client = APIClient()
-    raw_users = api_client.get_users()
-    if raw_users is None:
+    multi_api = MultiServerAPI()
+    if not multi_api.servers:
         bot.answer_inline_query(query.id, results=[], switch_pm_text="Error retrieving users.", switch_pm_user_id=query.from_user.id)
         return
 
-    # Normalise to a dict keyed by username for uniform downstream access
-    if isinstance(raw_users, list):
-        users = {u.get('username', ''): u for u in raw_users if isinstance(u, dict)}
-    else:
-        users = raw_users
+    users = {}
+    for api_client, username, details in multi_api.iter_all_users():
+        if username:
+            users[username] = details
 
     query_text = query.query.lower()
     results = []

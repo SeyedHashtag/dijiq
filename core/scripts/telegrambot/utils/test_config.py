@@ -5,7 +5,7 @@ import time
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode
@@ -111,7 +111,7 @@ def add_to_waiting_list(user_id, username=None, language=None):
     save_waiting_users(waiting_users)
     return True
 
-def mark_test_config_used(user_id, username=None, language=None, telegram_username=None):
+def mark_test_config_used(user_id, username=None, language=None, telegram_username=None, server_id=None):
     configs = load_test_configs()
     key = str(user_id)
     # Preserve existing history fields (reset_at, reset_count, original used_at, etc.)
@@ -125,6 +125,8 @@ def mark_test_config_used(user_id, username=None, language=None, telegram_userna
         entry['language'] = language
     if telegram_username:
         entry['telegram_username'] = telegram_username
+    if server_id:
+        entry['server_id'] = server_id
 
     configs[key] = entry
     save_test_configs(configs)
@@ -276,8 +278,11 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
     TEST_TRAFFIC_GB = 1  # 1 GB
     TEST_DAYS = 30       # 30 days
 
-    api_client = APIClient()
-    existing_usernames = extract_existing_usernames(api_client.get_users())
+    multi_api = MultiServerAPI()
+    api_client = multi_api.select_server_for_new_user()
+    if api_client is None:
+        return False
+    existing_usernames = multi_api.get_all_usernames()
     username = allocate_username("t", user_id, existing_usernames)
     note_payload = build_user_note(
         username=username,
@@ -305,7 +310,13 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
 
     if result:
         # Mark the test config as used (save username as well)
-        mark_test_config_used(user_id, username=username, language=language, telegram_username=telegram_username)
+        mark_test_config_used(
+            user_id,
+            username=username,
+            language=language,
+            telegram_username=telegram_username,
+            server_id=api_client.server_id,
+        )
 
         # Get user URI from API
         user_uri_data = api_client.get_user_uri(username)

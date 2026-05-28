@@ -5,7 +5,7 @@ import io
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
@@ -18,27 +18,25 @@ def show_user(message):
     markup = types.InlineKeyboardMarkup()
     cancel_button = types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_show_user")
     markup.add(cancel_button)
-    
+
     msg = bot.reply_to(message, "Enter username:", reply_markup=markup)
     bot.register_next_step_handler(msg, process_show_user)
 
 def process_show_user(message):
     username = message.text.strip().lower()
     bot.send_chat_action(message.chat.id, 'typing')
-    
+
     # Use API client to get user details directly
-    api_client = APIClient()
-    
-    # Just attempt to get the user directly
-    user_details = api_client.get_user(username)
+    multi_api = MultiServerAPI()
+    api_client, user_details = multi_api.find_user(username)
 
     if user_details is None:
         bot.reply_to(message, f"User '{username}' not found or API error.")
         return
-    
+
     # Use the provided username directly
     actual_username = username
-    
+
     try:
         upload_bytes = user_details.get('upload_bytes')
         download_bytes = user_details.get('download_bytes')
@@ -50,7 +48,7 @@ def process_show_user(message):
             upload_gb = upload_bytes / (1024 ** 3)  # Convert bytes to GB
             download_gb = download_bytes / (1024 ** 3)  # Convert bytes to GB
             totalusage = upload_gb + download_gb
-            
+
             traffic_message = (
                 f"🔼 Upload: {upload_gb:.2f} GB\n"
                 f"🔽 Download: {download_gb:.2f} GB\n"
@@ -69,17 +67,17 @@ def process_show_user(message):
         f"💡 Blocked: {user_details['blocked']}\n\n"
         f"{traffic_message}"
     )
-    
+
     # Get user URI from the API client
     user_uri_data = api_client.get_user_uri(actual_username)
-    
+
     if not user_uri_data or 'normal_sub' not in user_uri_data:
         bot.reply_to(message, f"Error: Could not retrieve subscription URL for user '{actual_username}'. Check API configuration.")
         return
-    
+
     sub_url = user_uri_data['normal_sub']
     ipv4_url = user_uri_data.get('ipv4', '')
-    
+
     # Create QR code for IPv4 URL when available.
     qr_code = qrcode.make(ipv4_url or sub_url)
     bio = io.BytesIO()
@@ -100,7 +98,7 @@ def process_show_user(message):
         caption += f"IPv4 URL: `{ipv4_url}`\n\n"
 
     caption += f"Subscription URL:\n{sub_url}"
-    
+
     bot.send_photo(
         message.chat.id,
         bio,
@@ -112,8 +110,12 @@ def process_show_user(message):
 @bot.callback_query_handler(func=lambda call: any(call.data.startswith(p) for p in ['edit_username:', 'edit_traffic:', 'edit_expiration:', 'renew_password:', 'renew_creation:', 'block_user:', 'reset_user:']))
 def handle_edit_callback(call):
     action, username = call.data.split(':')
-    api_client = APIClient()
-    
+    multi_api = MultiServerAPI()
+    api_client, _ = multi_api.find_user(username)
+    if api_client is None:
+        bot.send_message(call.message.chat.id, f"User '{username}' not found or API error.")
+        return
+
     if action == 'edit_username':
         msg = bot.send_message(call.message.chat.id, f"Enter new username for {username}:")
         bot.register_next_step_handler(msg, process_edit_username, username)
@@ -153,8 +155,12 @@ def handle_edit_callback(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_block:'))
 def handle_block_confirmation(call):
     _, username, block_status = call.data.split(':')
-    api_client = APIClient()
-    
+    multi_api = MultiServerAPI()
+    api_client, _ = multi_api.find_user(username)
+    if api_client is None:
+        bot.send_message(call.message.chat.id, f"User '{username}' not found or API error.")
+        return
+
     # Use API to set block status
     is_blocked = block_status == 'true'
     result = api_client.update_user(username, {"blocked": is_blocked})
@@ -167,14 +173,15 @@ def handle_block_confirmation(call):
 
 def process_edit_username(message, username):
     new_username = message.text.strip()
-    
+
     # Validate the new username is not empty
     if not new_username:
         bot.reply_to(message, "Username cannot be empty.")
         return
-    
-    api_client = APIClient()
-    result = api_client.update_user(username, {"new_username": new_username})
+
+    multi_api = MultiServerAPI()
+    api_client, _ = multi_api.find_user(username)
+    result = api_client.update_user(username, {"new_username": new_username}) if api_client else None
 
     if result is None:
         bot.reply_to(message, f"Failed to update username for '{username}'.")
@@ -184,8 +191,9 @@ def process_edit_username(message, username):
 def process_edit_traffic(message, username):
     try:
         new_traffic_limit = int(message.text.strip())
-        api_client = APIClient()
-        result = api_client.update_user(username, {"new_traffic_limit": new_traffic_limit})
+        multi_api = MultiServerAPI()
+        api_client, _ = multi_api.find_user(username)
+        result = api_client.update_user(username, {"new_traffic_limit": new_traffic_limit}) if api_client else None
 
         if result is None:
             bot.reply_to(message, f"Failed to update traffic limit for user '{username}'.")
@@ -197,8 +205,9 @@ def process_edit_traffic(message, username):
 def process_edit_expiration(message, username):
     try:
         new_expiration_days = int(message.text.strip())
-        api_client = APIClient()
-        result = api_client.update_user(username, {"new_expiration_days": new_expiration_days})
+        multi_api = MultiServerAPI()
+        api_client, _ = multi_api.find_user(username)
+        result = api_client.update_user(username, {"new_expiration_days": new_expiration_days}) if api_client else None
 
         if result is None:
             bot.reply_to(message, f"Failed to update expiration days for user '{username}'.")

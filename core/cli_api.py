@@ -343,11 +343,53 @@ def edit_ip_address(ipv4: str, ipv6: str):
 # region Advanced Menu
 
 
-def start_telegram_bot(token: str, adminid: str, api_url: str, api_key: str):
+def start_telegram_bot(token: str, adminid: str, api_url: str, api_key: str, servers=None):
     '''Starts the Telegram bot.'''
-    if not token or not adminid or not api_url or not api_key:
-        raise InvalidInputError('Error: All parameters (token, adminid, api_url, api_key) are required for the start action.')
-    run_cmd(['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_key])
+    if not token or not adminid:
+        raise InvalidInputError('Error: token and adminid are required for the start action.')
+    command_servers = None
+    if servers:
+        parsed_servers = []
+        for item in servers:
+            if '=' not in item or ',' not in item:
+                raise InvalidInputError('Error: --server must use id=url,token format.')
+            server_id, rest = item.split('=', 1)
+            parts = rest.split(',')
+            if len(parts) < 2:
+                raise InvalidInputError('Error: --server must use id=url,token format.')
+            server_url, server_token = parts[0], parts[1]
+            weight = 1
+            enabled = True
+            if len(parts) >= 3 and parts[2].strip():
+                try:
+                    weight = float(parts[2].strip())
+                except ValueError:
+                    raise InvalidInputError('Error: --server weight must be a number.')
+            if len(parts) >= 4 and parts[3].strip():
+                enabled = parts[3].strip().lower() not in ('0', 'false', 'no', 'disabled')
+            server_id = server_id.strip()
+            server_url = server_url.strip()
+            server_token = server_token.strip()
+            if not server_id or not server_url or not server_token:
+                raise InvalidInputError('Error: --server must include non-empty id, url, and token.')
+            parsed_servers.append({
+                'id': server_id,
+                'name': server_id,
+                'url': server_url,
+                'token': server_token,
+                'enabled': enabled,
+                'weight': weight,
+            })
+        if parsed_servers and (not api_url or not api_key):
+            api_url = parsed_servers[0]['url']
+            api_key = parsed_servers[0]['token']
+        command_servers = json.dumps(parsed_servers, separators=(',', ':'))
+    if not api_url or not api_key:
+        raise InvalidInputError('Error: api_url and api_key are required when no --server is provided.')
+    command = ['bash', Command.INSTALL_TELEGRAMBOT.value, 'start', token, adminid, api_url, api_key]
+    if command_servers:
+        command.append(command_servers)
+    run_cmd(command)
 
 
 def stop_telegram_bot():

@@ -1,7 +1,7 @@
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_delete")
@@ -14,23 +14,22 @@ def delete_user(message):
     markup = types.InlineKeyboardMarkup()
     cancel_button = types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_delete")
     markup.add(cancel_button)
-    
+
     msg = bot.reply_to(message, "Enter username:", reply_markup=markup)
     bot.register_next_step_handler(msg, process_delete_user)
 
 def process_delete_user(message):
     username = message.text.strip().lower()
-    
+
     if not username:
         bot.reply_to(message, "Username cannot be empty. Operation canceled.", reply_markup=create_main_markup(is_admin=True))
         return
-    
-    # Use API client to delete the user
-    api_client = APIClient()
-    
-    # Just attempt to delete the user directly
+
+    multi_api = MultiServerAPI()
+    api_client, _ = multi_api.find_user(username)
+
     bot.send_chat_action(message.chat.id, 'typing')
-    result = api_client.delete_user(username)
+    result = api_client.delete_user(username) if api_client else None
 
     if result is None:
         bot.reply_to(message, f"Error: Failed to delete user '{username}'. They may not exist.", reply_markup=create_main_markup(is_admin=True))

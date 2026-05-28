@@ -72,6 +72,26 @@ def update_payment_status(payment_id, status):
             return True
         return False
 
+def update_payment_record_fields(payment_id, fields):
+    with payment_lock:
+        try:
+            if os.path.exists(PAYMENTS_FILE):
+                with open(PAYMENTS_FILE, 'r') as f:
+                    payments = json.load(f)
+            else:
+                return False
+        except Exception:
+            return False
+
+        if payment_id not in payments or not isinstance(fields, dict):
+            return False
+
+        payments[payment_id].update(fields)
+        payments[payment_id]['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(PAYMENTS_FILE, 'w') as f:
+            json.dump(payments, f, indent=4)
+        return True
+
 def claim_payment_for_processing(payment_id, allowed_statuses=None):
     with payment_lock:
         try:

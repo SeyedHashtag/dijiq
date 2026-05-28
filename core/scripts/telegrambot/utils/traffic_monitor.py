@@ -4,7 +4,7 @@ import re
 import threading
 from datetime import datetime
 
-from utils.api_client import APIClient
+from utils.api_client import MultiServerAPI
 from utils.command import bot
 from utils.language import get_user_language
 from utils.translations import get_message_text
@@ -72,15 +72,6 @@ def _should_reset_alerts(state, max_download_bytes, total_usage_bytes):
     return False
 
 
-def _iter_users(users):
-    if isinstance(users, dict):
-        for username, data in users.items():
-            yield username, data
-    elif isinstance(users, list):
-        for data in users:
-            yield data.get('username'), data
-
-
 def _extract_reseller_id(username):
     """Extract the reseller's Telegram ID from a reseller-created config username.
 
@@ -136,15 +127,14 @@ def _should_reset_days_alerts(state, total_days, expiration_days):
 
 
 def monitor_user_traffic():
-    api_client = APIClient()
-    users = api_client.get_users()
-    if users is None:
+    multi_api = MultiServerAPI()
+    if not multi_api.servers:
         return
 
     alerts = _load_alerts()
     changed = False
 
-    for username, user_data in _iter_users(users):
+    for api_client, username, user_data in multi_api.iter_all_users():
         if not username or not user_data:
             continue
 

@@ -16,7 +16,7 @@ from utils.reseller import (
     get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD
 )
 from utils.edit_plans import load_plans
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.currency_format import format_toman_amount, format_usd_amount
@@ -55,10 +55,7 @@ def _debt_state_label(debt_state):
 
 
 def _has_active_purchased_config(user_id):
-    api_client = APIClient()
-    users = api_client.get_users()
-    if users is None:
-        return False
+    multi_api = MultiServerAPI()
 
     paid_patterns = (
         re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),  # current purchased usernames
@@ -76,25 +73,27 @@ def _has_active_purchased_config(user_id):
         except (TypeError, ValueError):
             return False
 
-    if isinstance(users, dict):
-        return any(_is_active_paid(username, config_data or {}) for username, config_data in users.items())
-
-    if isinstance(users, list):
-        for config_data in users:
-            username = config_data.get('username') if isinstance(config_data, dict) else None
-            if _is_active_paid(username, config_data or {}):
-                return True
+    for _, username, config_data in multi_api.iter_all_users():
+        if _is_active_paid(username, config_data or {}):
+            return True
 
     return False
 
 
 def _create_reseller_username(api_client, user_id):
-    users = api_client.get_users()
-    return allocate_username("r", user_id, extract_existing_usernames(users))
+    multi_api = MultiServerAPI()
+    usernames = multi_api.get_all_usernames()
+    if not usernames and api_client is not None:
+        usernames = extract_existing_usernames(api_client.get_users())
+    return allocate_username("r", user_id, usernames)
 
 
 def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_username, unlimited=False):
-    username = _create_reseller_username(api_client, user_id)
+    multi_api = MultiServerAPI()
+    target_client = multi_api.select_server_for_new_user() or api_client
+    if target_client is None:
+        return None, None, None
+    username = _create_reseller_username(target_client, user_id)
     note_payload = build_user_note(
         username=username,
         traffic_limit=gb,
@@ -102,16 +101,16 @@ def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_userna
         unlimited=unlimited,
         note_text=chosen_username,
     )
-    result = api_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
+    result = target_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
     if result is None:
-        result = api_client.add_user(username, int(gb), int(days))
+        result = target_client.add_user(username, int(gb), int(days))
         if result is not None:
             logging.getLogger("dijiq.usernames").warning(
                 "Created reseller user without note fallback. reseller_id=%s username=%s",
                 user_id,
                 username,
             )
-    return username, result
+    return username, result, target_client
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -414,7 +413,7 @@ def handle_reseller_username_input(message):
     
     # Create user
     api_client = APIClient()
-    username, result = _create_reseller_user_with_note(
+    username, result, api_client = _create_reseller_user_with_note(
         api_client,
         user_id,
         gb,
@@ -429,7 +428,8 @@ def handle_reseller_username_input(message):
             "username": username,
             "gb": gb,
             "days": days,
-            "price": price
+            "price": price,
+            "server_id": api_client.server_id,
         }
         debt_added = add_reseller_debt(user_id, price, config_data)
         if not debt_added:
@@ -810,9 +810,15 @@ def handle_reseller_customer_config(call):
 
     bot.answer_callback_query(call.id)
 
-    # Fetch live config data from API
-    api_client = APIClient()
-    user_config = api_client.get_user(username)
+    preferred_server_id = None
+    for cfg in (reseller_data or {}).get('configs', []):
+        if cfg.get('username') == username:
+            preferred_server_id = cfg.get('server_id')
+            break
+
+    # Fetch live config data from the server that owns this config.
+    multi_api = MultiServerAPI()
+    api_client, user_config = multi_api.find_user(username, preferred_server_id=preferred_server_id)
 
     back_markup = types.InlineKeyboardMarkup()
     back_markup.add(

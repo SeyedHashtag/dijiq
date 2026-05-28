@@ -7,7 +7,7 @@ import re
 from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 
@@ -20,12 +20,8 @@ def my_configs(message):
     user_id = message.from_user.id
     bot.send_chat_action(message.chat.id, 'typing')
     
-    # Create API client to fetch user data
-    api_client = APIClient()
-    
-    # Get all users
-    users = api_client.get_users()
-    if users is None:
+    multi_api = MultiServerAPI()
+    if not multi_api.servers:
         bot.reply_to(message, "⚠️ Error connecting to API. Please try again later.")
         return
     
@@ -44,31 +40,14 @@ def my_configs(message):
             re.compile(rf"^test{user_id}t"),
         )
 
-        # Handle both list and dictionary responses from API
-        if isinstance(users, dict):
-            # If users is a dictionary, iterate through items
-            for username, user_data in users.items():
-                if username and any(pattern.match(username) for pattern in paid_patterns):
-                    user_configs.append((username, user_data))
+        for api_client, username, config_data in multi_api.iter_all_users():
+            if username and any(pattern.match(username) for pattern in paid_patterns):
+                user_configs.append((username, config_data, api_client))
 
-            # Check if we found any configs for this user
-            if not user_configs:
-                for username, user_data in users.items():
-                    if username and any(pattern.match(username) for pattern in test_patterns):
-                        user_configs.append((username, user_data))
-        elif isinstance(users, list):
-            # If users is a list, iterate through items
-            for user in users:
-                username = user.get('username')
-                if username and any(pattern.match(username) for pattern in paid_patterns):
-                    user_configs.append((username, user))
-
-            # Check if we found any configs for this user
-            if not user_configs:
-                for user in users:
-                    username = user.get('username')
-                    if username and any(pattern.match(username) for pattern in test_patterns):
-                        user_configs.append((username, user))
+        if not user_configs:
+            for api_client, username, config_data in multi_api.iter_all_users():
+                if username and any(pattern.match(username) for pattern in test_patterns):
+                    user_configs.append((username, config_data, api_client))
 
         if not user_configs:
             language = get_user_language(user_id)
@@ -84,17 +63,17 @@ def my_configs(message):
     # Process and display configs
     if len(user_configs) == 1:
         # Only one config found, display it directly
-        display_config(message.chat.id, user_configs[0][0], user_configs[0][1], api_client)
+        display_config(message.chat.id, user_configs[0][0], user_configs[0][1], user_configs[0][2])
     else:
         # Multiple configs found, create a selection menu
         markup = types.InlineKeyboardMarkup()
         
-        for username, user_data in user_configs:
+        for username, user_data, api_client in user_configs:
             # Get traffic limit in GB
             max_traffic_gb = user_data.get('max_download_bytes', 0) / (1024 ** 3)
             # Create button text with some info
             button_text = f"{username} - {max_traffic_gb:.2f} GB"
-            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{username}"))
+            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{api_client.server_id}:{username}"))
         
         bot.reply_to(
             message,
@@ -107,13 +86,14 @@ def handle_show_config(call):
     """Handle the selection of a specific config"""
     try:
         bot.answer_callback_query(call.id)
-        username = call.data.split(':')[1]
-        
-        # Create API client
-        api_client = APIClient()
-        
-        # Get specific user data
-        user_data = api_client.get_user(username)
+        parts = call.data.split(':')
+        if len(parts) >= 3:
+            server_id, username = parts[1], parts[2]
+        else:
+            server_id, username = None, parts[1]
+
+        multi_api = MultiServerAPI()
+        api_client, user_data = multi_api.find_user(username, preferred_server_id=server_id)
         
         if user_data:
             # Show the config

@@ -3,7 +3,7 @@ import io
 from telebot import types
 from utils.command import *
 from utils.common import create_main_markup
-from utils.api_client import APIClient
+from utils.api_client import APIClient, MultiServerAPI
 
 
 def create_cancel_markup(back_step=None):
@@ -29,17 +29,16 @@ def process_add_user_step1(message):
         bot.register_next_step_handler(message, process_add_user_step1)
         return
 
-    api_client = APIClient()
-    users = api_client.get_users()
+    multi_api = MultiServerAPI()
+    existing_usernames = multi_api.get_all_usernames()
 
-    if users is None:
+    if not multi_api.servers:
         bot.reply_to(message, "Error connecting to API. Please check API configuration and try again.", reply_markup=create_main_markup())
         return
 
     try:
-        existing_usernames = [user['username'].lower() for user in users] if users else []
-
-        if username.lower() in existing_usernames:
+        existing_usernames_lower = {existing_username.lower() for existing_username in existing_usernames}
+        if username.lower() in existing_usernames_lower:
             bot.reply_to(message, f"Username '{username}' already exists. Please choose a different username:", reply_markup=create_cancel_markup())
             bot.register_next_step_handler(message, process_add_user_step1)
             return
@@ -96,7 +95,16 @@ def process_add_user_step4(call):
         
         unlimited = choice == 'yes'
         
-        api_client = APIClient()
+        multi_api = MultiServerAPI()
+        api_client = multi_api.select_server_for_new_user()
+        if api_client is None:
+            bot.edit_message_text(
+                "Failed to add user. No healthy VPN server is available.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=create_main_markup()
+            )
+            return
         
         bot.send_chat_action(call.message.chat.id, 'typing')
         result = api_client.add_user(username, traffic_limit, expiration_days, unlimited)

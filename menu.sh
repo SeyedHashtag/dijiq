@@ -353,24 +353,71 @@ telegram_bot_handler() {
                     done
                     
                     while true; do
-                        read -e -p "Enter the API URL (e.g., http://example.com): " api_url
-                        if [ -z "$api_url" ]; then
-                            echo "API URL cannot be empty. Please try again."
-                        else
+                        read -e -p "How many VPN servers do you want to configure? [1]: " server_count
+                        server_count=${server_count:-1}
+                        if [[ "$server_count" =~ ^[0-9]+$ ]] && [ "$server_count" -ge 1 ]; then
                             break
-                        fi
-                    done
-                    
-                    while true; do
-                        read -e -p "Enter the API key: " api_key
-                        if [ -z "$api_key" ]; then
-                            echo "API key cannot be empty. Please try again."
                         else
-                            break
+                            echo "Server count must be a positive number. Please try again."
                         fi
                     done
 
-                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key"
+                    server_args=()
+                    for ((i=1; i<=server_count; i++)); do
+                        default_id="server$i"
+                        if [ "$i" -eq 1 ]; then
+                            default_id="primary"
+                        fi
+
+                        read -e -p "Enter server $i ID [$default_id]: " server_id
+                        server_id=${server_id:-$default_id}
+
+                        while true; do
+                            read -e -p "Enter server $i API URL (e.g., http://example.com): " current_api_url
+                            if [ -z "$current_api_url" ]; then
+                                echo "API URL cannot be empty. Please try again."
+                            else
+                                break
+                            fi
+                        done
+
+                        while true; do
+                            read -e -p "Enter server $i API key: " current_api_key
+                            if [ -z "$current_api_key" ]; then
+                                echo "API key cannot be empty. Please try again."
+                            else
+                                break
+                            fi
+                        done
+
+                        while true; do
+                            read -e -p "Enter server $i balancing weight [1]: " current_weight
+                            current_weight=${current_weight:-1}
+                            if [[ "$current_weight" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+                                break
+                            else
+                                echo "Weight must be a positive number. Please try again."
+                            fi
+                        done
+
+                        while true; do
+                            read -e -p "Enable server $i for new configs? [y/n, default y]: " current_enabled
+                            current_enabled=${current_enabled:-y}
+                            case "$current_enabled" in
+                                y|Y|yes|YES) current_enabled="true"; break ;;
+                                n|N|no|NO) current_enabled="false"; break ;;
+                                *) echo "Please answer y or n." ;;
+                            esac
+                        done
+
+                        if [ "$i" -eq 1 ]; then
+                            api_url="$current_api_url"
+                            api_key="$current_api_key"
+                        fi
+                        server_args+=(--server "$server_id=$current_api_url,$current_api_key,$current_weight,$current_enabled")
+                    done
+
+                    python3 $CLI_PATH telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" "${server_args[@]}"
                 fi
                 ;;
             2)
