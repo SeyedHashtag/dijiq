@@ -7,19 +7,13 @@ if [ ! -d "$BACKUP_DIR" ]; then
     mkdir -p "$BACKUP_DIR"
 fi
 
-WAITING_LIST_FILE="/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json"
-if [ ! -f "$WAITING_LIST_FILE" ]; then
-    mkdir -p "$(dirname "$WAITING_LIST_FILE")"
-    echo "{}" > "$WAITING_LIST_FILE"
-fi
-
 FILES_TO_BACKUP=(
     "/etc/dijiq/.configs.env"
     "/etc/dijiq/core/scripts/telegrambot/.env"
     "/etc/dijiq/core/scripts/telegrambot/plans.json"
     "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
     "/etc/dijiq/core/scripts/telegrambot/test_settings.json"
-    "$WAITING_LIST_FILE"
+    "/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json"
     "/etc/dijiq/core/scripts/telegrambot/payments.json"
     "/etc/dijiq/core/scripts/telegrambot/support_info.json"
     "/etc/dijiq/core/scripts/telegrambot/user_languages.json"
