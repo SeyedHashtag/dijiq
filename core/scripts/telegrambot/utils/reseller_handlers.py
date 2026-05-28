@@ -163,6 +163,7 @@ def handle_reseller_request(call):
     language = get_user_language(user_id)
     reseller_data = get_reseller_data(user_id)
     current_status = reseller_data.get('status') if reseller_data else None
+    telegram_username = str(call.from_user.username or "").strip().lstrip("@")
 
     if current_status == 'approved':
         bot.answer_callback_query(call.id, "You are already an approved reseller.")
@@ -173,12 +174,15 @@ def handle_reseller_request(call):
     if current_status == 'banned':
         bot.answer_callback_query(call.id, get_message_text(language, "reseller_access_banned"))
         return
+    if not telegram_username:
+        bot.answer_callback_query(call.id, get_message_text(language, "reseller_requires_telegram_username"), show_alert=True)
+        return
     if not _has_active_purchased_config(user_id):
         bot.answer_callback_query(call.id, get_message_text(language, "reseller_requires_active_paid_config"), show_alert=True)
         return
     
     # Update status to pending
-    if not update_reseller_status(user_id, 'pending', telegram_username=call.from_user.username):
+    if not update_reseller_status(user_id, 'pending', telegram_username=telegram_username):
         bot.answer_callback_query(call.id, "Failed to submit request. Please try again.")
         return
     
@@ -189,8 +193,7 @@ def handle_reseller_request(call):
     )
     
     # Notify Admins
-    username = call.from_user.username or "Unknown"
-    notification = get_message_text(language, "reseller_request_notification").format(user_id=user_id, username=username)
+    notification = get_message_text(language, "reseller_request_notification").format(user_id=user_id, username=telegram_username)
     
     markup = types.InlineKeyboardMarkup()
     markup.add(
