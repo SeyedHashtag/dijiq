@@ -1,3 +1,8 @@
+## v1.12.39
+✨ Add VPN server management and user handling improvements to the Telegram bot
+✨ Require Telegram usernames for reseller requests
+♻️ Streamline waiting list backup file handling
+
 ## v1.12.38
 ✨ Add waiting list management for test account creation
 
