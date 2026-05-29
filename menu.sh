@@ -426,6 +426,97 @@ configure_telegram_bot() {
     python3 "$CLI_PATH" telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" "${server_args[@]}"
 }
 
+add_telegram_vpn_server() {
+    load_existing_telegram_servers
+
+    local token admin_ids
+    token=$(telegram_env_value "API_TOKEN")
+    admin_ids=$(telegram_env_value "ADMIN_USER_IDS" | tr -d '[][:space:]')
+
+    if [ -z "$token" ] || [ -z "$admin_ids" ]; then
+        echo "Telegram bot is not configured yet. Run setup/reconfigure first."
+        return
+    fi
+
+    server_ids=("${existing_server_ids[@]}")
+    local server_urls=("${existing_server_urls[@]}")
+    local server_tokens=("${existing_server_tokens[@]}")
+    local server_weights=("${existing_server_weights[@]}")
+    local server_enabled=("${existing_server_enabled[@]}")
+
+    local default_id="server$((${#server_ids[@]} + 1))"
+    local current_id current_url current_token current_weight current_enabled
+
+    echo "--------------------------------------"
+    echo "Add VPN server for balancing"
+
+    while true; do
+        current_id=$(read_server_id "Server ID" "$default_id")
+        if server_id_exists "$current_id"; then
+            echo "Server ID '$current_id' is already used. Please choose another ID."
+        else
+            break
+        fi
+    done
+
+    while true; do
+        current_url=$(read_non_empty "API URL (e.g., http://example.com)" "")
+        if [[ "$current_url" =~ [,[:space:]] ]]; then
+            echo "API URLs with commas or spaces are not supported by the current CLI format."
+        else
+            break
+        fi
+    done
+
+    current_token=$(read_secret_value "API key" "")
+    while [[ "$current_token" =~ [,[:space:]] ]]; do
+        echo "API keys with commas or spaces are not supported by the current CLI format."
+        current_token=$(read_secret_value "API key" "")
+    done
+
+    current_weight=$(read_positive_number "Balancing weight" "1")
+    current_enabled=$(read_yes_no_bool "Enable this server for new configs?" "true")
+
+    server_ids+=("$current_id")
+    server_urls+=("$current_url")
+    server_tokens+=("$current_token")
+    server_weights+=("$current_weight")
+    server_enabled+=("$current_enabled")
+
+    echo "======================================"
+    echo "Updated VPN server setup"
+    echo "Bot token: $(mask_secret "$token")"
+    echo "Admin IDs: $admin_ids"
+    local i server_count
+    server_count=${#server_ids[@]}
+    for ((i=0; i<server_count; i++)); do
+        echo "$((i + 1)). ${server_ids[$i]} | ${server_urls[$i]} | weight ${server_weights[$i]} | enabled ${server_enabled[$i]}"
+    done
+    echo "======================================"
+
+    local confirm
+    read -e -p "Add this server and restart/start the bot now? [y/n, default y]: " confirm
+    confirm=${confirm:-y}
+    case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Add VPN server cancelled."; return ;;
+    esac
+
+    local api_url="${server_urls[0]}"
+    local api_key="${server_tokens[0]}"
+    local server_args=()
+    for ((i=0; i<server_count; i++)); do
+        server_args+=(--server "${server_ids[$i]}=${server_urls[$i]},${server_tokens[$i]},${server_weights[$i]},${server_enabled[$i]}")
+    done
+
+    if systemctl is-active --quiet dijiq-telegram-bot.service; then
+        echo "Stopping the current Telegram bot service before applying the updated server list..."
+        python3 "$CLI_PATH" telegram -a stop
+    fi
+
+    python3 "$CLI_PATH" telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" "${server_args[@]}"
+}
+
 restart_telegram_bot() {
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         systemctl restart dijiq-telegram-bot.service
@@ -445,24 +536,28 @@ telegram_bot_handler() {
         else
             echo -e "Service: ${red}Inactive${NC}"
         fi
-        echo -e "${cyan}1.${NC} Setup / reconfigure bot and VPN servers"
-        echo -e "${cyan}2.${NC} Show configured VPN servers"
-        echo -e "${cyan}3.${NC} Restart Telegram bot service"
-        echo -e "${red}4.${NC} Stop Telegram bot service"
+        echo -e "${cyan}1.${NC} Add VPN server for balancing"
+        echo -e "${cyan}2.${NC} Setup / reconfigure bot and VPN servers"
+        echo -e "${cyan}3.${NC} Show configured VPN servers"
+        echo -e "${cyan}4.${NC} Restart Telegram bot service"
+        echo -e "${red}5.${NC} Stop Telegram bot service"
         echo "0. Back"
         read -p "Choose an option: " option
 
         case $option in
             1)
-                configure_telegram_bot
+                add_telegram_vpn_server
                 ;;
             2)
-                show_configured_telegram_servers
+                configure_telegram_bot
                 ;;
             3)
-                restart_telegram_bot
+                show_configured_telegram_servers
                 ;;
             4)
+                restart_telegram_bot
+                ;;
+            5)
                 python3 "$CLI_PATH" telegram -a stop
                 ;;
             0)
@@ -500,10 +595,9 @@ display_main_menu() {
     echo -e "${yellow}                   ☼ Main Menu ☼                   ${NC}"
 
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
-    echo -e "${green}[1] ${NC}↝ Server Info"
-    echo -e "${cyan}[2] ${NC}↝ Telegram Bot"
-    echo -e "${cyan}[3] ${NC}↝ Change IPs / Domains"
-    echo -e "${cyan}[4] ${NC}↝ Update Panel"
+    echo -e "${cyan}[1] ${NC}↝ Telegram Bot"
+    echo -e "${cyan}[2] ${NC}↝ Change IPs / Domains"
+    echo -e "${cyan}[3] ${NC}↝ Update Panel"
     echo -e "${red}[0] ${NC}↝ Exit"
     echo -e "${LPurple}◇──────────────────────────────────────────────────────────────────────◇${NC}"
     echo -ne "${yellow}➜ Enter your option: ${NC}"
@@ -518,10 +612,9 @@ main_menu() {
         display_main_menu
         read -r choice
         case $choice in
-            1) python3 "$CLI_PATH" server-info ;;
-            2) telegram_bot_handler ;;
-            3) edit_ips ;;
-            4) dijiq_upgrade ;;
+            1) telegram_bot_handler ;;
+            2) edit_ips ;;
+            3) dijiq_upgrade ;;
             0) exit 0 ;;
             *) echo "Invalid option. Please try again." ;;
         esac
