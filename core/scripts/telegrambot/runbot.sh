@@ -8,16 +8,23 @@ update_env_file() {
     local api_url=$3
     local api_key=$4
     local servers_json=$5
+    local env_file="/etc/dijiq/core/scripts/telegrambot/.env"
+    local tmp_file
+    tmp_file=$(mktemp)
 
-    cat <<EOL > /etc/dijiq/core/scripts/telegrambot/.env
+    cat <<EOL > "$tmp_file"
 API_TOKEN=$api_token
 ADMIN_USER_IDS=[$admin_user_ids]
 URL=$api_url
 TOKEN=$api_key
 EOL
     if [ -n "$servers_json" ]; then
-        printf 'SERVERS_JSON=%s\n' "$servers_json" >> /etc/dijiq/core/scripts/telegrambot/.env
+        printf 'SERVERS_JSON=%s\n' "$servers_json" >> "$tmp_file"
     fi
+    if [ -f "$env_file" ]; then
+        grep -vE '^(API_TOKEN|ADMIN_USER_IDS|URL|TOKEN|SERVERS_JSON)=' "$env_file" >> "$tmp_file"
+    fi
+    mv "$tmp_file" "$env_file"
 }
 
 create_service_file() {
@@ -44,7 +51,9 @@ start_service() {
     local servers_json=$5
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
-        echo "The dijiq-telegram-bot.service is already running."
+        update_env_file "$api_token" "$admin_user_ids" "$api_url" "$api_key" "$servers_json"
+        systemctl restart dijiq-telegram-bot.service > /dev/null 2>&1
+        echo "The dijiq-telegram-bot.service is already running. Configuration updated and service restarted."
         return
     fi
 
