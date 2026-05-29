@@ -671,6 +671,236 @@ def handle_reseller_stats(call):
     )
 
 RESELLER_CUSTOMERS_PAGE_SIZE = 5
+RESELLER_CUSTOMER_LOW_THRESHOLD = 80
+RESELLER_CUSTOMER_CATEGORY_ORDER = ("active", "low_days", "low_gb", "expired", "deleted")
+RESELLER_CUSTOMER_CATEGORY_ICONS = {
+    "active": "✅",
+    "low_days": "📅",
+    "low_gb": "📊",
+    "expired": "⌛",
+    "deleted": "🗑",
+}
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _load_reseller_live_users():
+    multi_api = MultiServerAPI()
+    live_users = {}
+    unavailable_server_ids = set()
+
+    for server, client in multi_api.iter_clients(include_disabled=True):
+        server_id = server.get("id") or client.server_id
+        users = client.get_users()
+        if users is None:
+            unavailable_server_ids.add(server_id)
+            continue
+
+        if isinstance(users, dict):
+            for username, data in users.items():
+                if username and isinstance(data, dict):
+                    live_users[str(username)] = data
+        elif isinstance(users, list):
+            for data in users:
+                if isinstance(data, dict) and data.get("username"):
+                    live_users[str(data["username"])] = data
+
+    return live_users, unavailable_server_ids
+
+
+def _traffic_usage_percent(user_config):
+    max_download_bytes = user_config.get("max_download_bytes", 0) or 0
+    if max_download_bytes <= 0:
+        return 0
+    used_bytes = (user_config.get("upload_bytes", 0) or 0) + (user_config.get("download_bytes", 0) or 0)
+    return (used_bytes / max_download_bytes) * 100
+
+
+def _days_usage_percent(cfg, user_config):
+    total_days = _safe_int(cfg.get("days"), 0)
+    expiration_days = _safe_int(user_config.get("expiration_days"), 0)
+    if total_days <= 0:
+        return 0
+    days_used = max(0, total_days - expiration_days)
+    return (days_used / total_days) * 100
+
+
+def _is_customer_expired(user_config):
+    if bool(user_config.get("blocked", False)):
+        return True
+    if _safe_int(user_config.get("expiration_days"), 0) <= 0:
+        return True
+    max_download_bytes = user_config.get("max_download_bytes", 0) or 0
+    if max_download_bytes > 0:
+        used_bytes = (user_config.get("upload_bytes", 0) or 0) + (user_config.get("download_bytes", 0) or 0)
+        return used_bytes >= max_download_bytes
+    return False
+
+
+def _categorize_reseller_customers(configs):
+    live_users, unavailable_server_ids = _load_reseller_live_users()
+    categorized = {category: [] for category in RESELLER_CUSTOMER_CATEGORY_ORDER}
+
+    for cfg in configs:
+        username = cfg.get("username")
+        user_config = live_users.get(str(username)) if username else None
+        server_id = cfg.get("server_id")
+        enriched = {**cfg, "_user_config": user_config}
+
+        if not user_config:
+            if server_id and server_id in unavailable_server_ids:
+                enriched["_status_category"] = "active"
+                enriched["_status_note"] = "status_unavailable"
+                categorized["active"].append(enriched)
+            else:
+                enriched["_status_category"] = "deleted"
+                categorized["deleted"].append(enriched)
+            continue
+
+        if _is_customer_expired(user_config):
+            enriched["_status_category"] = "expired"
+            categorized["expired"].append(enriched)
+            continue
+
+        enriched["_status_category"] = "active"
+        categorized["active"].append(enriched)
+
+        if _days_usage_percent(cfg, user_config) >= RESELLER_CUSTOMER_LOW_THRESHOLD:
+            low_days = {**enriched, "_status_category": "low_days"}
+            categorized["low_days"].append(low_days)
+
+        if _traffic_usage_percent(user_config) >= RESELLER_CUSTOMER_LOW_THRESHOLD:
+            low_gb = {**enriched, "_status_category": "low_gb"}
+            categorized["low_gb"].append(low_gb)
+
+    return categorized
+
+
+def _customer_category_label(language, category):
+    return get_message_text(language, f"reseller_customer_category_{category}")
+
+
+def _render_reseller_customer_message(call, msg, markup):
+    if call.message.photo or call.message.document or call.message.sticker:
+        try:
+            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        except Exception:
+            pass
+        bot.send_message(call.message.chat.id, msg, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    bot.edit_message_text(
+        msg,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+def _render_reseller_customer_overview(call, language, categorized, total):
+    lines = []
+    for category in RESELLER_CUSTOMER_CATEGORY_ORDER:
+        lines.append(
+            get_message_text(language, "reseller_customer_category_count").format(
+                icon=RESELLER_CUSTOMER_CATEGORY_ICONS[category],
+                label=_customer_category_label(language, category),
+                count=len(categorized[category])
+            )
+        )
+
+    msg = get_message_text(language, "reseller_customers_overview").format(
+        total=total,
+        categories="\n".join(lines)
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for category in RESELLER_CUSTOMER_CATEGORY_ORDER:
+        buttons.append(
+            types.InlineKeyboardButton(
+                f"{RESELLER_CUSTOMER_CATEGORY_ICONS[category]} {_customer_category_label(language, category)} ({len(categorized[category])})",
+                callback_data=f"reseller:my_customers:{category}:0"
+            )
+        )
+    markup.add(*buttons)
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    _render_reseller_customer_message(call, msg, markup)
+
+
+def _render_reseller_customer_category(call, language, categorized, category, page):
+    category_configs = categorized.get(category, [])
+    total = len(category_configs)
+    label = _customer_category_label(language, category)
+
+    if total == 0:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_back_to_customers"), callback_data="reseller:my_customers:overview"))
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+        _render_reseller_customer_message(
+            call,
+            get_message_text(language, "reseller_customers_empty_category").format(category=label),
+            markup
+        )
+        return
+
+    total_pages = max(1, (total + RESELLER_CUSTOMERS_PAGE_SIZE - 1) // RESELLER_CUSTOMERS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * RESELLER_CUSTOMERS_PAGE_SIZE
+    end = start + RESELLER_CUSTOMERS_PAGE_SIZE
+    page_configs = category_configs[start:end]
+
+    entries_lines = []
+    for i, cfg in enumerate(page_configs, start=start + 1):
+        username = cfg.get('username', 'N/A')
+        gb = cfg.get('gb', '?')
+        days = cfg.get('days', '?')
+        price = cfg.get('price', 0)
+        timestamp = cfg.get('timestamp', 'N/A')
+        status_category = cfg.get("_status_category", category)
+        status_label = _customer_category_label(language, status_category)
+        if cfg.get("_status_note") == "status_unavailable":
+            status_label = get_message_text(language, "reseller_customer_status_unavailable")
+        entries_lines.append(
+            f"{i}. {RESELLER_CUSTOMER_CATEGORY_ICONS.get(status_category, '✅')} `{username}`\n"
+            f"   {status_label}\n"
+            f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
+            f"   🕒 {timestamp}"
+        )
+
+    msg = get_message_text(language, "reseller_customers_category_header").format(
+        category=label,
+        total=total,
+        page=page + 1,
+        total_pages=total_pages,
+        entries="\n\n".join(entries_lines)
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    row_buttons = []
+    for i, cfg in enumerate(page_configs, start=start + 1):
+        username = cfg.get('username', 'N/A')
+        row_buttons.append(types.InlineKeyboardButton(f"{i}", callback_data=f"reseller:cfg:{username}:{category}:{page}"))
+    if row_buttons:
+        markup.row(*row_buttons)
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(types.InlineKeyboardButton("⬅️", callback_data=f"reseller:my_customers:{category}:{page - 1}"))
+    nav_buttons.append(types.InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="reseller:my_customers_noop"))
+    if page < total_pages - 1:
+        nav_buttons.append(types.InlineKeyboardButton("➡️", callback_data=f"reseller:my_customers:{category}:{page + 1}"))
+    if nav_buttons:
+        markup.row(*nav_buttons)
+
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_back_to_customers"), callback_data="reseller:my_customers:overview"))
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    _render_reseller_customer_message(call, msg, markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:my_customers:"))
 def handle_reseller_my_customers(call):
@@ -681,11 +911,6 @@ def handle_reseller_my_customers(call):
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
-
-    try:
-        page = int(call.data.split(":")[2])
-    except (IndexError, ValueError):
-        page = 0
 
     configs = list(reseller_data.get('configs', []))
     # Show newest configs first
@@ -703,81 +928,24 @@ def handle_reseller_my_customers(call):
         )
         return
 
-    total_pages = max(1, (total + RESELLER_CUSTOMERS_PAGE_SIZE - 1) // RESELLER_CUSTOMERS_PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
+    categorized = _categorize_reseller_customers(configs)
+    parts = call.data.split(":")
+    category = parts[2] if len(parts) > 2 else "overview"
 
-    start = page * RESELLER_CUSTOMERS_PAGE_SIZE
-    end = start + RESELLER_CUSTOMERS_PAGE_SIZE
-    page_configs = configs[start:end]
+    if category == "overview" or category.isdigit():
+        _render_reseller_customer_overview(call, language, categorized, total)
+        return
 
-    entries_lines = []
-    for i, cfg in enumerate(page_configs, start=start + 1):
-        username = cfg.get('username', 'N/A')
-        gb = cfg.get('gb', '?')
-        days = cfg.get('days', '?')
-        price = cfg.get('price', 0)
-        timestamp = cfg.get('timestamp', 'N/A')
-        entries_lines.append(
-            f"{i}. `{username}`\n"
-            f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
-            f"   🕒 {timestamp}"
-        )
+    if category not in RESELLER_CUSTOMER_CATEGORY_ORDER:
+        bot.answer_callback_query(call.id, "Invalid customer category.")
+        return
 
-    entries_text = "\n\n".join(entries_lines)
+    try:
+        page = int(parts[3])
+    except (IndexError, ValueError):
+        page = 0
 
-    msg = get_message_text(language, "reseller_customers_list_header").format(
-        total=total,
-        page=page + 1,
-        total_pages=total_pages,
-        entries=entries_text
-    )
-
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    # Add numbered buttons for each customer on this page in a single row
-    row_buttons = []
-    for i, cfg in enumerate(page_configs, start=start + 1):
-        username = cfg.get('username', 'N/A')
-        row_buttons.append(types.InlineKeyboardButton(f"{i}", callback_data=f"reseller:cfg:{username}:{page}"))
-    if row_buttons:
-        markup.row(*row_buttons)
-
-    # Navigation row
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(
-            types.InlineKeyboardButton("⬅️", callback_data=f"reseller:my_customers:{page - 1}")
-        )
-    nav_buttons.append(
-        types.InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="reseller:my_customers_noop")
-    )
-    if page < total_pages - 1:
-        nav_buttons.append(
-            types.InlineKeyboardButton("➡️", callback_data=f"reseller:my_customers:{page + 1}")
-        )
-    if nav_buttons:
-        markup.row(*nav_buttons)
-    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-
-    if call.message.photo or call.message.document or call.message.sticker:
-        # The current message is a media message; delete it and send a fresh text message
-        try:
-            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except Exception:
-            pass
-        bot.send_message(
-            call.message.chat.id,
-            msg,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-    else:
-        bot.edit_message_text(
-            msg,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
+    _render_reseller_customer_category(call, language, categorized, category, page)
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
 def handle_reseller_customers_noop(call):
@@ -796,17 +964,26 @@ def handle_reseller_customer_config(call):
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
 
-    # Parse callback data: reseller:cfg:{username}:{page}
+    # Parse callback data: reseller:cfg:{username}:{category}:{page}
+    # Legacy callback shape reseller:cfg:{username}:{page} is still accepted.
     parts = call.data.split(":")
     if len(parts) < 4:
         bot.answer_callback_query(call.id, "Invalid request.")
         return
 
     username = parts[2]
-    try:
-        return_page = int(parts[3])
-    except (ValueError, IndexError):
-        return_page = 0
+    return_category = "overview"
+    if len(parts) >= 5:
+        return_category = parts[3] if parts[3] in RESELLER_CUSTOMER_CATEGORY_ORDER else "overview"
+        try:
+            return_page = int(parts[4])
+        except (ValueError, IndexError):
+            return_page = 0
+    else:
+        try:
+            return_page = int(parts[3])
+        except (ValueError, IndexError):
+            return_page = 0
 
     bot.answer_callback_query(call.id)
 
@@ -824,7 +1001,7 @@ def handle_reseller_customer_config(call):
     back_markup.add(
         types.InlineKeyboardButton(
             get_button_text(language, "reseller_back_to_customers"),
-            callback_data=f"reseller:my_customers:{return_page}"
+            callback_data=f"reseller:my_customers:{return_category}:{return_page}"
         )
     )
 

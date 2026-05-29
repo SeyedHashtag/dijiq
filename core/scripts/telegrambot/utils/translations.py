@@ -294,7 +294,17 @@ MESSAGE_TRANSLATIONS = {
         "reseller_client_traffic_alert": "📊 **Client Traffic Alert**\n\n📱 Client: `{username}`\n📦 Usage: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 {percent}% of data quota used\n\nConsider contacting your client to renew their plan.",
         "reseller_client_days_alert": "📅 **Client Days Alert**\n\n📱 Client: `{username}`\n🗓 Days elapsed: {days_used} / {total_days} days\n⏳ Days remaining: {days_remaining}\n🚦 {percent}% of plan duration used\n\nConsider contacting your client to renew their plan.",
         "reseller_no_configs_created": "📦 You haven't created any customer configs yet.",
-        "reseller_customers_list_header": "📦 **My Customers**\n\nTotal configs created: {total}\nPage {page}/{total_pages}\n\n{entries}"
+        "reseller_customers_list_header": "📦 **My Customers**\n\nTotal configs created: {total}\nPage {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_overview": "📦 **My Customers**\n\nTotal configs created: {total}\n\n{categories}",
+        "reseller_customer_category_count": "{icon} {label}: {count}",
+        "reseller_customers_category_header": "📦 **{category} Customers**\n\nTotal: {total}\nPage {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_empty_category": "📦 No customers in **{category}**.",
+        "reseller_customer_category_active": "Active",
+        "reseller_customer_category_low_days": "Low Days",
+        "reseller_customer_category_low_gb": "Low GB",
+        "reseller_customer_category_expired": "Expired",
+        "reseller_customer_category_deleted": "Deleted",
+        "reseller_customer_status_unavailable": "Status unavailable"
     },
     "ru": {
         "referral_stats": "💰 **Заработать крипту**\n\n🚀 **Как это работает:**\n1️⃣ Приглашайте друзей по вашей уникальной ссылке.\n2️⃣ Получайте **20%** комиссии со всех их покупок!\n3️⃣ Выводите заработанные средства на свой **Litecoin (LTC)** кошелек при достижении **$2.00**.\n\n📊 **Ваша статистика:**\n👥 Приглашенные пользователи: {count}\n💰 Общий заработок: ${total_earnings:.2f}\n💳 Доступный баланс: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Ваша реферальная ссылка:**\n`{referral_link}`",
@@ -447,7 +457,17 @@ MESSAGE_TRANSLATIONS = {
         "reseller_client_traffic_alert": "📊 **Предупреждение о трафике клиента**\n\n📱 Клиент: `{username}`\n📦 Использовано: {used_gb:.2f} ГБ / {limit_gb:.2f} ГБ\n🚦 Использовано {percent}% квоты данных\n\nСвяжитесь с клиентом для продления плана.",
         "reseller_client_days_alert": "📅 **Предупреждение о сроке клиента**\n\n📱 Клиент: `{username}`\n🗓 Прошло дней: {days_used} / {total_days} дней\n⏳ Осталось дней: {days_remaining}\n🚦 Использовано {percent}% длительности плана\n\nСвяжитесь с клиентом для продления плана.",
         "reseller_no_configs_created": "📦 Вы ещё не создали ни одного конфига для клиентов.",
-        "reseller_customers_list_header": "📦 **Мои клиенты**\n\nВсего создано конфигов: {total}\nСтраница {page}/{total_pages}\n\n{entries}"
+        "reseller_customers_list_header": "📦 **Мои клиенты**\n\nВсего создано конфигов: {total}\nСтраница {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_overview": "📦 **Мои клиенты**\n\nВсего создано конфигов: {total}\n\n{categories}",
+        "reseller_customer_category_count": "{icon} {label}: {count}",
+        "reseller_customers_category_header": "📦 **Клиенты: {category}**\n\nВсего: {total}\nСтраница {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_empty_category": "📦 Нет клиентов в категории **{category}**.",
+        "reseller_customer_category_active": "Активные",
+        "reseller_customer_category_low_days": "Мало дней",
+        "reseller_customer_category_low_gb": "Мало ГБ",
+        "reseller_customer_category_expired": "Истекшие",
+        "reseller_customer_category_deleted": "Удаленные",
+        "reseller_customer_status_unavailable": "Статус недоступен"
     },
     "fa": {
         "referral_stats": "💰 **کسب درآمد کریپتویی**\n\n🚀 **نحوه کار:**\n۱️⃣ دوستان خود را با لینک اختصاصی خود دعوت کنید.\n۲️⃣ **۲۰٪** کمیسیون از تمام خریدهای آنها دریافت کنید!\n۳️⃣ درآمد خود را پس از رسیدن به **۲ دلار** به کیف پول **لایت‌کوین (LTC)** خود برداشت کنید.\n\n📊 **آمار شما:**\n👥 کاربران دعوت شده: {count}\n💰 مجموع درآمد: ${total_earnings:.2f}\n💳 موجودی قابل برداشت: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **لینک دعوت شما:**\n`{referral_link}`",
@@ -600,7 +620,17 @@ MESSAGE_TRANSLATIONS = {
         "reseller_client_traffic_alert": "📊 **هشدار ترافیک مشتری**\n\n📱 مشتری: `{username}`\n📦 مصرف: {used_gb:.2f} گیگابایت / {limit_gb:.2f} گیگابایت\n🚦 {percent}% از سهمیه داده استفاده شده\n\nبرای تمدید طرح با مشتری تماس بگیرید.",
         "reseller_client_days_alert": "📅 **هشدار روزهای مشتری**\n\n📱 مشتری: `{username}`\n🗓 روزهای سپری‌شده: {days_used} / {total_days} روز\n⏳ روزهای باقی‌مانده: {days_remaining}\n🚦 {percent}% از مدت طرح استفاده شده\n\nبرای تمدید طرح با مشتری تماس بگیرید.",
         "reseller_no_configs_created": "📦 شما هنوز هیچ کانفیگی برای مشتریان ایجاد نکرده‌اید.",
-        "reseller_customers_list_header": "📦 **مشتریان من**\n\nمجموع کانفیگ‌های ایجاد شده: {total}\nصفحه {page}/{total_pages}\n\n{entries}"
+        "reseller_customers_list_header": "📦 **مشتریان من**\n\nمجموع کانفیگ‌های ایجاد شده: {total}\nصفحه {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_overview": "📦 **مشتریان من**\n\nمجموع کانفیگ‌های ایجاد شده: {total}\n\n{categories}",
+        "reseller_customer_category_count": "{icon} {label}: {count}",
+        "reseller_customers_category_header": "📦 **مشتریان {category}**\n\nمجموع: {total}\nصفحه {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_empty_category": "📦 هیچ مشتری در **{category}** وجود ندارد.",
+        "reseller_customer_category_active": "فعال",
+        "reseller_customer_category_low_days": "روزهای کم",
+        "reseller_customer_category_low_gb": "گیگ کم",
+        "reseller_customer_category_expired": "منقضی",
+        "reseller_customer_category_deleted": "حذف شده",
+        "reseller_customer_status_unavailable": "وضعیت در دسترس نیست"
     },
     "tk": {
         "referral_stats": "💰 **Kripto Gazan**\n\n🚀 **Bu nähili işleýär:**\n1️⃣ Dostlaryňyzy ýörite baglanyşygyňyz bilen çagyryň.\n2️⃣ Olaryň ähli satyn almalaryndan **20%** komissiýa alyň!\n3️⃣ Gazananlaryňyzy **$2.00** ýetende **Litecoin (LTC)** gapjygyňyza çykaryň.\n\n📊 **Siziň Statistikaňyz:**\n👥 Çagyrylan Ulanyjylar: {count}\n💰 Jemi Gazanç: ${total_earnings:.2f}\n💳 Elýeterli Balans: ${available_balance:.2f}\n{wallet_info}\n\n🔗 **Siziň Çakylyk Baglanyşygyňyz:**\n`{referral_link}`",
@@ -753,7 +783,17 @@ MESSAGE_TRANSLATIONS = {
         "reseller_client_traffic_alert": "📊 **Müşderi Trafik Duýduryşy**\n\n📱 Müşderi: `{username}`\n📦 Ulanylan: {used_gb:.2f} GB / {limit_gb:.2f} GB\n🚦 Maglumat kwotasynyň {percent}% ulanylan\n\nMeýilnamany täzelemek üçin müşderi bilen habarlaşyň.",
         "reseller_client_days_alert": "📅 **Müşderi Gün Duýduryşy**\n\n📱 Müşderi: `{username}`\n🗓 Geçen günler: {days_used} / {total_days} gün\n⏳ Galan günler: {days_remaining}\n🚦 Meýilnama möhletiniň {percent}% ulanylan\n\nMeýilnamany täzelemek üçin müşderi bilen habarlaşyň.",
         "reseller_no_configs_created": "📦 Siz heniz müşderiler üçin sazlama döretmediňiz.",
-        "reseller_customers_list_header": "📦 **Meniň Müşderilerim**\n\nJemi döredilen sazlamalar: {total}\nSahypa {page}/{total_pages}\n\n{entries}"
+        "reseller_customers_list_header": "📦 **Meniň Müşderilerim**\n\nJemi döredilen sazlamalar: {total}\nSahypa {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_overview": "📦 **Meniň Müşderilerim**\n\nJemi döredilen sazlamalar: {total}\n\n{categories}",
+        "reseller_customer_category_count": "{icon} {label}: {count}",
+        "reseller_customers_category_header": "📦 **{category} müşderiler**\n\nJemi: {total}\nSahypa {page}/{total_pages}\n\n{entries}",
+        "reseller_customers_empty_category": "📦 **{category}** bölüminde müşderi ýok.",
+        "reseller_customer_category_active": "Aktiw",
+        "reseller_customer_category_low_days": "Az gün",
+        "reseller_customer_category_low_gb": "Az GB",
+        "reseller_customer_category_expired": "Möhleti geçen",
+        "reseller_customer_category_deleted": "Öçürilen",
+        "reseller_customer_status_unavailable": "Status elýeterli däl"
     }
 }
 
