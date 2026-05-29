@@ -420,7 +420,7 @@ configure_telegram_bot() {
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         echo "Stopping the current Telegram bot service before applying the new setup..."
-        python3 "$CLI_PATH" telegram -a stop
+        systemctl stop dijiq-telegram-bot.service
     fi
 
     python3 "$CLI_PATH" telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" "${server_args[@]}"
@@ -511,7 +511,7 @@ add_telegram_vpn_server() {
 
     if systemctl is-active --quiet dijiq-telegram-bot.service; then
         echo "Stopping the current Telegram bot service before applying the updated server list..."
-        python3 "$CLI_PATH" telegram -a stop
+        systemctl stop dijiq-telegram-bot.service
     fi
 
     python3 "$CLI_PATH" telegram -a start -t "$token" -aid "$admin_ids" -u "$api_url" -k "$api_key" "${server_args[@]}"

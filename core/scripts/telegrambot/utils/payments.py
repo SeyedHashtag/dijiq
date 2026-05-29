@@ -5,8 +5,9 @@ from hashlib import md5
 import requests
 import os
 from dotenv import load_dotenv
+from utils.api_client import TELEGRAM_ENV_PATH
 
-load_dotenv()
+load_dotenv(TELEGRAM_ENV_PATH, override=True)
 
 class CryptoPayment:
     def __init__(self):

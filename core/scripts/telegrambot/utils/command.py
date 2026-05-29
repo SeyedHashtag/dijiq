@@ -6,7 +6,8 @@ import shlex
 from dotenv import load_dotenv
 from telebot import types
 
-load_dotenv()
+TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(TELEGRAM_ENV_PATH, override=True)
 
 API_TOKEN = os.getenv('API_TOKEN')
 ADMIN_USER_IDS = json.loads(os.getenv('ADMIN_USER_IDS'))

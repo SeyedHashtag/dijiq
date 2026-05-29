@@ -14,7 +14,7 @@ from utils.payment_records import (
     get_user_payments,
     update_payment_record_fields,
 )
-from utils.api_client import APIClient, MultiServerAPI
+from utils.api_client import APIClient, MultiServerAPI, TELEGRAM_ENV_PATH
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 from utils.referral import add_referral_reward
@@ -35,6 +35,10 @@ from utils.username_utils import (
 
 # New: Global dictionary for user states
 user_data = {}
+
+
+def load_telegram_env():
+    load_dotenv(TELEGRAM_ENV_PATH, override=True)
 
 
 def _debt_state_label_key(debt_state):
@@ -199,8 +203,7 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "select_payment_method")
 
             # Check configured payment methods
-            env_path = os.path.join(os.path.dirname(__file__), '.env')
-            load_dotenv(env_path)
+            load_telegram_env()
             crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
             card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
             card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
@@ -263,8 +266,7 @@ def handle_payment_method_selection(call, data=None):
         if method == 'crypto':
             handle_crypto_payment(call, plan_gb)
         elif method == 'card_to_card':
-            env_path = os.path.join(os.path.dirname(__file__), '.env')
-            load_dotenv(env_path)
+            load_telegram_env()
             card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
             if card_to_card_mode == 'previous_customers':
                 try:
@@ -364,8 +366,7 @@ def handle_card_to_card_payment(call, plan_gb):
     try:
         user_id = call.from_user.id
         language = get_user_language(user_id)
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        load_dotenv(env_path)
+        load_telegram_env()
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
         exchange_rate = os.getenv('EXCHANGE_RATE', '1')
         if not card_number:

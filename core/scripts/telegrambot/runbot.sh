@@ -8,16 +8,28 @@ update_env_file() {
     local api_url=$3
     local api_key=$4
     local servers_json=$5
+    local env_file="/etc/dijiq/core/scripts/telegrambot/.env"
+    local preserved_env
+    preserved_env=$(mktemp)
 
-    cat <<EOL > /etc/dijiq/core/scripts/telegrambot/.env
-API_TOKEN=$api_token
-ADMIN_USER_IDS=[$admin_user_ids]
-URL=$api_url
-TOKEN=$api_key
-EOL
-    if [ -n "$servers_json" ]; then
-        printf 'SERVERS_JSON=%s\n' "$servers_json" >> /etc/dijiq/core/scripts/telegrambot/.env
+    if [ -f "$env_file" ]; then
+        grep -Ev '^(API_TOKEN|ADMIN_USER_IDS|URL|TOKEN|SERVERS_JSON)=' "$env_file" > "$preserved_env" || true
     fi
+
+    {
+        printf 'API_TOKEN=%s\n' "$api_token"
+        printf 'ADMIN_USER_IDS=[%s]\n' "$admin_user_ids"
+        printf 'URL=%s\n' "$api_url"
+        printf 'TOKEN=%s\n' "$api_key"
+        if [ -n "$servers_json" ]; then
+            printf 'SERVERS_JSON=%s\n' "$servers_json"
+        fi
+        if [ -s "$preserved_env" ]; then
+            cat "$preserved_env"
+        fi
+    } > "$env_file"
+
+    rm -f "$preserved_env"
 }
 
 create_service_file() {
