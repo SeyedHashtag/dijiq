@@ -1008,6 +1008,60 @@ def _group_resellers(resellers):
     return grouped
 
 
+def _reseller_financial_stats(reseller_data):
+    configs = (reseller_data or {}).get("configs", [])
+    if not isinstance(configs, list):
+        configs = []
+
+    total_configs = len(configs)
+    total_turnover = sum(
+        _safe_float(config.get("price", 0.0))
+        for config in configs
+        if isinstance(config, dict)
+    )
+    current_debt = _safe_float((reseller_data or {}).get("debt", 0.0))
+    total_paid = max(0.0, total_turnover - current_debt)
+    average_config_value = total_turnover / total_configs if total_configs else 0.0
+    last_config_at = "N/A"
+
+    for config in reversed(configs):
+        if not isinstance(config, dict):
+            continue
+        timestamp = config.get("timestamp")
+        if timestamp:
+            last_config_at = timestamp
+            break
+
+    return {
+        "total_configs": total_configs,
+        "total_turnover": total_turnover,
+        "total_paid": total_paid,
+        "total_debt": current_debt,
+        "average_config_value": average_config_value,
+        "last_config_at": last_config_at,
+    }
+
+
+def _reseller_admin_summary(resellers):
+    summary = {
+        "total_resellers": 0,
+        "total_configs": 0,
+        "total_turnover": 0.0,
+        "total_paid": 0.0,
+        "total_debt": 0.0,
+    }
+
+    for reseller_data in (resellers or {}).values():
+        stats = _reseller_financial_stats(reseller_data)
+        summary["total_resellers"] += 1
+        summary["total_configs"] += stats["total_configs"]
+        summary["total_turnover"] += stats["total_turnover"]
+        summary["total_paid"] += stats["total_paid"]
+        summary["total_debt"] += stats["total_debt"]
+
+    return summary
+
+
 def _paginate(items, page, page_size=ADMIN_RESELLER_PAGE_SIZE):
     if not items:
         return [], 1, 0
@@ -1019,7 +1073,20 @@ def _paginate(items, page, page_size=ADMIN_RESELLER_PAGE_SIZE):
 
 
 def _build_admin_reseller_list_text(language, grouped):
-    lines = [get_message_text(language, "admin_resellers_list_grouped")]
+    resellers = {}
+    for items in grouped.values():
+        for rid, data in items:
+            resellers[str(rid)] = data
+    summary = _reseller_admin_summary(resellers)
+    lines = [
+        get_message_text(language, "admin_resellers_list_grouped").format(
+            total_resellers=summary["total_resellers"],
+            total_configs=summary["total_configs"],
+            total_turnover=format_usd_amount(summary["total_turnover"]),
+            total_paid=format_usd_amount(summary["total_paid"]),
+            total_debt=format_usd_amount(summary["total_debt"]),
+        )
+    ]
     for status in ADMIN_RESELLER_STATUS_ORDER:
         status_text = _admin_status_label(language, status)
         count = len(grouped.get(status, []))
@@ -1129,14 +1196,18 @@ def _build_admin_reseller_detail_text(language, reseller_id, reseller_data):
     debt = _safe_float((reseller_data or {}).get("debt", 0.0))
     status = (reseller_data or {}).get("status", "rejected")
     debt_state = get_message_text(language, _debt_state_label((reseller_data or {}).get("debt_state", "active")))
-    configs_count = len((reseller_data or {}).get("configs", []))
+    stats = _reseller_financial_stats(reseller_data)
     return get_message_text(language, "admin_reseller_details_extended").format(
         user_id=_escape_markdown(reseller_id),
         username_display=_escape_markdown(_username_display(language, reseller_data)),
         status=_escape_markdown(_admin_status_label(language, status)),
         debt=format_usd_amount(debt),
         debt_state=_escape_markdown(debt_state),
-        configs_count=configs_count,
+        configs_count=stats["total_configs"],
+        total_turnover=format_usd_amount(stats["total_turnover"]),
+        total_paid=format_usd_amount(stats["total_paid"]),
+        average_config_value=format_usd_amount(stats["average_config_value"]),
+        last_config_at=_escape_markdown(stats["last_config_at"]),
         created_at=_escape_markdown((reseller_data or {}).get("created_at", "N/A")),
         last_payment_at=_escape_markdown((reseller_data or {}).get("last_payment_at", "N/A")),
         debt_since=_escape_markdown((reseller_data or {}).get("debt_since", "N/A")),
