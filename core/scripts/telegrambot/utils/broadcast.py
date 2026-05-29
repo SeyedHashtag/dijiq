@@ -2,6 +2,7 @@ from telebot import types
 from utils.command import bot, is_admin, ADMIN_USER_IDS
 from utils.common import create_main_markup
 from utils.api_client import APIClient
+from utils.reseller import get_all_resellers
 import re
 import json
 import os
@@ -151,6 +152,7 @@ def create_broadcast_markup():
     markup.row('👥 All Paid Users', '✅ Active Paid Users')
     markup.row('⛔️ Expired Paid Users', '🧪 All Test Users')
     markup.row('✅🧪 Active Test Users', '⛔️🧪 Expired Test Users')
+    markup.row('💼 Approved Resellers')
     markup.row('🎯 Specific User IDs')
     markup.row('🔄 Reset Failed Exclusions', '❌ Cancel')
     return markup
@@ -225,6 +227,26 @@ def get_user_ids(filter_type):
 
     # For test users, use the test_configs.json file
     test_config_path = "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
+
+    if filter_type == 'approved_resellers':
+        try:
+            user_ids = {
+                str(user_id)
+                for user_id, data in get_all_resellers().items()
+                if isinstance(data, dict) and data.get('status') == 'approved'
+            }
+
+            failed_user_ids = load_failed_broadcast_users()
+            excluded_by_reason = {}
+            failed_overlap = user_ids & failed_user_ids
+            if failed_overlap:
+                user_ids -= failed_overlap
+                excluded_by_reason["Previously failed (blocked/deactivated)"] = list(failed_overlap)
+
+            return list(user_ids), excluded_by_reason
+        except Exception as e:
+            print(f"Error getting approved reseller IDs: {str(e)}")
+            return [], {}
     
     if filter_type in ['all_test', 'active_test', 'expired_test']:
         user_ids = set()
@@ -360,7 +382,8 @@ def process_broadcast_target(message):
         '⛔️ Expired Paid Users': 'expired',
         '🧪 All Test Users': 'all_test',
         '✅🧪 Active Test Users': 'active_test',
-        '⛔️🧪 Expired Test Users': 'expired_test'
+        '⛔️🧪 Expired Test Users': 'expired_test',
+        '💼 Approved Resellers': 'approved_resellers'
     }
     
     if message.text not in target_map:
