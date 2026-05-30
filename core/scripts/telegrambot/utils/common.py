@@ -1,6 +1,6 @@
 from telebot import types
 
-def create_main_markup_with_language(language_translations, is_admin=False):
+def create_main_markup_with_language(language_translations, is_admin=False, user_id=None):
     """
     Create a main menu markup with the given language translations.
     This function doesn't import language or translations to avoid circular imports.
@@ -14,7 +14,7 @@ def create_main_markup_with_language(language_translations, is_admin=False):
         markup.row('📝 Edit Plans', '📢 Broadcast Message')
         markup.row('📞 Edit Support', '🔄 Update Keyboards')
         markup.row('💼 Manage Resellers', '🧪 Manage Test Accounts')
-        markup.row('⚖️ VPN Servers')
+        markup.row('⚖️ VPN Servers', '✅ Confirmations')
     else:
         # Non-admin menu with translations
         markup.row(
@@ -33,6 +33,12 @@ def create_main_markup_with_language(language_translations, is_admin=False):
             language_translations.get("support", "📞 Support"),
             language_translations.get("language", "🌐 Language/زبان")
         )
+        try:
+            from utils.receipt_checker import is_receipt_checker
+            if user_id is not None and is_receipt_checker(user_id):
+                markup.row('✅ Confirmations')
+        except Exception:
+            pass
     return markup
 
 def create_main_markup(is_admin=False, user_id=None):
@@ -41,7 +47,7 @@ def create_main_markup(is_admin=False, user_id=None):
     This function handles imports internally to avoid circular imports.
     """
     if is_admin:
-        return create_main_markup_with_language({}, is_admin=True)
+        return create_main_markup_with_language({}, is_admin=True, user_id=user_id)
 
     # Import here to avoid circular imports
     from utils.translations import BUTTON_TRANSLATIONS, DEFAULT_LANGUAGE
@@ -56,4 +62,4 @@ def create_main_markup(is_admin=False, user_id=None):
     # Get language translations
     language_translations = BUTTON_TRANSLATIONS.get(language_code, BUTTON_TRANSLATIONS[DEFAULT_LANGUAGE])
 
-    return create_main_markup_with_language(language_translations, is_admin=False)
+    return create_main_markup_with_language(language_translations, is_admin=False, user_id=user_id)

@@ -20,6 +20,16 @@ from utils.language import get_user_language
 from utils.referral import add_referral_reward
 from utils.reseller import evaluate_reseller_debt_policies, DEBT_WARNING_THRESHOLD, DEBT_SUSPEND_THRESHOLD
 from utils.currency_format import format_toman_amount, format_usd_amount
+from utils.receipt_checker import (
+    RECEIPT_TYPE_REGULAR,
+    RECEIPT_TYPE_SETTLEMENT,
+    can_review_receipt,
+    get_card_number_for_receipt_type,
+    get_receipt_checker_user_id,
+    get_receipt_type_label,
+    is_receipt_checker,
+    should_route_to_receipt_checker,
+)
 import qrcode
 import io
 import os
@@ -53,6 +63,84 @@ def _debt_state_label_key(debt_state):
     if debt_state == 'warning':
         return 'debt_state_warning'
     return 'debt_state_active'
+
+
+def _receipt_type_from_record(payment_record):
+    receipt_type = payment_record.get('receipt_type')
+    if receipt_type:
+        return receipt_type
+    if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
+        return RECEIPT_TYPE_SETTLEMENT
+    return RECEIPT_TYPE_REGULAR
+
+
+def _build_receipt_approval_markup(payment_id):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_approval:approve:{payment_id}"),
+        types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_approval:reject:{payment_id}")
+    )
+    return markup
+
+
+def _format_pending_receipt_caption(payment_id, payment_record, telegram_username=None):
+    receipt_type = _receipt_type_from_record(payment_record)
+    user_id = payment_record.get('user_id')
+    plan_label = "Settlement" if receipt_type == RECEIPT_TYPE_SETTLEMENT else f"{payment_record.get('plan_gb')} GB"
+    caption = (
+        f"⏳ New Pending Payment\n\n"
+        f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
+        f"🧾 <b>Receipt Type:</b> {get_receipt_type_label(receipt_type)}\n"
+        f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
+    )
+    if telegram_username:
+        caption += f"📱 <b>Telegram Username:</b> @{telegram_username}\n"
+    caption += (
+        f"📊 <b>Plan:</b> {plan_label}\n"
+        f"💵 <b>Amount:</b> ${format_usd_amount(payment_record.get('price', 0))}\n"
+    )
+    if payment_record.get('converted_amount') is not None:
+        currency_label = payment_record.get('converted_currency') or "Tomans"
+        caption += f"💱 <b>Converted Amount:</b> {format_toman_amount(payment_record.get('converted_amount'))} {currency_label}\n"
+    if payment_record.get('created_at'):
+        caption += f"📅 <b>Submitted:</b> {payment_record.get('created_at')}\n"
+    caption += f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
+    return caption
+
+
+def _send_receipt_confirmation(chat_id, payment_id, payment_record, caption=None):
+    caption = caption or _format_pending_receipt_caption(payment_id, payment_record)
+    markup = _build_receipt_approval_markup(payment_id)
+    receipt_path = payment_record.get('receipt_path')
+    if receipt_path and os.path.exists(receipt_path):
+        with open(receipt_path, 'rb') as photo:
+            bot.send_photo(
+                chat_id,
+                photo,
+                caption=caption,
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+    else:
+        bot.send_message(
+            chat_id,
+            caption + "\n\nReceipt image is not available on disk.",
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
+
+
+def _is_confirmation_viewer(user_id):
+    return is_admin(user_id) or is_receipt_checker(user_id)
+
+
+def _record_review_audit(payment_id, call, action, reviewer_role):
+    update_payment_record_fields(payment_id, {
+        "reviewed_by_user_id": call.from_user.id,
+        "reviewed_by_role": reviewer_role,
+        "reviewed_action": action,
+        "reviewed_at": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    })
 
 def create_sale_username(api_client, user_id):
     multi_api = MultiServerAPI()
@@ -216,7 +304,7 @@ def handle_purchase_selection(call):
             # Check configured payment methods
             load_dotenv(TELEGRAM_ENV_PATH, override=True)
             crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
-            card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
+            card_to_card_configured = get_card_number_for_receipt_type(RECEIPT_TYPE_REGULAR)
             card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
             
             # Always show card-to-card if configured
@@ -378,7 +466,8 @@ def handle_card_to_card_payment(call, plan_gb):
         user_id = call.from_user.id
         language = get_user_language(user_id)
         load_dotenv(TELEGRAM_ENV_PATH, override=True)
-        card_number = os.getenv('CARD_TO_CARD_NUMBER')
+        receipt_type = RECEIPT_TYPE_REGULAR
+        card_number = get_card_number_for_receipt_type(receipt_type)
         exchange_rate = get_exchange_rate()
         if not card_number:
             bot.edit_message_text(
@@ -415,6 +504,7 @@ def handle_card_to_card_payment(call, plan_gb):
             'converted_amount': price_in_tomans,
             'converted_currency': 'Tomans',
             'exchange_rate': exchange_rate,
+            'receipt_type': receipt_type,
             'receipt_prompt_message_id': call.message.message_id,
         }
     except Exception as e:
@@ -431,11 +521,13 @@ def process_receipt_photo(message, plan_gb, price):
         converted_amount = None
         converted_currency = None
         exchange_rate = None
+        receipt_type = RECEIPT_TYPE_SETTLEMENT if plan_gb == 'Settlement' else RECEIPT_TYPE_REGULAR
         if user_id in user_data:
             receipt_prompt_message_id = user_data[user_id].get('receipt_prompt_message_id')
             converted_amount = user_data[user_id].get('converted_amount')
             converted_currency = user_data[user_id].get('converted_currency')
             exchange_rate = user_data[user_id].get('exchange_rate')
+            receipt_type = user_data[user_id].get('receipt_type', receipt_type)
         file_id = message.photo[-1].file_id
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -448,6 +540,8 @@ def process_receipt_photo(message, plan_gb, price):
             new_file.write(downloaded_file)
         
         if plan_gb == 'Settlement':
+             routed_to_checker = should_route_to_receipt_checker(RECEIPT_TYPE_SETTLEMENT)
+             checker_id = get_receipt_checker_user_id() if routed_to_checker else None
              payment_record = {
                 'user_id': user_id,
                 'plan_gb': plan_gb,
@@ -457,11 +551,16 @@ def process_receipt_photo(message, plan_gb, price):
                 'status': 'pending_approval',
                 'receipt_path': photo_path,
                 'type': 'settlement',
+                'receipt_type': RECEIPT_TYPE_SETTLEMENT,
+                'routed_to_checker': routed_to_checker,
+                'receipt_checker_user_id': checker_id,
                 'payment_method': 'Card to Card'
             }
         else:
             plans = load_plans()
             plan = plans[plan_gb]
+            routed_to_checker = should_route_to_receipt_checker(RECEIPT_TYPE_REGULAR)
+            checker_id = get_receipt_checker_user_id() if routed_to_checker else None
             payment_record = {
                 'user_id': user_id,
                 'plan_gb': plan_gb,
@@ -471,6 +570,9 @@ def process_receipt_photo(message, plan_gb, price):
                 'payment_id': payment_id,
                 'status': 'pending_approval',
                 'receipt_path': photo_path,
+                'receipt_type': RECEIPT_TYPE_REGULAR,
+                'routed_to_checker': routed_to_checker,
+                'receipt_checker_user_id': checker_id,
                 'payment_method': 'Card to Card'
             }
         if converted_amount is not None:
@@ -479,39 +581,17 @@ def process_receipt_photo(message, plan_gb, price):
             payment_record['exchange_rate'] = exchange_rate
             
         add_payment_record(payment_id, payment_record)
-        notification_message = (
-            f"⏳ New Pending Payment\n\n"
-            f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
-            f"👤 <b>User ID:</b> <code>{user_id}</code>\n"
-        )
-        if message.from_user.username:
-            notification_message += f"📱 <b>Telegram Username:</b> @{message.from_user.username}\n"
-            
-        notification_message += (
-            f"📊 <b>Plan:</b> {plan_gb} GB\n"
-            f"💵 <b>Amount:</b> ${format_usd_amount(price)}\n"
-        )
-        if converted_amount is not None:
-            currency_label = converted_currency or "Tomans"
-            notification_message += f"💱 <b>Converted Amount:</b> {format_toman_amount(converted_amount)} {currency_label}\n"
-        notification_message += f"🔑 <b>Payment ID:</b> <code>{payment_id}</code>"
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_approval:approve:{payment_id}"),
-            types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_approval:reject:{payment_id}")
-        )
+        notification_message = _format_pending_receipt_caption(payment_id, payment_record, message.from_user.username)
         for admin_id in ADMIN_USER_IDS:
             try:
-                with open(photo_path, 'rb') as photo:
-                    bot.send_photo(
-                        admin_id,
-                        photo,
-                        caption=notification_message,
-                        reply_markup=markup,
-                        parse_mode="HTML"
-                    )
+                _send_receipt_confirmation(admin_id, payment_id, payment_record, notification_message)
             except Exception as e:
                 print(f"Failed to send notification to admin {admin_id}: {str(e)}")
+        if checker_id and checker_id not in ADMIN_USER_IDS:
+            try:
+                _send_receipt_confirmation(checker_id, payment_id, payment_record, notification_message)
+            except Exception as e:
+                print(f"Failed to send notification to receipt checker {checker_id}: {str(e)}")
         if receipt_prompt_message_id:
             try:
                 bot.edit_message_reply_markup(
@@ -549,23 +629,51 @@ def handle_text_while_waiting(message):
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data=cancel_callback))
     bot.reply_to(message, get_message_text(language, "upload_receipt"), reply_markup=markup)
 
+
+@bot.message_handler(func=lambda message: message.text == '✅ Confirmations' and _is_confirmation_viewer(message.from_user.id))
+def show_pending_confirmations(message):
+    user_id = message.from_user.id
+    payments = load_payments()
+    pending_items = []
+    user_is_admin = is_admin(user_id)
+    for payment_id, record in payments.items():
+        if record.get('status') != 'pending_approval':
+            continue
+        if not can_review_receipt(user_id, record, is_admin_user=user_is_admin):
+            continue
+        pending_items.append((payment_id, record))
+
+    if not pending_items:
+        bot.reply_to(message, "No pending receipt confirmations.", reply_markup=create_main_markup(is_admin=user_is_admin, user_id=user_id))
+        return
+
+    bot.reply_to(message, f"Pending receipt confirmations: {len(pending_items)}")
+    for payment_id, record in pending_items:
+        try:
+            _send_receipt_confirmation(message.chat.id, payment_id, record)
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Failed to show receipt {payment_id}: {str(e)}")
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
 def handle_admin_approval(call):
     try:
         user_id = call.from_user.id
         language = get_user_language(user_id)
-        if not is_admin(user_id):
-            bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"))
-            return
+        user_is_admin = is_admin(user_id)
         _, action, payment_id = call.data.split(':')
         payment_record = get_payment_record(payment_id)
         if not payment_record:
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
             return
+        if not can_review_receipt(user_id, payment_record, is_admin_user=user_is_admin):
+            bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"))
+            return
+        reviewer_role = "admin" if user_is_admin else "checker"
         if payment_record['status'] != 'pending_approval':
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
             return
         if action == 'approve':
+            _record_review_audit(payment_id, call, action, reviewer_role)
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
                  from utils.reseller import apply_reseller_payment
                  apply_reseller_payment(payment_record['user_id'], payment_record.get('price', 0))
@@ -668,6 +776,7 @@ def handle_admin_approval(call):
                 bot.answer_callback_query(call.id, text=get_message_text(language, "failed_to_create_user"))
                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_user_error"))
         elif action == 'reject':
+            _record_review_audit(payment_id, call, action, reviewer_role)
             update_payment_status(payment_id, 'rejected')
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)

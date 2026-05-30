@@ -1,7 +1,17 @@
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
+from utils.payment_records import load_payments
+from utils.receipt_checker import (
+    RECEIPT_TYPE_REGULAR,
+    RECEIPT_TYPE_SETTLEMENT,
+    get_receipt_checker_types,
+    get_receipt_checker_user_id,
+    get_receipt_type_label,
+    normalize_receipt_types,
+)
 import os
+import datetime
 from dotenv import load_dotenv, set_key
 
 # FIX: Go up one level ('..') to find the root .env file
@@ -15,9 +25,11 @@ def create_cancel_markup():
 
 def create_payment_method_selection_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Card to Card (Iran)"))
-    markup.row(types.KeyboardButton("🔀 Card to Card Mode"), types.KeyboardButton("💱 Exchange Rate"))
-    markup.row(types.KeyboardButton("🏢 Reseller Settlement Threshold"))
+    markup.row(types.KeyboardButton("💳 Crypto"), types.KeyboardButton("💳 Main Card"))
+    markup.row(types.KeyboardButton("💳 Checker Card"), types.KeyboardButton("🔀 Card to Card Mode"))
+    markup.row(types.KeyboardButton("💱 Exchange Rate"), types.KeyboardButton("🏢 Reseller Settlement Threshold"))
+    markup.row(types.KeyboardButton("👤 Receipt Checker"), types.KeyboardButton("📋 Checker Receipt Types"))
+    markup.row(types.KeyboardButton("📊 Checker Stats"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -37,14 +49,22 @@ def process_payment_method_selection(message):
 
     if message.text == "💳 Crypto":
         setup_crypto(message)
-    elif message.text == "💳 Card to Card (Iran)":
-        setup_card_to_card(message)
+    elif message.text in ("💳 Card to Card (Iran)", "💳 Main Card"):
+        setup_card_to_card(message, "main")
+    elif message.text == "💳 Checker Card":
+        setup_card_to_card(message, "checker")
     elif message.text == "🔀 Card to Card Mode":
         setup_card_to_card_mode(message)
     elif message.text == "💱 Exchange Rate":
         setup_exchange_rate(message)
     elif message.text == "🏢 Reseller Settlement Threshold":
         setup_reseller_settlement_threshold(message)
+    elif message.text == "👤 Receipt Checker":
+        setup_receipt_checker(message)
+    elif message.text == "📋 Checker Receipt Types":
+        setup_receipt_checker_types(message)
+    elif message.text == "📊 Checker Stats":
+        show_receipt_checker_stats(message)
     else:
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
@@ -129,27 +149,31 @@ def process_api_key(message, merchant_id):
             reply_markup=create_main_markup(is_admin=True)
         )
 
-def setup_card_to_card(message):
+def setup_card_to_card(message, slot="main"):
     load_dotenv(env_path, override=True)
-    current_card_number = os.getenv('CARD_TO_CARD_NUMBER')
+    env_key = 'CARD_TO_CARD_CHECKER_NUMBER' if slot == "checker" else 'CARD_TO_CARD_NUMBER'
+    slot_label = "Checker" if slot == "checker" else "Main"
+    current_card_number = os.getenv(env_key)
     
-    status_text = "Current Card to Card Settings:\n"
-    status_text += f"Card Number: {current_card_number if current_card_number else '❌ Not configured'}\n\n"
-    status_text += "Please enter the card number for 'Card to Card' payments:"
+    status_text = f"Current {slot_label} Card to Card Settings:\n"
+    status_text += f"{slot_label} Card Number: {current_card_number if current_card_number else '❌ Not configured'}\n\n"
+    status_text += f"Please enter the {slot_label.lower()} card number for 'Card to Card' payments:"
     
     msg = bot.reply_to(
         message, 
         status_text,
         reply_markup=create_cancel_markup()
     )
-    bot.register_next_step_handler(msg, process_card_to_card_number)
+    bot.register_next_step_handler(msg, process_card_to_card_number, slot)
 
-def process_card_to_card_number(message):
+def process_card_to_card_number(message, slot="main"):
     if message.text == "❌ Cancel":
         bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
         return
 
     card_number = message.text.strip()
+    env_key = 'CARD_TO_CARD_CHECKER_NUMBER' if slot == "checker" else 'CARD_TO_CARD_NUMBER'
+    slot_label = "Checker" if slot == "checker" else "Main"
     
     if not card_number:
         msg = bot.reply_to(
@@ -157,7 +181,7 @@ def process_card_to_card_number(message):
             "Card number cannot be empty. Please enter a valid card number:",
             reply_markup=create_cancel_markup()
         )
-        bot.register_next_step_handler(msg, process_card_to_card_number)
+        bot.register_next_step_handler(msg, process_card_to_card_number, slot)
         return
 
     try:
@@ -165,20 +189,197 @@ def process_card_to_card_number(message):
             with open(env_path, 'w') as f:
                 pass
         
-        set_key(env_path, 'CARD_TO_CARD_NUMBER', card_number)
+        set_key(env_path, env_key, card_number)
         load_dotenv(env_path, override=True)
         
         bot.reply_to(
             message,
-            "✅ Card to Card number has been updated successfully!",
+            f"✅ {slot_label} Card to Card number has been updated successfully!",
             reply_markup=create_main_markup(is_admin=True)
         )
     except Exception as e:
         bot.reply_to(
             message,
-            f"❌ Error updating Card to Card number: {str(e)}",
+            f"❌ Error updating {slot_label} Card to Card number: {str(e)}",
             reply_markup=create_main_markup(is_admin=True)
         )
+
+
+def setup_receipt_checker(message):
+    load_dotenv(env_path, override=True)
+    current_checker_id = os.getenv('RECEIPT_CHECKER_USER_ID', '').strip()
+    status_text = "Current Receipt Checker Settings:\n"
+    status_text += f"Checker User ID: {current_checker_id if current_checker_id else '❌ Not configured'}\n\n"
+    status_text += "Please enter the numeric Telegram user ID for the receipt checker:"
+
+    msg = bot.reply_to(message, status_text, reply_markup=create_cancel_markup())
+    bot.register_next_step_handler(msg, process_receipt_checker_id)
+
+
+def process_receipt_checker_id(message):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    checker_id = message.text.strip()
+    if not checker_id.isdigit():
+        msg = bot.reply_to(
+            message,
+            "Checker user ID must be numeric. Please enter a valid Telegram user ID:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_receipt_checker_id)
+        return
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+        set_key(env_path, 'RECEIPT_CHECKER_USER_ID', checker_id)
+        load_dotenv(env_path, override=True)
+        bot.reply_to(
+            message,
+            "✅ Receipt checker has been updated successfully!",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"❌ Error updating receipt checker: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+
+
+def setup_receipt_checker_types(message):
+    checker_id = get_receipt_checker_user_id()
+    current_types = get_receipt_checker_types()
+    current_label = ", ".join(get_receipt_type_label(t) for t in current_types) if current_types else "❌ None"
+    checker_label = checker_id if checker_id is not None else "❌ Not configured"
+    text = (
+        "📋 Checker Receipt Types\n\n"
+        f"Checker User ID: {checker_label}\n"
+        f"Current Types: {current_label}\n\n"
+        "Select which receipts should also go to the checker:"
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("Regular Customers", callback_data="checker_types:regular"),
+        types.InlineKeyboardButton("Reseller Settlements", callback_data="checker_types:settlement"),
+        types.InlineKeyboardButton("Both", callback_data="checker_types:both"),
+        types.InlineKeyboardButton("None", callback_data="checker_types:none"),
+    )
+    bot.reply_to(message, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('checker_types:'))
+def handle_receipt_checker_type_selection(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, text="Not authorized.")
+        return
+
+    selection = call.data.split(':')[1]
+    if selection == "both":
+        receipt_types = [RECEIPT_TYPE_REGULAR, RECEIPT_TYPE_SETTLEMENT]
+    elif selection == "none":
+        receipt_types = []
+    else:
+        receipt_types = normalize_receipt_types(selection)
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+        set_key(env_path, 'RECEIPT_CHECKER_TYPES', ",".join(receipt_types))
+        load_dotenv(env_path, override=True)
+        label = ", ".join(get_receipt_type_label(t) for t in receipt_types) if receipt_types else "None"
+        bot.edit_message_text(
+            f"✅ Checker receipt types updated to: {label}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+    except Exception as e:
+        bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
+
+
+def _parse_payment_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+    except (TypeError, ValueError):
+        return None
+
+
+def show_receipt_checker_stats(message):
+    checker_id = get_receipt_checker_user_id()
+    checker_types = get_receipt_checker_types()
+    payments = load_payments()
+    stats = {
+        RECEIPT_TYPE_REGULAR: {"pending": 0, "approved": 0, "rejected": 0, "approved_total": 0.0},
+        RECEIPT_TYPE_SETTLEMENT: {"pending": 0, "approved": 0, "rejected": 0, "approved_total": 0.0},
+    }
+    latest_review = None
+
+    for payment_id, record in payments.items():
+        if not record.get('routed_to_checker'):
+            continue
+        if checker_id is not None:
+            try:
+                routed_checker_id = int(record.get('receipt_checker_user_id'))
+            except (TypeError, ValueError):
+                routed_checker_id = None
+            if routed_checker_id != checker_id:
+                continue
+        receipt_type = record.get('receipt_type')
+        if receipt_type not in stats:
+            continue
+
+        status = record.get('status')
+        if status == 'pending_approval':
+            stats[receipt_type]["pending"] += 1
+        elif status == 'completed':
+            stats[receipt_type]["approved"] += 1
+            try:
+                stats[receipt_type]["approved_total"] += float(record.get('price', 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        elif status == 'rejected':
+            stats[receipt_type]["rejected"] += 1
+
+        reviewed_at = _parse_payment_datetime(record.get('reviewed_at'))
+        if reviewed_at and (latest_review is None or reviewed_at > latest_review[0]):
+            latest_review = (reviewed_at, payment_id, record)
+
+    checker_label = checker_id if checker_id is not None else "Not configured"
+    type_label = ", ".join(get_receipt_type_label(t) for t in checker_types) if checker_types else "None"
+    text = (
+        "📊 Receipt Checker Stats\n\n"
+        f"Checker User ID: {checker_label}\n"
+        f"Enabled Types: {type_label}\n\n"
+    )
+    for receipt_type in (RECEIPT_TYPE_REGULAR, RECEIPT_TYPE_SETTLEMENT):
+        item = stats[receipt_type]
+        text += (
+            f"{get_receipt_type_label(receipt_type)}\n"
+            f"Pending: {item['pending']}\n"
+            f"Approved: {item['approved']} (${item['approved_total']:.2f})\n"
+            f"Rejected: {item['rejected']}\n\n"
+        )
+
+    if latest_review:
+        reviewed_at, payment_id, record = latest_review
+        text += (
+            "Latest Review\n"
+            f"Payment ID: {payment_id}\n"
+            f"Type: {get_receipt_type_label(record.get('receipt_type'))}\n"
+            f"Action: {record.get('reviewed_action', 'N/A')}\n"
+            f"Reviewer ID: {record.get('reviewed_by_user_id', 'N/A')}\n"
+            f"Time: {reviewed_at.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+    else:
+        text += "Latest Review\nNo routed receipts reviewed yet."
+
+    bot.reply_to(message, text, reply_markup=create_main_markup(is_admin=True))
 
 
 def setup_exchange_rate(message):

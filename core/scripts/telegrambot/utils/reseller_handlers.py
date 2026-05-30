@@ -21,6 +21,7 @@ from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.currency_format import format_toman_amount, format_usd_amount
 from utils.purchase_plan import get_exchange_rate, user_data
+from utils.receipt_checker import RECEIPT_TYPE_SETTLEMENT, get_card_number_for_receipt_type
 from utils.username_utils import (
     allocate_username,
     build_user_note,
@@ -582,7 +583,7 @@ def handle_reseller_settle(call):
     load_dotenv(env_path)
     
     crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
-    card_to_card_configured = os.getenv('CARD_TO_CARD_NUMBER')
+    card_to_card_configured = get_card_number_for_receipt_type(RECEIPT_TYPE_SETTLEMENT)
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     if crypto_configured:
@@ -658,7 +659,7 @@ def handle_reseller_payment(call):
     elif method == 'card':
         # Card to card logic
         exchange_rate = get_exchange_rate()
-        card_number = os.getenv('CARD_TO_CARD_NUMBER')
+        card_number = get_card_number_for_receipt_type(RECEIPT_TYPE_SETTLEMENT)
         price_in_tomans = amount_to_pay * exchange_rate
         
         markup = types.InlineKeyboardMarkup()
@@ -684,6 +685,7 @@ def handle_reseller_payment(call):
             'converted_currency': 'Tomans',
             'exchange_rate': exchange_rate,
             'type': 'settlement',
+            'receipt_type': RECEIPT_TYPE_SETTLEMENT,
             'cancel_callback': 'reseller:cancel',
             'receipt_prompt_message_id': call.message.message_id,
         }

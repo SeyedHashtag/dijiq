@@ -40,11 +40,26 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-expected_files=(
+required_files=(
     ".configs.env"
 )
 
-for file in "${expected_files[@]}"; do
+telegram_state_files=(
+    "core/scripts/telegrambot/.env"
+    "core/scripts/telegrambot/plans.json"
+    "core/scripts/telegrambot/test_configs.json"
+    "core/scripts/telegrambot/test_settings.json"
+    "core/scripts/telegrambot/waiting_test_users.json"
+    "core/scripts/telegrambot/payments.json"
+    "core/scripts/telegrambot/support_info.json"
+    "core/scripts/telegrambot/user_languages.json"
+    "core/scripts/telegrambot/referrals.json"
+    "core/scripts/telegrambot/resellers.json"
+    "core/scripts/telegrambot/traffic_alerts.json"
+    "core/scripts/telegrambot/broadcast_failed_users.json"
+)
+
+for file in "${required_files[@]}"; do
     if [ ! -f "$RESTORE_DIR/$file" ]; then
         echo "Error: Required file '$file' is missing from the backup."
         rm -rf "$RESTORE_DIR"
@@ -61,8 +76,9 @@ done
 timestamp=$(date +%Y%m%d_%H%M%S)
 existing_backup_dir="/opt/hysbackup/restore_pre_backup_$timestamp"
 mkdir -p "$existing_backup_dir"
-for file in "${expected_files[@]}"; do
+for file in "${required_files[@]}" "${telegram_state_files[@]}"; do
   if [ -f "$TARGET_DIR/$file" ]; then
+    mkdir -p "$existing_backup_dir/$(dirname "$file")"
     cp -p "$TARGET_DIR/$file" "$existing_backup_dir/$file"
     if [ $? -ne 0 ]; then
       echo "Error creating backup file before restore from '$TARGET_DIR/$file'."
@@ -71,13 +87,27 @@ for file in "${expected_files[@]}"; do
   fi
 done
 
-for file in "${expected_files[@]}"; do
+for file in "${required_files[@]}"; do
     cp -p "$RESTORE_DIR/$file" "$TARGET_DIR/$file"
      if [ $? -ne 0 ]; then
       echo "Error: replace Configuration Files '$file'."
       rm -rf "$existing_backup_dir"
       rm -rf "$RESTORE_DIR"
       exit 1
+    fi
+done
+
+for file in "${telegram_state_files[@]}"; do
+    backup_name="$(basename "$file")"
+    if [ -f "$RESTORE_DIR/$backup_name" ]; then
+        mkdir -p "$TARGET_DIR/$(dirname "$file")"
+        cp -p "$RESTORE_DIR/$backup_name" "$TARGET_DIR/$file"
+        if [ $? -ne 0 ]; then
+            echo "Error: replace Telegram bot state file '$file'."
+            rm -rf "$existing_backup_dir"
+            rm -rf "$RESTORE_DIR"
+            exit 1
+        fi
     fi
 done
 

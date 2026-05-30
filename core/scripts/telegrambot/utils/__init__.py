@@ -13,6 +13,7 @@ from .payment_setup import *
 from .edit_plans import *
 from .payments import *
 from .payment_records import *
+from .receipt_checker import *
 from .purchase_plan import *
 from .test_config import *
 from .edit_support import *
