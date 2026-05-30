@@ -1,3 +1,7 @@
+## v1.12.50
+✨ Add receipt checker support and integrate receipt validation into payment flows
+🐛 Improve Persian exchange rate wording for clearer transaction messages
+
 ## v1.12.49
 ⚡ Speed up waiting-list test config creation by reusing server/user state during bulk processing
 
