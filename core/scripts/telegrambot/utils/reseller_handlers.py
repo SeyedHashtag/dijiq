@@ -20,7 +20,7 @@ from utils.api_client import APIClient, MultiServerAPI
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.currency_format import format_toman_amount, format_usd_amount
-from utils.purchase_plan import user_data
+from utils.purchase_plan import get_exchange_rate, user_data
 from utils.username_utils import (
     allocate_username,
     build_user_note,
@@ -116,21 +116,15 @@ def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_userna
     return username, result, target_client
 
 
-def _get_exchange_rate():
-    load_dotenv(TELEGRAM_ENV_PATH, override=True)
-    try:
-        return float(os.getenv('EXCHANGE_RATE', '1'))
-    except (TypeError, ValueError):
-        return 1.0
-
-
 def _build_reseller_purchase_details(language, gb, days, price, current_debt):
-    converted_price = price * _get_exchange_rate()
+    exchange_rate = get_exchange_rate()
+    converted_price = price * exchange_rate
     projected_debt = current_debt + price
     return get_message_text(language, "reseller_purchase_details").format(
         plan_gb=gb,
         days=days,
         price=format_usd_amount(price),
+        exchange_rate=format_toman_amount(exchange_rate),
         toman_price=format_toman_amount(converted_price),
         current_debt=format_usd_amount(current_debt),
         projected_debt=format_usd_amount(projected_debt),
@@ -663,15 +657,19 @@ def handle_reseller_payment(call):
 
     elif method == 'card':
         # Card to card logic
-        exchange_rate = os.getenv('EXCHANGE_RATE', '1')
+        exchange_rate = get_exchange_rate()
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
-        price_in_tomans = amount_to_pay * float(exchange_rate)
+        price_in_tomans = amount_to_pay * exchange_rate
         
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
         
         bot.edit_message_text(
-             get_message_text(language, "card_to_card_payment").format(price=format_toman_amount(price_in_tomans), card_number=card_number),
+             get_message_text(language, "card_to_card_payment").format(
+                 price=format_toman_amount(price_in_tomans),
+                 exchange_rate=format_toman_amount(exchange_rate),
+                 card_number=card_number
+             ),
              chat_id=call.message.chat.id,
              message_id=call.message.message_id,
              parse_mode="Markdown",

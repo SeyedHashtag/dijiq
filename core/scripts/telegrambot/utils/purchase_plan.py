@@ -39,6 +39,14 @@ user_data = {}
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 
+def get_exchange_rate():
+    load_dotenv(TELEGRAM_ENV_PATH, override=True)
+    try:
+        return float(os.getenv('EXCHANGE_RATE', '1'))
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def _debt_state_label_key(debt_state):
     if debt_state == 'suspended':
         return 'debt_state_suspended'
@@ -192,9 +200,14 @@ def handle_purchase_selection(call):
                 bot.answer_callback_query(call.id, text='This plan is for resellers only.')
                 return
             unlimited_text = "Yes" if plan.get("unlimited") else "No"
+            price = float(plan['price'])
+            exchange_rate = get_exchange_rate()
+            price_in_tomans = price * exchange_rate
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
-            message += get_message_text(language, "price").format(price=format_usd_amount(plan['price']))
+            message += get_message_text(language, "price").format(price=format_usd_amount(price))
+            message += get_message_text(language, "exchange_rate").format(exchange_rate=format_toman_amount(exchange_rate))
+            message += get_message_text(language, "toman_price").format(toman_price=format_toman_amount(price_in_tomans))
             message += get_message_text(language, "duration").format(days=plan['days'])
             message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
             message += get_message_text(language, "purchase_connection_warning")
@@ -366,7 +379,7 @@ def handle_card_to_card_payment(call, plan_gb):
         language = get_user_language(user_id)
         load_dotenv(TELEGRAM_ENV_PATH, override=True)
         card_number = os.getenv('CARD_TO_CARD_NUMBER')
-        exchange_rate = os.getenv('EXCHANGE_RATE', '1')
+        exchange_rate = get_exchange_rate()
         if not card_number:
             bot.edit_message_text(
                 get_message_text(language, "card_to_card_not_configured"),
@@ -378,8 +391,12 @@ def handle_card_to_card_payment(call, plan_gb):
         plan = plans[plan_gb]
         price = plan['price']
         # Convert price to tomans using the exchange rate
-        price_in_tomans = float(price) * float(exchange_rate)
-        message = get_message_text(language, "card_to_card_payment").format(price=format_toman_amount(price_in_tomans), card_number=card_number)
+        price_in_tomans = float(price) * exchange_rate
+        message = get_message_text(language, "card_to_card_payment").format(
+            price=format_toman_amount(price_in_tomans),
+            exchange_rate=format_toman_amount(exchange_rate),
+            card_number=card_number
+        )
         message += get_message_text(language, "purchase_connection_warning")
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
