@@ -114,7 +114,7 @@ def _send_receipt_confirmation(chat_id, payment_id, payment_record, caption=None
     receipt_path = payment_record.get('receipt_path')
     if receipt_path and os.path.exists(receipt_path):
         with open(receipt_path, 'rb') as photo:
-            bot.send_photo(
+            sent_message = bot.send_photo(
                 chat_id,
                 photo,
                 caption=caption,
@@ -122,12 +122,54 @@ def _send_receipt_confirmation(chat_id, payment_id, payment_record, caption=None
                 parse_mode="HTML"
             )
     else:
-        bot.send_message(
+        sent_message = bot.send_message(
             chat_id,
             caption + "\n\nReceipt image is not available on disk.",
             reply_markup=markup,
             parse_mode="HTML"
         )
+    return sent_message
+
+
+def _save_receipt_message_refs(payment_id, refs):
+    if refs:
+        update_payment_record_fields(payment_id, {"receipt_message_refs": refs})
+
+
+def _update_receipt_message_refs(payment_id, payment_record, final_caption):
+    refs = payment_record.get('receipt_message_refs') or []
+    for ref in refs:
+        try:
+            chat_id = ref.get('chat_id')
+            message_id = ref.get('message_id')
+            content_type = ref.get('content_type')
+            if content_type == 'photo':
+                bot.edit_message_caption(
+                    caption=final_caption,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            else:
+                bot.edit_message_text(
+                    final_caption,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None,
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            print(f"Failed to update receipt message {payment_id}: {str(e)}")
+
+    if not refs:
+        try:
+            bot.edit_message_reply_markup(
+                chat_id=payment_record.get('last_receipt_chat_id'),
+                message_id=payment_record.get('last_receipt_message_id'),
+                reply_markup=None
+            )
+        except Exception:
+            pass
 
 
 def _is_confirmation_viewer(user_id):
@@ -582,16 +624,32 @@ def process_receipt_photo(message, plan_gb, price):
             
         add_payment_record(payment_id, payment_record)
         notification_message = _format_pending_receipt_caption(payment_id, payment_record, message.from_user.username)
+        receipt_message_refs = []
         for admin_id in ADMIN_USER_IDS:
             try:
-                _send_receipt_confirmation(admin_id, payment_id, payment_record, notification_message)
+                sent_message = _send_receipt_confirmation(admin_id, payment_id, payment_record, notification_message)
+                receipt_message_refs.append({
+                    "chat_id": sent_message.chat.id,
+                    "message_id": sent_message.message_id,
+                    "recipient_id": admin_id,
+                    "recipient_role": "admin",
+                    "content_type": "photo" if getattr(sent_message, "photo", None) else "text",
+                })
             except Exception as e:
                 print(f"Failed to send notification to admin {admin_id}: {str(e)}")
         if checker_id and checker_id not in ADMIN_USER_IDS:
             try:
-                _send_receipt_confirmation(checker_id, payment_id, payment_record, notification_message)
+                sent_message = _send_receipt_confirmation(checker_id, payment_id, payment_record, notification_message)
+                receipt_message_refs.append({
+                    "chat_id": sent_message.chat.id,
+                    "message_id": sent_message.message_id,
+                    "recipient_id": checker_id,
+                    "recipient_role": "checker",
+                    "content_type": "photo" if getattr(sent_message, "photo", None) else "text",
+                })
             except Exception as e:
                 print(f"Failed to send notification to receipt checker {checker_id}: {str(e)}")
+        _save_receipt_message_refs(payment_id, receipt_message_refs)
         if receipt_prompt_message_id:
             try:
                 bot.edit_message_reply_markup(
@@ -650,7 +708,16 @@ def show_pending_confirmations(message):
     bot.reply_to(message, f"Pending receipt confirmations: {len(pending_items)}")
     for payment_id, record in pending_items:
         try:
-            _send_receipt_confirmation(message.chat.id, payment_id, record)
+            sent_message = _send_receipt_confirmation(message.chat.id, payment_id, record)
+            refs = list(record.get('receipt_message_refs') or [])
+            refs.append({
+                "chat_id": sent_message.chat.id,
+                "message_id": sent_message.message_id,
+                "recipient_id": user_id,
+                "recipient_role": "admin" if user_is_admin else "checker",
+                "content_type": "photo" if getattr(sent_message, "photo", None) else "text",
+            })
+            _save_receipt_message_refs(payment_id, refs)
         except Exception as e:
             bot.send_message(message.chat.id, f"Failed to show receipt {payment_id}: {str(e)}")
 
@@ -700,10 +767,14 @@ def handle_admin_approval(call):
                     converted_amount=payment_record.get('converted_amount'),
                     converted_currency=payment_record.get('converted_currency'),
                     exchange_rate=payment_record.get('exchange_rate')
-                )
+                 )
 
                  bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_approved"))
-                 bot.edit_message_caption(caption=f"✅ Settlement Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                 _update_receipt_message_refs(
+                    payment_id,
+                    payment_record,
+                    f"✅ Settlement Payment {payment_id} approved by {call.from_user.first_name}."
+                )
                  return
 
             user_to_notify = payment_record['user_id']
@@ -771,7 +842,11 @@ def handle_admin_approval(call):
                     )
                 else:
                     bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_no_url"))
-                bot.edit_message_caption(caption=f"✅ Payment {payment_id} approved by {call.from_user.first_name}.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                _update_receipt_message_refs(
+                    payment_id,
+                    payment_record,
+                    f"✅ Payment {payment_id} approved by {call.from_user.first_name}."
+                )
             else:
                 bot.answer_callback_query(call.id, text=get_message_text(language, "failed_to_create_user"))
                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_user_error"))
@@ -789,7 +864,7 @@ def handle_admin_approval(call):
                  bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
                  rejection_caption = f"{current_caption}\n\n❌ Payment {payment_id} rejected by {call.from_user.first_name}."
                  
-            bot.edit_message_caption(caption=rejection_caption, chat_id=call.message.chat.id, message_id=call.message.message_id)
+            _update_receipt_message_refs(payment_id, payment_record, rejection_caption)
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
