@@ -85,15 +85,15 @@ def handle_plan_select(call):
         
         gb, plan = None, None
         
-        # 1. Try as GB key directly
-        if val in plans:
-            gb = val
-            plan = plans[val]
-        # 2. Try as index
-        elif val.isdigit():
+        # 1. Try as index. Numbered menu buttons send zero-based indexes.
+        if val.isdigit():
             index = int(val)
             if 0 <= index < len(sorted_plans):
                 gb, plan = sorted_plans[index]
+        # 2. Fall back to GB key for older/back callbacks like select_plan:40.
+        if gb is None and val in plans:
+            gb = val
+            plan = plans[val]
         
         if gb and plan:
             markup = types.InlineKeyboardMarkup(row_width=1)
