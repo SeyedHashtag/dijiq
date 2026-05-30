@@ -1,3 +1,8 @@
+## v1.13.2
+✨ Add API client creation caching and weighted VPN server selection for Telegram bot configuration creation
+✨ Track and update Telegram payment receipt prompt messages during purchase flows
+✅ Add tests for API client creation cache and load-balanced server selection
+
 ## v1.12.50
 ✨ Add receipt checker support and integrate receipt validation into payment flows
 🐛 Improve Persian exchange rate wording for clearer transaction messages
