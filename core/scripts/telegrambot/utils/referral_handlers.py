@@ -1,3 +1,6 @@
+import io
+import json
+from datetime import datetime
 from telebot import types
 from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.referral import (
@@ -5,7 +8,8 @@ from utils.referral import (
     get_referral_stats, 
     get_wallet_address, 
     set_wallet_address,
-    process_withdrawal_request
+    process_withdrawal_request,
+    build_withdrawal_audit_payload
 )
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
@@ -120,12 +124,22 @@ def handle_withdraw_cancel(call):
 def handle_withdraw_confirm(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
+    telegram_username = str(call.from_user.username or "").strip().lstrip("@")
+
+    if not telegram_username:
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "withdraw_requires_telegram_username"),
+            show_alert=True
+        )
+        return
     
     success, result = process_withdrawal_request(user_id)
     
     if success:
         amount = result["amount"]
         wallet = result["wallet"]
+        audit_payload = build_withdrawal_audit_payload(user_id, telegram_username, result)
         
         bot.answer_callback_query(call.id, "Request sent!")
         bot.edit_message_text(
@@ -136,25 +150,36 @@ def handle_withdraw_confirm(call):
         )
         
         # Notify Admins
-        notify_admins_withdrawal(user_id, amount, wallet)
+        notify_admins_withdrawal(user_id, telegram_username, amount, wallet, result, audit_payload)
     else:
         bot.answer_callback_query(call.id, "Error!")
         bot.send_message(call.message.chat.id, get_message_text(language, "withdraw_failed").format(reason=result))
         show_referral_menu(user_id, call.message.chat.id)
 
-def notify_admins_withdrawal(user_id, amount, wallet):
+def notify_admins_withdrawal(user_id, telegram_username, amount, wallet, withdrawal_data, audit_payload):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"admin_pay_ref:{user_id}"))
     
     msg_text = get_message_text("en", "admin_withdraw_request").format(
         user_id=user_id,
+        username=telegram_username,
         amount=amount,
-        wallet=wallet
+        wallet=wallet,
+        invited_count=withdrawal_data.get("invited_count", 0),
+        total_earnings=withdrawal_data.get("total_earnings", 0),
+        available_balance_after=withdrawal_data.get("available_balance_after", 0),
+        requested_at=withdrawal_data.get("requested_at", "")
     )
+    filename_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"withdrawal_request_{user_id}_{filename_time}.json"
+    json_bytes = json.dumps(audit_payload, indent=2, ensure_ascii=False).encode("utf-8")
     
     for admin_id in ADMIN_USER_IDS:
         try:
             bot.send_message(admin_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            json_file = io.BytesIO(json_bytes)
+            json_file.name = filename
+            bot.send_document(admin_id, json_file, caption=f"Withdrawal audit data for user {user_id}")
         except Exception as e:
             print(f"Failed to notify admin {admin_id}: {e}")
 

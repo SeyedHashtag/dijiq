@@ -16,7 +16,14 @@ def load_referrals():
         try:
             if os.path.exists(REFERRALS_FILE):
                 with open(REFERRALS_FILE, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    data.setdefault("referrals", {})
+                    data.setdefault("stats", {})
+                    data.setdefault("codes", {})
+                    data.setdefault("user_codes", {})
+                    data.setdefault("wallets", {})
+                    data.setdefault("referral_details", {})
+                    return data
         except Exception:
             pass
         return {
@@ -24,7 +31,8 @@ def load_referrals():
             "stats": {},      # user_id -> { "count": 0, "total_earnings": 0, "available_balance": 0 }
             "codes": {},      # code -> user_id
             "user_codes": {},  # user_id -> code
-            "wallets": {}     # user_id -> wallet_address
+            "wallets": {},    # user_id -> wallet_address
+            "referral_details": {}  # invited user_id -> invite metadata
         }
 
 def save_referrals(data):
@@ -61,7 +69,7 @@ def get_or_create_referral_code(user_id):
     save_referrals(data)
     return code
 
-def process_referral(new_user_id, code):
+def process_referral(new_user_id, code, telegram_username=None, first_name=None, last_name=None):
     data = load_referrals()
     new_user_id_str = str(new_user_id)
     
@@ -80,6 +88,15 @@ def process_referral(new_user_id, code):
         return False, "Cannot refer yourself"
         
     data["referrals"][new_user_id_str] = referrer_id
+    data.setdefault("referral_details", {})[new_user_id_str] = {
+        "telegram_user_id": new_user_id,
+        "telegram_username": telegram_username,
+        "first_name": first_name,
+        "last_name": last_name,
+        "referral_code": code,
+        "referrer_id": referrer_id,
+        "invited_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
     
     # Update stats for referrer
     if referrer_id not in data["stats"]:
@@ -137,6 +154,69 @@ def get_wallet_address(user_id):
     user_id_str = str(user_id)
     return data.get("wallets", {}).get(user_id_str)
 
+def _get_invitee_payments(invitee_user_id):
+    try:
+        from utils.payment_records import load_payments
+        payments = load_payments()
+    except Exception:
+        payments = {}
+
+    invitee_payments = []
+    for payment_id, payment_data in payments.items():
+        if str(payment_data.get("user_id")) != str(invitee_user_id):
+            continue
+
+        invitee_payments.append({
+            "payment_id": payment_id,
+            "status": payment_data.get("status"),
+            "price": payment_data.get("price"),
+            "plan_gb": payment_data.get("plan_gb"),
+            "days": payment_data.get("days"),
+            "created_at": payment_data.get("created_at"),
+            "updated_at": payment_data.get("updated_at")
+        })
+
+    return invitee_payments
+
+def build_withdrawal_audit_payload(user_id, telegram_username, withdrawal_data):
+    data = load_referrals()
+    user_id_str = str(user_id)
+    referral_details = data.get("referral_details", {})
+
+    invitees = []
+    for invitee_id, referrer_id in data.get("referrals", {}).items():
+        if str(referrer_id) != user_id_str:
+            continue
+
+        details = referral_details.get(str(invitee_id), {})
+        metadata_complete = bool(details.get("invited_at"))
+        invitees.append({
+            "telegram_user_id": int(invitee_id) if str(invitee_id).isdigit() else invitee_id,
+            "telegram_username": details.get("telegram_username"),
+            "first_name": details.get("first_name"),
+            "last_name": details.get("last_name"),
+            "referral_code": details.get("referral_code"),
+            "invited_at": details.get("invited_at"),
+            "metadata_complete": metadata_complete,
+            "payments": _get_invitee_payments(invitee_id)
+        })
+
+    invitees.sort(key=lambda item: (item.get("invited_at") is None, item.get("invited_at") or "", str(item.get("telegram_user_id"))))
+
+    return {
+        "request": {
+            "requested_at": withdrawal_data.get("requested_at"),
+            "requester_user_id": user_id,
+            "requester_username": telegram_username,
+            "amount": withdrawal_data.get("amount"),
+            "wallet": withdrawal_data.get("wallet"),
+            "available_balance_after": withdrawal_data.get("available_balance_after"),
+            "total_earnings": withdrawal_data.get("total_earnings"),
+            "invited_count": withdrawal_data.get("invited_count")
+        },
+        "invitees": invitees
+    }
+
 def process_withdrawal_request(user_id):
     data = load_referrals()
     user_id_str = str(user_id)
@@ -153,7 +233,15 @@ def process_withdrawal_request(user_id):
         return False, "Wallet address not set"
         
     amount = stats["available_balance"]
+    requested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     stats["available_balance"] = 0
     
     save_referrals(data)
-    return True, {"amount": amount, "wallet": wallet}
+    return True, {
+        "amount": amount,
+        "wallet": wallet,
+        "requested_at": requested_at,
+        "available_balance_after": stats["available_balance"],
+        "total_earnings": stats.get("total_earnings", 0),
+        "invited_count": stats.get("count", 0)
+    }

@@ -13,7 +13,13 @@ def send_welcome(message):
     if len(args) > 1:
         referral_code = args[1]
         try:
-            success, result = process_referral(user_id, referral_code)
+            success, result = process_referral(
+                user_id,
+                referral_code,
+                telegram_username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
             lang = get_user_language(user_id)
             if success:
                  bot.send_message(user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
