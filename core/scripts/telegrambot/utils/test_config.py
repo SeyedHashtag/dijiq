@@ -5,7 +5,7 @@ import time
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
-from utils.api_client import APIClient, MultiServerAPI
+from utils.api_client import MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text
 from utils.language import get_user_language
 import qrcode
@@ -13,14 +13,14 @@ import io
 import logging
 from utils.username_utils import (
     allocate_username,
-    extract_existing_usernames,
     build_user_note,
-    format_username_timestamp,
 )
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
 TEST_WAITING_LIST_FILE = '/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json'
+TEST_TRAFFIC_GB = 1
+TEST_DAYS = 30
 
 def load_test_settings():
     try:
@@ -72,8 +72,7 @@ def save_waiting_users(users):
     with open(TEST_WAITING_LIST_FILE, 'w') as f:
         json.dump(users, f, indent=4)
 
-def has_used_test_config(user_id):
-    configs = load_test_configs()
+def _has_used_test_config_from(configs, user_id):
     key = str(user_id)
     if key not in configs:
         return False
@@ -93,6 +92,9 @@ def has_used_test_config(user_id):
                 return False
     return True
 
+def has_used_test_config(user_id):
+    return _has_used_test_config_from(load_test_configs(), user_id)
+
 def add_to_waiting_list(user_id, username=None, language=None):
     if has_used_test_config(user_id):
         return False
@@ -111,8 +113,7 @@ def add_to_waiting_list(user_id, username=None, language=None):
     save_waiting_users(waiting_users)
     return True
 
-def mark_test_config_used(user_id, username=None, language=None, telegram_username=None, server_id=None):
-    configs = load_test_configs()
+def _mark_test_config_used_in_memory(configs, user_id, username=None, language=None, telegram_username=None, server_id=None):
     key = str(user_id)
     # Preserve existing history fields (reset_at, reset_count, original used_at, etc.)
     existing = configs.get(key, {})
@@ -129,6 +130,17 @@ def mark_test_config_used(user_id, username=None, language=None, telegram_userna
         entry['server_id'] = server_id
 
     configs[key] = entry
+
+def mark_test_config_used(user_id, username=None, language=None, telegram_username=None, server_id=None):
+    configs = load_test_configs()
+    _mark_test_config_used_in_memory(
+        configs,
+        user_id,
+        username=username,
+        language=language,
+        telegram_username=telegram_username,
+        server_id=server_id,
+    )
     save_test_configs(configs)
 
 
@@ -266,23 +278,64 @@ def handle_confirm_test_config(call):
 
     create_test_config(user_id, call.message.chat.id, is_automatic=False, language=language, telegram_username=call.from_user.username)
 
-def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None, ignore_creation_disabled=False):
-    # Check if test creation is disabled
-    if is_test_creation_disabled() and not ignore_creation_disabled:
-        return False
-    # Double check if user has already used a test config
-    if has_used_test_config(user_id):
+def _send_created_test_config(chat_id, username, user_uri_data, is_automatic=False):
+    if user_uri_data and 'normal_sub' in user_uri_data:
+        sub_url = user_uri_data['normal_sub']
+        ipv4_url = user_uri_data.get('ipv4', '')
+
+        # Create QR code for IPv4 URL when available.
+        qr = qrcode.make(ipv4_url or sub_url)
+        bio = io.BytesIO()
+        qr.save(bio, 'PNG')
+        bio.seek(0)
+
+        if is_automatic:
+            prefix = "🎁 Your free test configuration (1GB - 30 days) has been created automatically!\n\n"
+        else:
+            prefix = "✅ Your test configuration has been created successfully!\n\n"
+
+        success_message = prefix
+        success_message += (
+            f"📊 Test Plan Details:\n"
+            f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
+            f"- 🔹 Duration: {TEST_DAYS} days\n"
+            f"- 🔹 Unlimited Devices: Yes\n"
+            f"- 🔹 Username: `{username}`\n\n"
+        )
+
+        if ipv4_url:
+            success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
+
+        success_message += (
+            f"Subscription URL:\n{sub_url}\n\n"
+            f"Scan the QR code to configure your VPN client."
+        )
+        bot.send_photo(
+            chat_id,
+            photo=bio,
+            caption=success_message,
+            parse_mode="Markdown"
+        )
+    else:
+        bot.send_message(
+            chat_id,
+            f"✅ Your test configuration has been created, but the subscription URL could not be generated. Please contact support.",
+            parse_mode="Markdown"
+        )
+
+def _create_test_config_with_client(
+    user_id,
+    chat_id,
+    api_client,
+    existing_usernames,
+    test_configs,
+    is_automatic=False,
+    language=None,
+    telegram_username=None,
+):
+    if _has_used_test_config_from(test_configs, user_id):
         return False
 
-    # Constants for test config
-    TEST_TRAFFIC_GB = 1  # 1 GB
-    TEST_DAYS = 30       # 30 days
-
-    multi_api = MultiServerAPI()
-    api_client = multi_api.select_server_for_new_user()
-    if api_client is None:
-        return False
-    existing_usernames = multi_api.get_all_usernames()
     username = allocate_username("t", user_id, existing_usernames)
     note_payload = build_user_note(
         username=username,
@@ -308,72 +361,98 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 username,
             )
 
-    if result:
-        # Mark the test config as used (save username as well)
-        mark_test_config_used(
-            user_id,
-            username=username,
-            language=language,
-            telegram_username=telegram_username,
-            server_id=api_client.server_id,
-        )
-
-        # Get user URI from API
-        user_uri_data = api_client.get_user_uri(username)
-        if user_uri_data and 'normal_sub' in user_uri_data:
-            sub_url = user_uri_data['normal_sub']
-            ipv4_url = user_uri_data.get('ipv4', '')
-
-            # Create QR code for IPv4 URL when available.
-            qr = qrcode.make(ipv4_url or sub_url)
-            bio = io.BytesIO()
-            qr.save(bio, 'PNG')
-            bio.seek(0)
-
-            # Format success message
-            if is_automatic:
-                prefix = "🎁 Your free test configuration (1GB - 30 days) has been created automatically!\n\n"
-            else:
-                prefix = "✅ Your test configuration has been created successfully!\n\n"
-
-            success_message = prefix
-            success_message += (
-                f"📊 Test Plan Details:\n"
-                f"- 🔹 Data: {TEST_TRAFFIC_GB} GB\n"
-                f"- 🔹 Duration: {TEST_DAYS} days\n"
-                f"- 🔹 Unlimited Devices: Yes\n"
-                f"- 🔹 Username: `{username}`\n\n"
-            )
-
-            if ipv4_url:
-                success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
-
-            success_message += (
-                f"Subscription URL:\n{sub_url}\n\n"
-                f"Scan the QR code to configure your VPN client."
-            )
-            # Send the QR code with config details
-            bot.send_photo(
-                chat_id,
-                photo=bio,
-                caption=success_message,
-                parse_mode="Markdown"
-            )
-        else:
-            bot.send_message(
-                chat_id,
-                f"✅ Your test configuration has been created, but the subscription URL could not be generated. Please contact support.",
-                parse_mode="Markdown"
-            )
-        return True
-    else:
-        if not is_automatic:
-            bot.send_message(
-                chat_id,
-                "❌ Failed to create test configuration. Please try again later or contact support.",
-                parse_mode="Markdown"
-            )
+    if not result:
         return False
+
+    _mark_test_config_used_in_memory(
+        test_configs,
+        user_id,
+        username=username,
+        language=language,
+        telegram_username=telegram_username,
+        server_id=api_client.server_id,
+    )
+    existing_usernames.add(username)
+
+    user_uri_data = api_client.get_user_uri(username)
+    _send_created_test_config(chat_id, username, user_uri_data, is_automatic=is_automatic)
+    return True
+
+def create_test_config(user_id, chat_id, is_automatic=False, language=None, telegram_username=None, ignore_creation_disabled=False):
+    # Check if test creation is disabled
+    if is_test_creation_disabled() and not ignore_creation_disabled:
+        return False
+
+    configs = load_test_configs()
+    if _has_used_test_config_from(configs, user_id):
+        return False
+
+    multi_api = MultiServerAPI()
+    api_client = multi_api.select_server_for_new_user()
+    if api_client is None:
+        return False
+
+    existing_usernames = multi_api.get_all_usernames()
+    success = _create_test_config_with_client(
+        user_id,
+        chat_id,
+        api_client,
+        existing_usernames,
+        configs,
+        is_automatic=is_automatic,
+        language=language,
+        telegram_username=telegram_username,
+    )
+    if success:
+        save_test_configs(configs)
+        return True
+
+    if not is_automatic:
+        bot.send_message(
+            chat_id,
+            "❌ Failed to create test configuration. Please try again later or contact support.",
+            parse_mode="Markdown"
+        )
+    return False
+
+def _safe_server_weight(value):
+    try:
+        weight = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return weight if weight > 0 else 1.0
+
+def _build_bulk_test_config_state():
+    multi_api = MultiServerAPI()
+    existing_usernames = set()
+    server_states = []
+
+    for index, (server, client) in enumerate(multi_api.iter_clients(include_disabled=True)):
+        users = client.get_users()
+        if users is None:
+            continue
+
+        existing_usernames.update(multi_api.extract_usernames(users))
+        if not server.get("enabled", True):
+            continue
+
+        weight = _safe_server_weight(server.get("weight", 1))
+        server_states.append({
+            "index": index,
+            "client": client,
+            "active_count": multi_api.active_user_count(users),
+            "weight": weight,
+        })
+
+    return existing_usernames, server_states
+
+def _select_bulk_server_state(server_states):
+    if not server_states:
+        return None
+    return min(
+        server_states,
+        key=lambda state: (state["active_count"] / state["weight"], state["index"])
+    )
 
 
 # ─── Admin: Reset Test Accounts ───────────────────────────────────────────────
@@ -625,6 +704,24 @@ def handle_waiting_chunk(call):
         message_id=call.message.message_id
     )
 
+    test_configs = None
+    existing_usernames = None
+    server_states = None
+    state_changed = False
+    if action == "create":
+        test_configs = load_test_configs()
+        existing_usernames, server_states = _build_bulk_test_config_state()
+        if not server_states:
+            text, markup = build_waiting_management_menu()
+            bot.edit_message_text(
+                f"❌ No healthy enabled VPN servers were available.\n\n{text}",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+            return
+
     for user_key, user_data in selected_users:
         user_id = user_data.get("telegram_id") or int(user_key)
         language = user_data.get("language") or get_user_language(user_id)
@@ -633,14 +730,19 @@ def handle_waiting_chunk(call):
 
         try:
             if action == "create":
-                success = create_test_config(
+                server_state = _select_bulk_server_state(server_states)
+                success = _create_test_config_with_client(
                     user_id,
                     user_id,
+                    server_state["client"],
+                    existing_usernames,
+                    test_configs,
                     is_automatic=True,
                     language=language,
                     telegram_username=telegram_username,
-                    ignore_creation_disabled=True,
                 )
+                if success:
+                    server_state["active_count"] += 1
             elif action == "notify":
                 bot.send_message(user_id, get_message_text(language, "test_config_waitlist_eligible"))
                 success = True
@@ -650,12 +752,21 @@ def handle_waiting_chunk(call):
 
         if success:
             waiting_users.pop(user_key, None)
-            save_waiting_users(waiting_users)
+            state_changed = True
             processed_count += 1
+            if processed_count % 25 == 0:
+                save_waiting_users(waiting_users)
+                if test_configs is not None:
+                    save_test_configs(test_configs)
         else:
             failure_count += 1
 
         time.sleep(0.1)
+
+    if state_changed:
+        save_waiting_users(waiting_users)
+        if test_configs is not None:
+            save_test_configs(test_configs)
 
     remaining_count = len(waiting_users)
     text, markup = build_waiting_management_menu()
