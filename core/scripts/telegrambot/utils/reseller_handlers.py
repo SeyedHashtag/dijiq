@@ -28,6 +28,9 @@ from utils.username_utils import (
     format_username_timestamp,
 )
 
+TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
+
 def _get_approved_reseller_data(user_id):
     reseller_data = get_reseller_data(user_id)
     if not reseller_data or reseller_data.get('status') != 'approved':
@@ -111,6 +114,46 @@ def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_userna
                 username,
             )
     return username, result, target_client
+
+
+def _get_exchange_rate():
+    load_dotenv(TELEGRAM_ENV_PATH, override=True)
+    try:
+        return float(os.getenv('EXCHANGE_RATE', '1'))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _build_reseller_purchase_details(language, gb, days, price, current_debt):
+    converted_price = price * _get_exchange_rate()
+    projected_debt = current_debt + price
+    return get_message_text(language, "reseller_purchase_details").format(
+        plan_gb=gb,
+        days=days,
+        price=format_usd_amount(price),
+        toman_price=format_toman_amount(converted_price),
+        current_debt=format_usd_amount(current_debt),
+        projected_debt=format_usd_amount(projected_debt),
+    )
+
+
+def _reseller_username_prompt_markup(language):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    return markup
+
+
+def _show_reseller_purchase_details(call, language, gb, days, price, current_debt):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "confirm"), callback_data=f"reseller:confirm_buy:{gb}"))
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+
+    bot.edit_message_text(
+        _build_reseller_purchase_details(language, gb, days, price, current_debt),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup
+    )
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -304,7 +347,7 @@ def handle_reseller_buy(call):
     projected_debt = current_debt + price
     if projected_debt >= DEBT_WARNING_THRESHOLD:
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton(get_message_text(language, "continue_action"), callback_data=f"reseller:confirm_buy:{gb}"))
+        markup.add(types.InlineKeyboardButton(get_message_text(language, "continue_action"), callback_data=f"reseller:details:{gb}"))
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
         warning_msg = get_message_text(language, "reseller_debt_warning_message").format(
             current_debt=current_debt,
@@ -319,20 +362,40 @@ def handle_reseller_buy(call):
         )
         return
     
-    # Prompt for customer username
-    user_data[user_id] = {
-        'state': 'waiting_reseller_username',
-        'gb': gb,
-        'days': days,
-        'price': price,
-        'unlimited': plan.get('unlimited', False)
-    }
-    
-    bot.edit_message_text(
-        get_message_text(language, "enter_reseller_customer_username"),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
+    _show_reseller_purchase_details(call, language, gb, days, price, current_debt)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:details:"))
+def handle_reseller_purchase_details(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_approved_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
+        )
+        return
+
+    gb = call.data.split(':')[2]
+    plans = load_plans()
+    if gb not in plans:
+        bot.answer_callback_query(call.id, "Plan not found.")
+        return
+
+    plan = plans[gb]
+    if plan.get("target", "both") == "customer":
+        bot.answer_callback_query(call.id, "This plan is for customers only.")
+        return
+
+    price = float(plan['price']) * 0.8
+    current_debt = float(reseller_data.get('debt', 0.0))
+    _show_reseller_purchase_details(call, language, gb, plan['days'], price, current_debt)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:confirm_buy:"))
@@ -378,7 +441,8 @@ def handle_reseller_confirm_buy(call):
     bot.edit_message_text(
         get_message_text(language, "enter_reseller_customer_username"),
         chat_id=call.message.chat.id,
-        message_id=call.message.message_id
+        message_id=call.message.message_id,
+        reply_markup=_reseller_username_prompt_markup(language)
     )
 
 @bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id].get('state') == 'waiting_reseller_username')
