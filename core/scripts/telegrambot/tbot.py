@@ -39,7 +39,7 @@ def send_welcome(message):
                 create_test_config(user_id, message.chat.id, is_automatic=True, language=language, telegram_username=message.from_user.username)
             
         markup = create_main_markup(is_admin=False, user_id=user_id)
-        bot.reply_to(message, "Welcome to Dijiq VPN services!", reply_markup=markup)
+        bot.reply_to(message, "Welcome!", reply_markup=markup)
 
 def monitoring_thread():
     while True:
