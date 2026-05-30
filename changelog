@@ -1,3 +1,8 @@
+## v1.12.46
+✨ Add reseller purchase details and exchange rate handling for reseller transactions
+✨ Enhance referral processing with user metadata and withdrawal audit details
+✨ Add approved reseller support to broadcast recipient selection
+
 ## v1.12.45
 ✨ Add reseller customer categorization and status updates
 ✨ Add reseller financial statistics and summary in the admin panel
