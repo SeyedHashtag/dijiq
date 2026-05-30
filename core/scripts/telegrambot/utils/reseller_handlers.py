@@ -85,8 +85,11 @@ def _has_active_purchased_config(user_id):
 
 
 def _create_reseller_username(api_client, user_id):
+    if isinstance(api_client, set):
+        return allocate_username("r", user_id, api_client)
     multi_api = MultiServerAPI()
-    usernames = multi_api.get_all_usernames()
+    creation = multi_api.prepare_new_user_creation()
+    usernames = creation.get("existing_usernames") or set()
     if not usernames and api_client is not None:
         usernames = extract_existing_usernames(api_client.get_users())
     return allocate_username("r", user_id, usernames)
@@ -94,27 +97,30 @@ def _create_reseller_username(api_client, user_id):
 
 def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_username, unlimited=False):
     multi_api = MultiServerAPI()
-    target_client = multi_api.select_server_for_new_user() or api_client
-    if target_client is None:
-        return None, None, None
-    username = _create_reseller_username(target_client, user_id)
-    note_payload = build_user_note(
-        username=username,
-        traffic_limit=gb,
-        expiration_days=days,
-        unlimited=unlimited,
-        note_text=chosen_username,
-    )
-    result = target_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
-    if result is None:
-        result = target_client.add_user(username, int(gb), int(days))
-        if result is not None:
-            logging.getLogger("dijiq.usernames").warning(
-                "Created reseller user without note fallback. reseller_id=%s username=%s",
-                user_id,
-                username,
-            )
-    return username, result, target_client
+
+    def allocate(existing_usernames):
+        return allocate_username("r", user_id, existing_usernames)
+
+    def create(target_client, username):
+        note_payload = build_user_note(
+            username=username,
+            traffic_limit=gb,
+            expiration_days=days,
+            unlimited=unlimited,
+            note_text=chosen_username,
+        )
+        result = target_client.add_user(username, int(gb), int(days), unlimited=unlimited, note=note_payload)
+        if result is None:
+            result = target_client.add_user(username, int(gb), int(days))
+            if result is not None:
+                logging.getLogger("dijiq.usernames").warning(
+                    "Created reseller user without note fallback. reseller_id=%s username=%s",
+                    user_id,
+                    username,
+                )
+        return result
+
+    return multi_api.create_user_with_retry(allocate, create, fallback_client=api_client)
 
 
 def _build_reseller_purchase_details(language, gb, days, price, current_debt):

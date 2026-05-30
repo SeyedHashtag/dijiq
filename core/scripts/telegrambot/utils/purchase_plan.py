@@ -185,8 +185,11 @@ def _record_review_audit(payment_id, call, action, reviewer_role):
     })
 
 def create_sale_username(api_client, user_id):
+    if isinstance(api_client, set):
+        return allocate_username("s", user_id, api_client)
     multi_api = MultiServerAPI()
-    usernames = multi_api.get_all_usernames()
+    creation = multi_api.prepare_new_user_creation()
+    usernames = creation.get("existing_usernames") or set()
     if not usernames and api_client is not None:
         users = api_client.get_users()
         usernames = extract_existing_usernames(users)
@@ -195,34 +198,36 @@ def create_sale_username(api_client, user_id):
 
 def create_sale_user_with_note(api_client, user_id, plan_gb, days, unlimited):
     multi_api = MultiServerAPI()
-    target_client = multi_api.select_server_for_new_user() or api_client
-    if target_client is None:
-        return None, None, None
 
-    username = create_sale_username(target_client, user_id)
-    note_payload = build_user_note(
-        username=username,
-        traffic_limit=plan_gb,
-        expiration_days=days,
-        unlimited=unlimited,
-        note_text="sale",
-    )
-    result = target_client.add_user(
-        username,
-        int(plan_gb),
-        int(days),
-        unlimited=unlimited,
-        note=note_payload,
-    )
-    if result is None:
-        result = target_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
-        if result is not None:
-            logging.getLogger("dijiq.usernames").warning(
-                "Created sale user without note fallback. user_id=%s username=%s",
-                user_id,
-                username,
-            )
-    return username, result, target_client
+    def allocate(existing_usernames):
+        return allocate_username("s", user_id, existing_usernames)
+
+    def create(target_client, username):
+        note_payload = build_user_note(
+            username=username,
+            traffic_limit=plan_gb,
+            expiration_days=days,
+            unlimited=unlimited,
+            note_text="sale",
+        )
+        result = target_client.add_user(
+            username,
+            int(plan_gb),
+            int(days),
+            unlimited=unlimited,
+            note=note_payload,
+        )
+        if result is None:
+            result = target_client.add_user(username, int(plan_gb), int(days), unlimited=unlimited)
+            if result is not None:
+                logging.getLogger("dijiq.usernames").warning(
+                    "Created sale user without note fallback. user_id=%s username=%s",
+                    user_id,
+                    username,
+                )
+        return result
+
+    return multi_api.create_user_with_retry(allocate, create, fallback_client=api_client)
 
 def send_admin_payment_notification(
     user_id,

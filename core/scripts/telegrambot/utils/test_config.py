@@ -388,22 +388,47 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
         return False
 
     multi_api = MultiServerAPI()
-    api_client = multi_api.select_server_for_new_user()
-    if api_client is None:
-        return False
 
-    existing_usernames = multi_api.get_all_usernames()
-    success = _create_test_config_with_client(
-        user_id,
-        chat_id,
-        api_client,
-        existing_usernames,
-        configs,
-        is_automatic=is_automatic,
-        language=language,
-        telegram_username=telegram_username,
-    )
-    if success:
+    def allocate(existing_usernames):
+        return allocate_username("t", user_id, existing_usernames)
+
+    def create(api_client, username):
+        note_payload = build_user_note(
+            username=username,
+            traffic_limit=TEST_TRAFFIC_GB,
+            expiration_days=TEST_DAYS,
+            unlimited=True,
+            note_text="test_config",
+        )
+        result = api_client.add_user(
+            username,
+            TEST_TRAFFIC_GB,
+            TEST_DAYS,
+            unlimited=True,
+            note=note_payload,
+        )
+        if result is None:
+            result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
+            if result is not None:
+                logging.getLogger("dijiq.usernames").warning(
+                    "Created test user without note fallback. user_id=%s username=%s",
+                    user_id,
+                    username,
+                )
+        return result
+
+    username, result, api_client = multi_api.create_user_with_retry(allocate, create)
+    if result:
+        _mark_test_config_used_in_memory(
+            configs,
+            user_id,
+            username=username,
+            language=language,
+            telegram_username=telegram_username,
+            server_id=api_client.server_id,
+        )
+        user_uri_data = api_client.get_user_uri(username)
+        _send_created_test_config(chat_id, username, user_uri_data, is_automatic=is_automatic)
         save_test_configs(configs)
         return True
 

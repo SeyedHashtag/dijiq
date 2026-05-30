@@ -13,6 +13,8 @@ or ``None`` on any failure (network error, 4xx, 5xx).  Callers should check
 import json
 import os
 import requests
+import threading
+import time
 from dotenv import load_dotenv
 
 
@@ -272,6 +274,9 @@ class APIClient:
 class MultiServerAPI:
     """Coordinates API operations across configured VPN servers."""
 
+    _creation_cache_lock = threading.RLock()
+    _creation_cache = None
+
     def __init__(self):
         self.servers = get_server_configs()
 
@@ -314,6 +319,145 @@ class MultiServerAPI:
                     names.add(str(item["username"]))
         return names
 
+    @staticmethod
+    def _creation_cache_ttl_seconds() -> float:
+        load_dotenv(TELEGRAM_ENV_PATH)
+        try:
+            ttl = float(os.getenv("SERVER_USERS_CACHE_TTL_SECONDS", "30"))
+        except (TypeError, ValueError):
+            return 30.0
+        return max(0.0, ttl)
+
+    @staticmethod
+    def _servers_signature(servers: list[dict]):
+        return tuple(
+            (
+                server.get("id"),
+                server.get("url"),
+                server.get("token"),
+                bool(server.get("enabled", True)),
+                _safe_weight(server.get("weight", 1)),
+            )
+            for server in servers
+        )
+
+    def _build_creation_snapshot(self) -> dict:
+        usernames = set()
+        server_states = []
+
+        for index, (server, client) in enumerate(self.iter_clients(include_disabled=False)):
+            users = client.get_users()
+            healthy = users is not None
+            active_count = self.active_user_count(users) if healthy else None
+            weight = _safe_weight(server.get("weight", 1))
+            if healthy:
+                usernames.update(self.extract_usernames(users))
+            server_states.append({
+                "server": server,
+                "client": client,
+                "index": index,
+                "healthy": healthy,
+                "active_count": active_count,
+                "weight": weight,
+                "load_ratio": (active_count / weight) if healthy else None,
+            })
+
+        return {
+            "created_at": time.monotonic(),
+            "signature": self._servers_signature(self.servers),
+            "usernames": usernames,
+            "servers": server_states,
+        }
+
+    def _get_creation_snapshot(self, force_refresh: bool = False) -> dict:
+        signature = self._servers_signature(self.servers)
+        ttl = self._creation_cache_ttl_seconds()
+        now = time.monotonic()
+
+        with self._creation_cache_lock:
+            cached = self.__class__._creation_cache
+            if (
+                not force_refresh
+                and cached is not None
+                and cached.get("signature") == signature
+                and ttl > 0
+                and now - cached.get("created_at", 0) < ttl
+            ):
+                return cached
+
+            snapshot = self._build_creation_snapshot()
+            self.__class__._creation_cache = snapshot
+            return snapshot
+
+    def invalidate_creation_cache(self):
+        with self._creation_cache_lock:
+            self.__class__._creation_cache = None
+
+    def prepare_new_user_creation(self, force_refresh: bool = False) -> dict:
+        snapshot = self._get_creation_snapshot(force_refresh=force_refresh)
+        candidates = []
+        for state in snapshot.get("servers", []):
+            if not state.get("healthy"):
+                continue
+            candidates.append((state["load_ratio"], state["index"], state["client"]))
+
+        selected_client = None
+        if candidates:
+            candidates.sort(key=lambda item: (item[0], item[1]))
+            selected_client = candidates[0][2]
+
+        return {
+            "client": selected_client,
+            "existing_usernames": set(snapshot.get("usernames", set())),
+            "server_states": list(snapshot.get("servers", [])),
+        }
+
+    def record_created_user(self, server_id: str, username: str):
+        if not username:
+            return
+        with self._creation_cache_lock:
+            cached = self.__class__._creation_cache
+            if cached is None:
+                return
+            cached.setdefault("usernames", set()).add(username)
+            for state in cached.get("servers", []):
+                client = state.get("client")
+                state_server_id = getattr(client, "server_id", None) or (state.get("server") or {}).get("id")
+                if state_server_id != server_id:
+                    continue
+                if state.get("healthy"):
+                    state["active_count"] = int(state.get("active_count") or 0) + 1
+                    weight = _safe_weight(state.get("weight", 1))
+                    state["load_ratio"] = state["active_count"] / weight
+                break
+
+    def create_user_with_retry(self, username_allocator, creator, fallback_client: APIClient | None = None):
+        last_username = None
+        last_client = None
+
+        for attempt in range(2):
+            creation = self.prepare_new_user_creation(force_refresh=attempt > 0)
+            target_client = creation.get("client") or fallback_client
+            if target_client is None:
+                return None, None, None
+
+            existing_usernames = set(creation.get("existing_usernames") or set())
+            if not existing_usernames and fallback_client is not None and target_client is fallback_client:
+                users = fallback_client.get_users()
+                existing_usernames = self.extract_usernames(users)
+
+            username = username_allocator(existing_usernames)
+            result = creator(target_client, username)
+            last_username = username
+            last_client = target_client
+            if result is not None:
+                self.record_created_user(target_client.server_id, username)
+                return username, result, target_client
+
+            self.invalidate_creation_cache()
+
+        return last_username, None, last_client
+
     def get_server_statuses(self) -> list[dict]:
         statuses = []
         for index, (server, client) in enumerate(self.iter_clients(include_disabled=True)):
@@ -331,18 +475,7 @@ class MultiServerAPI:
         return statuses
 
     def select_server_for_new_user(self) -> APIClient | None:
-        candidates = []
-        for index, (server, client) in enumerate(self.iter_clients(include_disabled=False)):
-            users = client.get_users()
-            if users is None:
-                continue
-            active_count = self.active_user_count(users)
-            ratio = active_count / _safe_weight(server.get("weight", 1))
-            candidates.append((ratio, index, client))
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: (item[0], item[1]))
-        return candidates[0][2]
+        return self.prepare_new_user_creation().get("client")
 
     def get_all_usernames(self) -> set[str]:
         usernames = set()
