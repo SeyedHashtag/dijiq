@@ -76,10 +76,9 @@ stop_service() {
     systemctl stop dijiq-telegram-bot.service > /dev/null 2>&1
     systemctl disable dijiq-telegram-bot.service > /dev/null 2>&1
 
-    rm -f /etc/dijiq/core/scripts/telegrambot/.env
     echo -e "\n"
 
-    echo "dijiq bot service stopped and disabled. .env file removed."
+    echo "dijiq bot service stopped and disabled. Configuration preserved."
 }
 
 case "$1" in

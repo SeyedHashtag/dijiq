@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -166,6 +167,64 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertEqual(len(clients["s1"].add_user_calls), 2)
         self.assertEqual(clients["s1"].get_users_calls, 2)
         self.assertEqual(clients["s2"].get_users_calls, 2)
+
+
+class ServerConfigPersistenceTests(unittest.TestCase):
+    def setUp(self):
+        self.original_env_path = api_client.TELEGRAM_ENV_PATH
+        self.original_env_values = {
+            key: os.environ.get(key)
+            for key in ("SERVERS_JSON", "URL", "TOKEN")
+        }
+
+    def tearDown(self):
+        api_client.TELEGRAM_ENV_PATH = self.original_env_path
+        for key, value in self.original_env_values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def test_save_server_configs_preserves_payment_and_checker_settings(self):
+        preserved_values = {
+            "API_TOKEN": "bot-token",
+            "ADMIN_USER_IDS": "[123,456]",
+            "CRYPTO_API_KEY": "crypto-key",
+            "CARD_TO_CARD_NUMBER": "1111222233334444",
+            "CARD_TO_CARD_CHECKER_NUMBER": "5555666677778888",
+            "RECEIPT_CHECKER_USER_ID": "987654",
+            "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "EXCHANGE_RATE": "58000",
+            "CARD_TO_CARD_MODE": "checker",
+        }
+        initial_lines = [
+            "URL=https://old.example\n",
+            "TOKEN=old-token\n",
+            "SERVERS_JSON=[]\n",
+            *[f"{key}={value}\n" for key, value in preserved_values.items()],
+        ]
+        new_servers = [
+            {"id": "primary", "name": "Primary", "url": "https://one.example", "token": "token-one", "enabled": True, "weight": 1},
+            {"id": "backup", "name": "backup", "url": "https://two.example", "token": "token-two", "enabled": False, "weight": 2},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env_path = Path(tmp_dir) / ".env"
+            env_path.write_text("".join(initial_lines))
+            api_client.TELEGRAM_ENV_PATH = str(env_path)
+
+            self.assertTrue(api_client.save_server_configs(new_servers))
+
+            values = {}
+            for line in env_path.read_text().splitlines():
+                key, value = line.split("=", 1)
+                values[key] = value
+
+        self.assertEqual(values["URL"], "https://one.example")
+        self.assertEqual(values["TOKEN"], "token-one")
+        self.assertIn('"id":"backup"', values["SERVERS_JSON"])
+        for key, value in preserved_values.items():
+            self.assertEqual(values[key], value)
 
 
 if __name__ == "__main__":
