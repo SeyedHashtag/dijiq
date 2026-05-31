@@ -1,3 +1,8 @@
+## v1.13.3
+✨ Show reseller customer names in customer lists while keeping generated usernames visible as IDs
+✨ Recover customer names for legacy reseller configs from saved user notes when available
+✅ Add tests for reseller customer display formatting and legacy note fallback
+
 ## v1.13.2
 ✨ Add API client creation caching and weighted VPN server selection for Telegram bot configuration creation
 ✨ Track and update Telegram payment receipt prompt messages during purchase flows
