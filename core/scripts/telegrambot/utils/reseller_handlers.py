@@ -491,6 +491,7 @@ def handle_reseller_username_input(message):
         # Add debt
         config_data = {
             "username": username,
+            "customer_name": chosen_username,
             "gb": gb,
             "days": days,
             "price": price,
@@ -759,6 +760,54 @@ def _safe_int(value, default=0):
         return default
 
 
+def _valid_reseller_customer_name(value):
+    name = str(value or "").strip()
+    if re.match(r"^[a-zA-Z0-9]{1,8}$", name):
+        return name
+    return ""
+
+
+def _extract_customer_name_from_note(note):
+    if not isinstance(note, str):
+        return ""
+    match = re.search(r"📝\s*([^|]+?)\s*\|", note)
+    if not match:
+        return ""
+    return _valid_reseller_customer_name(match.group(1))
+
+
+def _resolve_reseller_customer_name(cfg):
+    stored_name = _valid_reseller_customer_name((cfg or {}).get("customer_name"))
+    if stored_name:
+        return stored_name
+    user_config = (cfg or {}).get("_user_config") or {}
+    return _extract_customer_name_from_note(user_config.get("note"))
+
+
+def _format_reseller_customer_entry(index, cfg, category, language):
+    username = cfg.get('username', 'N/A')
+    customer_name = _resolve_reseller_customer_name(cfg)
+    gb = cfg.get('gb', '?')
+    days = cfg.get('days', '?')
+    price = cfg.get('price', 0)
+    timestamp = cfg.get('timestamp', 'N/A')
+    status_category = cfg.get("_status_category", category)
+    status_label = _customer_category_label(language, status_category)
+    if cfg.get("_status_note") == "status_unavailable":
+        status_label = get_message_text(language, "reseller_customer_status_unavailable")
+
+    identifier_lines = [f"{index}. {RESELLER_CUSTOMER_CATEGORY_ICONS.get(status_category, '✅')} `{customer_name or username}`"]
+    if customer_name:
+        identifier_lines.append(f"   🆔 `{username}`")
+
+    return (
+        "\n".join(identifier_lines) + "\n"
+        f"   {status_label}\n"
+        f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
+        f"   🕒 {timestamp}"
+    )
+
+
 def _load_reseller_live_users():
     multi_api = MultiServerAPI()
     live_users = {}
@@ -927,21 +976,7 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
 
     entries_lines = []
     for i, cfg in enumerate(page_configs, start=start + 1):
-        username = cfg.get('username', 'N/A')
-        gb = cfg.get('gb', '?')
-        days = cfg.get('days', '?')
-        price = cfg.get('price', 0)
-        timestamp = cfg.get('timestamp', 'N/A')
-        status_category = cfg.get("_status_category", category)
-        status_label = _customer_category_label(language, status_category)
-        if cfg.get("_status_note") == "status_unavailable":
-            status_label = get_message_text(language, "reseller_customer_status_unavailable")
-        entries_lines.append(
-            f"{i}. {RESELLER_CUSTOMER_CATEGORY_ICONS.get(status_category, '✅')} `{username}`\n"
-            f"   {status_label}\n"
-            f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
-            f"   🕒 {timestamp}"
-        )
+        entries_lines.append(_format_reseller_customer_entry(i, cfg, category, language))
 
     msg = get_message_text(language, "reseller_customers_category_header").format(
         category=label,
