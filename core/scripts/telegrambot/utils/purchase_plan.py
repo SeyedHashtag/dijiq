@@ -334,17 +334,17 @@ def handle_purchase_selection(call):
             if plan.get('target', 'both') == 'reseller':
                 bot.answer_callback_query(call.id, text='This plan is for resellers only.')
                 return
-            unlimited_text = "Yes" if plan.get("unlimited") else "No"
+            unlimited_text = get_button_text(language, "yes" if plan.get("unlimited") else "no")
             price = float(plan['price'])
             exchange_rate = get_exchange_rate()
             price_in_tomans = price * exchange_rate
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
+            message += get_message_text(language, "duration").format(days=plan['days'])
+            message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
             message += get_message_text(language, "price").format(price=format_usd_amount(price))
             message += get_message_text(language, "exchange_rate").format(exchange_rate=format_toman_amount(exchange_rate))
             message += get_message_text(language, "toman_price").format(toman_price=format_toman_amount(price_in_tomans))
-            message += get_message_text(language, "duration").format(days=plan['days'])
-            message += get_message_text(language, "unlimited").format(unlimited_text=unlimited_text)
             message += get_message_text(language, "purchase_connection_warning")
             message += get_message_text(language, "select_payment_method")
 

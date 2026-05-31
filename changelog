@@ -1,3 +1,6 @@
+## v1.13.4
+♻️ Improve purchase plan detail ordering and localize unlimited user status
+
 ## v1.13.3
 ✨ Show reseller customer names in customer lists while keeping generated usernames visible as IDs
 ✨ Recover customer names for legacy reseller configs from saved user notes when available
