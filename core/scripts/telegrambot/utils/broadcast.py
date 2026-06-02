@@ -1,7 +1,7 @@
 from telebot import types
 from utils.command import bot, is_admin, ADMIN_USER_IDS
 from utils.common import create_main_markup
-from utils.api_client import APIClient
+from utils.api_client import MultiServerAPI
 from utils.reseller import get_all_resellers
 import re
 import json
@@ -42,6 +42,26 @@ def reset_failed_broadcast_users():
             os.remove(BROADCAST_FAILED_USERS_PATH)
     except Exception as e:
         print(f"Failed to reset broadcast failed users list: {str(e)}")
+
+
+def is_permanent_broadcast_failure(error_msg):
+    """Return True when Telegram indicates this recipient should stay excluded."""
+    lowered = error_msg.lower()
+    permanent_error_terms = [
+        "blocked",
+        "deactivated",
+        "chat not found",
+        "user is bot",
+        "forbidden",
+    ]
+    return any(term in lowered for term in permanent_error_terms)
+
+
+def iter_paid_user_records():
+    """Yield paid-user records from every configured VPN server."""
+    multi_api = MultiServerAPI()
+    for _, username, details in multi_api.iter_all_users():
+        yield username, details
 
 
 def generate_broadcast_log(target_label, total_users, success_users, failed_by_error, excluded_by_reason, broadcast_text, admin_id):
@@ -201,10 +221,6 @@ def _extract_paid_telegram_id(username):
 def get_user_ids(filter_type):
     def get_active_paid_user_ids():
         active_paid_ids = set()
-        api_client = APIClient()
-        users = api_client.get_users()
-        if users is None:
-            return active_paid_ids
 
         def collect_active_paid(username, details):
             telegram_id = _extract_paid_telegram_id(username)
@@ -214,14 +230,8 @@ def get_user_ids(filter_type):
             if not blocked:
                 active_paid_ids.add(telegram_id)
 
-        if isinstance(users, dict):
-            for username, details in users.items():
-                collect_active_paid(username, details)
-        elif isinstance(users, list):
-            for item in users:
-                if not isinstance(item, dict):
-                    continue
-                collect_active_paid(item.get('username'), item)
+        for username, details in iter_paid_user_records():
+            collect_active_paid(username, details)
 
         return active_paid_ids
 
@@ -296,13 +306,6 @@ def get_user_ids(filter_type):
             return [], {}
     
     # For regular paid users (new and legacy formats).
-    api_client = APIClient()
-    
-    # Get all users using API
-    users = api_client.get_users()
-    if users is None:
-        return []
-    
     try:
         user_ids = set()
 
@@ -323,15 +326,8 @@ def get_user_ids(filter_type):
             elif filter_type == 'expired' and blocked:
                 user_ids.add(telegram_id)
 
-        # API may return either a dict keyed by username or a list of user objects.
-        if isinstance(users, dict):
-            for username, details in users.items():
-                process_user_record(username, details)
-        elif isinstance(users, list):
-            for item in users:
-                if not isinstance(item, dict):
-                    continue
-                process_user_record(item.get('username'), item)
+        for username, details in iter_paid_user_records():
+            process_user_record(username, details)
         
         failed_user_ids = load_failed_broadcast_users()
         excluded_by_reason = {}
@@ -439,13 +435,23 @@ def send_broadcast(message, target, target_label, explicit_user_ids=None):
         bot.reply_to(message, "Broadcast canceled.", reply_markup=create_main_markup(is_admin=True))
         return
         
-    broadcast_text = message.text.strip()
+    broadcast_text = (message.text or "").strip()
     if not broadcast_text:
-        bot.reply_to(
+        msg = bot.reply_to(
             message,
             "Message cannot be empty. Please try again:",
             reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
         )
+        bot.register_next_step_handler(msg, send_broadcast, target, target_label, explicit_user_ids)
+        return
+
+    if len(broadcast_text) > 4096:
+        msg = bot.reply_to(
+            message,
+            "Telegram messages cannot exceed 4096 characters. Please send a shorter message:",
+            reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("❌ Cancel"))
+        )
+        bot.register_next_step_handler(msg, send_broadcast, target, target_label, explicit_user_ids)
         return
 
     if explicit_user_ids is None:
@@ -524,7 +530,8 @@ def send_broadcast(message, target, target_label, explicit_user_ids=None):
             if error_key not in failed_by_error:
                 failed_by_error[error_key] = []
             failed_by_error[error_key].append(str(user_id))
-            newly_failed_user_ids.add(str(user_id))
+            if is_permanent_broadcast_failure(error_msg):
+                newly_failed_user_ids.add(str(user_id))
             print(f"Failed to send broadcast to {user_id}: {error_msg}")
             
         # Update status every 10 users
