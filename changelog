@@ -1,3 +1,6 @@
+## v1.13.8
+✨ Localize crypto discount messages in supported Telegram bot languages
+
 ## v1.13.7
 ✨ Show crypto payment discount amounts in purchase and reseller payment flows
 ✨ Show reseller total paid alongside debt in admin reseller rows
