@@ -1,3 +1,8 @@
+## v1.13.7
+✨ Show crypto payment discount amounts in purchase and reseller payment flows
+✨ Show reseller total paid alongside debt in admin reseller rows
+✅ Add tests for crypto discount display and reseller customer admin totals
+
 ## v1.13.6
 ♻️ Change automated Telegram bot backup interval from 6 hours to 3 hours
 
