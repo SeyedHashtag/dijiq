@@ -1,3 +1,6 @@
+## v1.13.6
+♻️ Change automated Telegram bot backup interval from 6 hours to 3 hours
+
 ## v1.13.5
 ✨ Add crypto payment discount handling for plan purchases and reseller flows
 ✨ Improve broadcast delivery tracking with permanent failure handling and user record iteration
