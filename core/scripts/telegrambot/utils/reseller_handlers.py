@@ -1432,6 +1432,7 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
             visible, total_pages, page = _paginate(items, page)
 
             for rid, data in visible:
+                stats = _reseller_financial_stats(data)
                 markup.add(
                     types.InlineKeyboardButton(
                         get_message_text(language, "admin_reseller_row_compact").format(
@@ -1439,6 +1440,7 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
                             user_id=rid,
                             username_display=_username_display(language, data),
                             debt=_safe_float(data.get("debt", 0.0)),
+                            total_paid=stats["total_paid"],
                         ),
                         callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
                     )

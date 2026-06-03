@@ -25,18 +25,22 @@ class DummyBot:
 
 class DummyMarkup:
     def __init__(self, *args, **kwargs):
-        pass
+        self.buttons = []
+        self.rows = []
 
     def add(self, *args, **kwargs):
-        pass
+        self.buttons.extend(args)
+        self.rows.append(args)
 
     def row(self, *args, **kwargs):
-        pass
+        self.buttons.extend(args)
+        self.rows.append(args)
 
 
 class DummyButton:
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, text, **kwargs):
+        self.text = text
+        self.callback_data = kwargs.get("callback_data")
 
 
 def install_stubs():
@@ -65,6 +69,14 @@ def install_stubs():
     translations = {
         "reseller_customer_category_active": "Active",
         "reseller_customer_status_unavailable": "Status unavailable",
+        "admin_reseller_section_button": "{status_icon} {status_label} ({count})",
+        "admin_reseller_row_compact": "{status_icon} {user_id} ({username_display}) - Debt: ${debt:.2f} | Paid: ${total_paid:.2f}",
+        "admin_status_approved": "Approved",
+        "admin_status_pending": "Pending",
+        "admin_status_suspended": "Suspended",
+        "admin_status_banned": "Banned",
+        "admin_status_rejected": "Rejected",
+        "cancel": "Cancel",
     }
     translations_stub = types.ModuleType("utils.translations")
     translations_stub.get_message_text = lambda language, key: translations.get(key, key)
@@ -110,6 +122,12 @@ def install_stubs():
         "discount_percent": 5,
         "discount_amount": float(amount) * 0.05,
     }
+    purchase_plan_stub.build_crypto_discount_display = lambda language, metadata: {
+        "notice": "",
+        "summary": "",
+        "button_text": "Crypto",
+    }
+    purchase_plan_stub.get_crypto_discount_button_text = lambda language: "Crypto"
     purchase_plan_stub.get_exchange_rate = lambda: 1
     purchase_plan_stub.user_data = {}
     sys.modules["utils.purchase_plan"] = purchase_plan_stub
@@ -194,6 +212,39 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
 
         self.assertIn("3. ✅ `r1988033051`", entry)
         self.assertNotIn("🆔", entry)
+
+    def test_admin_reseller_row_shows_debt_and_total_paid(self):
+        grouped = {
+            status: []
+            for status in reseller_handlers.ADMIN_RESELLER_STATUS_ORDER
+        }
+        grouped["approved"] = [
+            (
+                "1988",
+                {
+                    "status": "approved",
+                    "telegram_username": "buyer",
+                    "debt": 35.50,
+                    "configs": [
+                        {"price": 40.00},
+                        {"price": 60.00},
+                    ],
+                },
+            )
+        ]
+
+        markup = reseller_handlers._build_admin_reseller_list_markup(
+            "en",
+            grouped,
+            active_status="approved",
+            active_page=0,
+        )
+
+        row_texts = [button.text for button in markup.buttons]
+        self.assertIn(
+            "✅ 1988 (@buyer) - Debt: $35.50 | Paid: $64.50",
+            row_texts,
+        )
 
 
 if __name__ == "__main__":
