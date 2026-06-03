@@ -68,14 +68,14 @@ def traffic_monitoring_thread():
         time.sleep(7200)
 
 def automated_backup_thread():
-    """Background thread to run automated backups every 6 hours"""
+    """Background thread to run automated backups every 3 hours"""
     while True:
         try:
             run_backup_and_send_to_admins()
         except Exception as e:
             print(f"Error in automated backup: {e}")
-        # Run every 6 hours
-        time.sleep(21600)
+        # Run every 3 hours
+        time.sleep(10800)
 
 
 def run_polling_forever():
