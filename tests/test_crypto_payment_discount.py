@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +138,17 @@ def install_common_stubs(bot, payment_records):
     translations_stub.get_button_text = lambda _language, key: key
     translations_stub.get_message_text = lambda _language, key: {
         "payment_instructions": "Complete ${price} at {payment_url} id {payment_id}",
+        "crypto_discount_notice": "Crypto discount: {percent}% off, pay ${discounted_price} instead of ${original_price}.\n",
+        "crypto_discount_summary": "Crypto discount applied: {percent}% off\nOriginal price: ${original_price}\nDiscount: -${discount_amount}\nFinal crypto price: ${discounted_price}",
+        "crypto_discount_button": "Crypto - {percent}% OFF",
+        "plan_details": "Plan details\n",
+        "data": "Data {plan_gb}\n",
+        "duration": "Duration {days}\n",
+        "unlimited": "Unlimited {unlimited_text}\n",
+        "price": "Price ${price}\n",
+        "exchange_rate": "Exchange {exchange_rate}\n",
+        "toman_price": "Tomans {toman_price}\n",
+        "select_payment_method": "Select payment method",
         "purchase_connection_warning": "",
         "reseller_purchase_details": (
             "Plan {plan_gb} GB for {days} days costs ${price}. "
@@ -245,7 +257,26 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(record["original_price"], 100.0)
         self.assertEqual(record["discount_percent"], 5)
         self.assertEqual(record["discount_amount"], 5.0)
-        self.assertIn("$95.00", bot.sent_photos[0][1]["caption"])
+        caption = bot.sent_photos[0][1]["caption"]
+        self.assertIn("$95.00", caption)
+        self.assertIn("5% off", caption)
+        self.assertIn("Original price: $100.00", caption)
+        self.assertIn("Discount: -$5.00", caption)
+        self.assertIn("Final crypto price: $95.00", caption)
+
+    def test_customer_plan_screen_advertises_crypto_discount(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+
+        with patch.dict("os.environ", {"CRYPTO_MERCHANT_ID": "merchant", "CRYPTO_API_KEY": "key"}):
+            purchase_plan.handle_purchase_selection(make_call("purchase:40"))
+
+        message = bot.edited_messages[0][0][0]
+        markup = bot.edited_messages[0][1]["reply_markup"]
+        button_texts = [button.args[0] for button in markup.buttons]
+
+        self.assertIn("Crypto discount: 5% off, pay $95.00 instead of $100.00.", message)
+        self.assertIn("Crypto - 5% OFF", button_texts)
 
     def test_reseller_crypto_settlement_uses_discounted_amount(self):
         bot = DummyBot()
@@ -263,7 +294,27 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(record["original_price"], 100.0)
         self.assertEqual(record["discount_percent"], 5)
         self.assertEqual(record["discount_amount"], 5.0)
-        self.assertIn("$95.00", bot.sent_photos[0][1]["caption"])
+        caption = bot.sent_photos[0][1]["caption"]
+        self.assertIn("$95.00", caption)
+        self.assertIn("5% off", caption)
+        self.assertIn("Original price: $100.00", caption)
+        self.assertIn("Discount: -$5.00", caption)
+        self.assertIn("Final crypto price: $95.00", caption)
+
+    def test_reseller_settlement_screen_advertises_crypto_discount(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+
+        with patch.dict("os.environ", {"CRYPTO_MERCHANT_ID": "merchant", "CRYPTO_API_KEY": "key"}):
+            reseller_handlers.handle_reseller_settle(make_call("reseller:settle:all"))
+
+        message = bot.edited_messages[0][0][0]
+        markup = bot.edited_messages[0][1]["reply_markup"]
+        button_texts = [button.args[0] for button in markup.buttons]
+
+        self.assertIn("Crypto discount: 5% off, pay $95.00 instead of $100.00.", message)
+        self.assertIn("Crypto - 5% OFF", button_texts)
 
     def test_reseller_card_settlement_keeps_full_amount(self):
         bot = DummyBot()
@@ -276,6 +327,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(FakeCryptoPayment.calls, [])
         self.assertEqual(purchase_plan.user_data[1988]["price"], 100.0)
         self.assertEqual(purchase_plan.user_data[1988]["converted_amount"], 200.0)
+        self.assertNotIn("Crypto discount", bot.edited_messages[0][0][0])
+        self.assertNotIn("5% off", bot.edited_messages[0][0][0])
 
     def test_reseller_purchase_details_includes_connection_warning(self):
         purchase_plan = load_purchase_plan()

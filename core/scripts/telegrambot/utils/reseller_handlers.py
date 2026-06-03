@@ -20,7 +20,13 @@ from utils.api_client import APIClient, MultiServerAPI
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.currency_format import format_toman_amount, format_usd_amount
-from utils.purchase_plan import build_crypto_discount_metadata, get_exchange_rate, user_data
+from utils.purchase_plan import (
+    build_crypto_discount_display,
+    build_crypto_discount_metadata,
+    get_crypto_discount_button_text,
+    get_exchange_rate,
+    user_data,
+)
 from utils.receipt_checker import RECEIPT_TYPE_SETTLEMENT, get_card_number_for_receipt_type
 from utils.username_utils import (
     allocate_username,
@@ -594,14 +600,21 @@ def handle_reseller_settle(call):
     
     markup = types.InlineKeyboardMarkup(row_width=1)
     if crypto_configured:
-        markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"reseller:pay:crypto:{amount:.2f}"))
+        markup.add(types.InlineKeyboardButton(get_crypto_discount_button_text(language), callback_data=f"reseller:pay:crypto:{amount:.2f}"))
     if card_to_card_configured:
         markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"reseller:pay:card:{amount:.2f}"))
         
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+
+    message = get_message_text(language, "select_payment_method")
+    if crypto_configured:
+        message += "\n\n" + build_crypto_discount_display(
+            language,
+            build_crypto_discount_metadata(amount),
+        )['notice'].strip()
     
     bot.edit_message_text(
-        get_message_text(language, "select_payment_method"),
+        message,
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup
@@ -663,14 +676,16 @@ def handle_reseller_payment(call):
             )
             
             bot.delete_message(call.message.chat.id, call.message.message_id)
+            payment_message = get_message_text(language, "payment_instructions").format(
+                price=format_usd_amount(discounted_amount_to_pay),
+                payment_url=payment_url,
+                payment_id=payment_id
+            )
+            payment_message += "\n\n" + build_crypto_discount_display(language, discount_metadata)['summary']
             bot.send_photo(
                 call.message.chat.id,
                 bio,
-                caption=get_message_text(language, "payment_instructions").format(
-                    price=format_usd_amount(discounted_amount_to_pay),
-                    payment_url=payment_url,
-                    payment_id=payment_id
-                ),
+                caption=payment_message,
                 reply_markup=markup
             )
 

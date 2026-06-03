@@ -75,6 +75,30 @@ def build_crypto_discount_metadata(original_amount):
     }
 
 
+def build_crypto_discount_display(language, discount_metadata):
+    return {
+        'notice': get_message_text(language, "crypto_discount_notice").format(
+            percent=discount_metadata['discount_percent'],
+            original_price=format_usd_amount(discount_metadata['original_price']),
+            discounted_price=format_usd_amount(discount_metadata['price']),
+            discount_amount=format_usd_amount(discount_metadata['discount_amount']),
+        ),
+        'summary': get_message_text(language, "crypto_discount_summary").format(
+            percent=discount_metadata['discount_percent'],
+            original_price=format_usd_amount(discount_metadata['original_price']),
+            discounted_price=format_usd_amount(discount_metadata['price']),
+            discount_amount=format_usd_amount(discount_metadata['discount_amount']),
+        ),
+        'button_text': get_crypto_discount_button_text(language),
+    }
+
+
+def get_crypto_discount_button_text(language):
+    return get_message_text(language, "crypto_discount_button").format(
+        percent=CRYPTO_PAYMENT_DISCOUNT_PERCENT
+    )
+
+
 def get_exchange_rate():
     load_dotenv(TELEGRAM_ENV_PATH, override=True)
     try:
@@ -364,6 +388,9 @@ def handle_purchase_selection(call):
             price = float(plan['price'])
             exchange_rate = get_exchange_rate()
             price_in_tomans = price * exchange_rate
+            load_dotenv(TELEGRAM_ENV_PATH, override=True)
+            crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
+            card_to_card_configured = get_card_number_for_receipt_type(RECEIPT_TYPE_REGULAR)
             message = get_message_text(language, "plan_details")
             message += get_message_text(language, "data").format(plan_gb=plan_gb)
             message += get_message_text(language, "duration").format(days=plan['days'])
@@ -371,14 +398,16 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "price").format(price=format_usd_amount(price))
             message += get_message_text(language, "exchange_rate").format(exchange_rate=format_toman_amount(exchange_rate))
             message += get_message_text(language, "toman_price").format(toman_price=format_toman_amount(price_in_tomans))
+            if crypto_configured:
+                discount_display = build_crypto_discount_display(
+                    language,
+                    build_crypto_discount_metadata(price),
+                )
+                message += discount_display['notice']
             message += get_message_text(language, "purchase_connection_warning")
             message += get_message_text(language, "select_payment_method")
 
             # Check configured payment methods
-            load_dotenv(TELEGRAM_ENV_PATH, override=True)
-            crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
-            card_to_card_configured = get_card_number_for_receipt_type(RECEIPT_TYPE_REGULAR)
-            card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
             
             # Always show card-to-card if configured
             show_card_to_card = bool(card_to_card_configured)
@@ -386,7 +415,7 @@ def handle_purchase_selection(call):
             markup = types.InlineKeyboardMarkup(row_width=1)
             methods_count = 0
             if crypto_configured:
-                markup.add(types.InlineKeyboardButton(get_button_text(language, "crypto"), callback_data=f"payment_method:crypto:{plan_gb}"))
+                markup.add(types.InlineKeyboardButton(get_crypto_discount_button_text(language), callback_data=f"payment_method:crypto:{plan_gb}"))
                 methods_count += 1
             if show_card_to_card:
                 markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"payment_method:card_to_card:{plan_gb}"))
@@ -512,6 +541,7 @@ def handle_crypto_payment(call, plan_gb):
             qr.save(bio, 'PNG')
             bio.seek(0)
             payment_message = get_message_text(language, "payment_instructions").format(price=format_usd_amount(discounted_price), payment_url=payment_url, payment_id=payment_id)
+            payment_message += "\n\n" + build_crypto_discount_display(language, discount_metadata)['summary']
             payment_message += get_message_text(language, "purchase_connection_warning")
             markup = types.InlineKeyboardMarkup()
             markup.add(
