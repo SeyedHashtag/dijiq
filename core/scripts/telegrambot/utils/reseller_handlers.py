@@ -20,7 +20,7 @@ from utils.api_client import APIClient, MultiServerAPI
 from utils.payments import CryptoPayment
 from utils.payment_records import add_payment_record
 from utils.currency_format import format_toman_amount, format_usd_amount
-from utils.purchase_plan import get_exchange_rate, user_data
+from utils.purchase_plan import build_crypto_discount_metadata, get_exchange_rate, user_data
 from utils.receipt_checker import RECEIPT_TYPE_SETTLEMENT, get_card_number_for_receipt_type
 from utils.username_utils import (
     allocate_username,
@@ -624,9 +624,11 @@ def handle_reseller_payment(call):
     amount_to_pay = min(amount, current_debt)
     
     if method == 'crypto':
+        discount_metadata = build_crypto_discount_metadata(amount_to_pay)
+        discounted_amount_to_pay = discount_metadata['price']
         payment_handler = CryptoPayment()
         payment_response = payment_handler.create_payment(
-            amount_to_pay, "Settlement", user_id
+            discounted_amount_to_pay, "Settlement", user_id
         )
         if "error" in payment_response:
              bot.answer_callback_query(call.id, f"Error: {payment_response['error']}")
@@ -640,12 +642,12 @@ def handle_reseller_payment(call):
             payment_record = {
                 'user_id': user_id,
                 'plan_gb': 'Settlement',
-                'price': amount_to_pay,
                 'days': 0,
                 'payment_id': payment_id,
                 'status': 'pending',
                 'type': 'settlement',
-                'payment_method': 'Crypto'
+                'payment_method': 'Crypto',
+                **discount_metadata,
             }
             add_payment_record(payment_id, payment_record)
             
@@ -661,7 +663,16 @@ def handle_reseller_payment(call):
             )
             
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            bot.send_photo(call.message.chat.id, bio, caption=get_message_text(language, "payment_instructions").format(price=format_usd_amount(amount_to_pay), payment_url=payment_url, payment_id=payment_id), reply_markup=markup)
+            bot.send_photo(
+                call.message.chat.id,
+                bio,
+                caption=get_message_text(language, "payment_instructions").format(
+                    price=format_usd_amount(discounted_amount_to_pay),
+                    payment_url=payment_url,
+                    payment_id=payment_id
+                ),
+                reply_markup=markup
+            )
 
     elif method == 'card':
         # Card to card logic

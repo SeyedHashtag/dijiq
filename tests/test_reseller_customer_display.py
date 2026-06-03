@@ -104,6 +104,12 @@ def install_stubs():
     sys.modules["utils.currency_format"] = currency_stub
 
     purchase_plan_stub = types.ModuleType("utils.purchase_plan")
+    purchase_plan_stub.build_crypto_discount_metadata = lambda amount: {
+        "price": float(amount) * 0.95,
+        "original_price": float(amount),
+        "discount_percent": 5,
+        "discount_amount": float(amount) * 0.05,
+    }
     purchase_plan_stub.get_exchange_rate = lambda: 1
     purchase_plan_stub.user_data = {}
     sys.modules["utils.purchase_plan"] = purchase_plan_stub

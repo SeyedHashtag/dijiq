@@ -33,6 +33,7 @@ from utils.receipt_checker import (
 import qrcode
 import io
 import os
+from decimal import Decimal, ROUND_HALF_UP
 from dotenv import load_dotenv
 import uuid
 import logging
@@ -47,6 +48,31 @@ from utils.username_utils import (
 user_data = {}
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+CRYPTO_PAYMENT_DISCOUNT_PERCENT = 5
+
+
+def apply_crypto_discount(amount):
+    value = Decimal(str(amount))
+    multiplier = Decimal('1') - (Decimal(str(CRYPTO_PAYMENT_DISCOUNT_PERCENT)) / Decimal('100'))
+    return float((value * multiplier).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
+def build_crypto_discount_metadata(original_amount):
+    original_decimal = Decimal(str(original_amount))
+    original_price = float(original_decimal)
+    discounted_price = apply_crypto_discount(original_decimal)
+    discount_amount = float(
+        (original_decimal - Decimal(str(discounted_price))).quantize(
+            Decimal('0.01'),
+            rounding=ROUND_HALF_UP,
+        )
+    )
+    return {
+        'price': discounted_price,
+        'original_price': original_price,
+        'discount_percent': CRYPTO_PAYMENT_DISCOUNT_PERCENT,
+        'discount_amount': discount_amount,
+    }
 
 
 def get_exchange_rate():
@@ -445,9 +471,11 @@ def handle_crypto_payment(call, plan_gb):
             if plan.get('target', 'both') == 'reseller':
                 bot.answer_callback_query(call.id, text='This plan is for resellers only.')
                 return
+            discount_metadata = build_crypto_discount_metadata(plan['price'])
+            discounted_price = discount_metadata['price']
             payment_handler = CryptoPayment()
             payment_response = payment_handler.create_payment(
-                plan['price'], plan_gb, user_id
+                discounted_price, plan_gb, user_id
             )
             if "error" in payment_response:
                 bot.edit_message_text(
@@ -470,20 +498,20 @@ def handle_crypto_payment(call, plan_gb):
             payment_record = {
                 'user_id': user_id,
                 'plan_gb': plan_gb,
-                'price': plan['price'],
                 'days': plan['days'],
                 'unlimited': plan.get('unlimited', False),
                 'payment_id': payment_id,
                 'order_id': gateway_order_id,
                 'status': 'pending',
-                'payment_method': 'Crypto'
+                'payment_method': 'Crypto',
+                **discount_metadata,
             }
             add_payment_record(payment_id, payment_record)
             qr = qrcode.make(payment_url)
             bio = io.BytesIO()
             qr.save(bio, 'PNG')
             bio.seek(0)
-            payment_message = get_message_text(language, "payment_instructions").format(price=format_usd_amount(plan['price']), payment_url=payment_url, payment_id=payment_id)
+            payment_message = get_message_text(language, "payment_instructions").format(price=format_usd_amount(discounted_price), payment_url=payment_url, payment_id=payment_id)
             payment_message += get_message_text(language, "purchase_connection_warning")
             markup = types.InlineKeyboardMarkup()
             markup.add(
