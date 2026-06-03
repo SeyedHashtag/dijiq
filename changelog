@@ -1,3 +1,11 @@
+## v1.13.5
+✨ Add crypto payment discount handling for plan purchases and reseller flows
+✨ Improve broadcast delivery tracking with permanent failure handling and user record iteration
+✨ Improve Telegram bot lifecycle management and configuration persistence
+🐛 Update platform download guidance, including Karing Windows and Happ iOS links
+🐛 Add reseller connection warning text to purchase details
+✅ Add tests for crypto discounts, broadcast handling, config persistence, and reseller purchase detail messaging
+
 ## v1.13.4
 ♻️ Improve purchase plan detail ordering and localize unlimited user status
 
