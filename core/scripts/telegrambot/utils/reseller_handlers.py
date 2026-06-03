@@ -135,7 +135,7 @@ def _build_reseller_purchase_details(language, gb, days, price, current_debt):
         toman_price=format_toman_amount(converted_price),
         current_debt=format_usd_amount(current_debt),
         projected_debt=format_usd_amount(projected_debt),
-    )
+    ) + get_message_text(language, "purchase_connection_warning")
 
 
 def _reseller_username_prompt_markup(language):

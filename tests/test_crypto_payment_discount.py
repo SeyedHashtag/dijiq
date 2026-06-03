@@ -138,6 +138,10 @@ def install_common_stubs(bot, payment_records):
     translations_stub.get_message_text = lambda _language, key: {
         "payment_instructions": "Complete ${price} at {payment_url} id {payment_id}",
         "purchase_connection_warning": "",
+        "reseller_purchase_details": (
+            "Plan {plan_gb} GB for {days} days costs ${price}. "
+            "Debt ${current_debt} -> ${projected_debt}."
+        ),
         "error_creating_payment": "error {error}",
         "invalid_payment_response": "invalid",
         "plan_not_found": "plan not found",
@@ -272,6 +276,19 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(FakeCryptoPayment.calls, [])
         self.assertEqual(purchase_plan.user_data[1988]["price"], 100.0)
         self.assertEqual(purchase_plan.user_data[1988]["converted_amount"], 200.0)
+
+    def test_reseller_purchase_details_includes_connection_warning(self):
+        purchase_plan = load_purchase_plan()
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.get_message_text = lambda _language, key: {
+            "reseller_purchase_details": "Plan {plan_gb} costs ${price}.",
+            "purchase_connection_warning": "\n\nVPN warning",
+        }.get(key, key)
+
+        details = reseller_handlers._build_reseller_purchase_details("en", "40", 30, 80.0, 10.0)
+
+        self.assertIn("Plan 40 costs $80.00.", details)
+        self.assertIn("VPN warning", details)
 
 
 if __name__ == "__main__":
