@@ -607,11 +607,6 @@ def handle_reseller_settle(call):
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
 
     message = get_message_text(language, "select_payment_method")
-    if crypto_configured:
-        message += "\n\n" + build_crypto_discount_display(
-            language,
-            build_crypto_discount_metadata(amount),
-        )['notice'].strip()
     
     bot.edit_message_text(
         message,

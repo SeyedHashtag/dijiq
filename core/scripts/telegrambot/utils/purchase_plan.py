@@ -77,12 +77,6 @@ def build_crypto_discount_metadata(original_amount):
 
 def build_crypto_discount_display(language, discount_metadata):
     return {
-        'notice': get_message_text(language, "crypto_discount_notice").format(
-            percent=discount_metadata['discount_percent'],
-            original_price=format_usd_amount(discount_metadata['original_price']),
-            discounted_price=format_usd_amount(discount_metadata['price']),
-            discount_amount=format_usd_amount(discount_metadata['discount_amount']),
-        ),
         'summary': get_message_text(language, "crypto_discount_summary").format(
             percent=discount_metadata['discount_percent'],
             original_price=format_usd_amount(discount_metadata['original_price']),
@@ -398,12 +392,6 @@ def handle_purchase_selection(call):
             message += get_message_text(language, "price").format(price=format_usd_amount(price))
             message += get_message_text(language, "exchange_rate").format(exchange_rate=format_toman_amount(exchange_rate))
             message += get_message_text(language, "toman_price").format(toman_price=format_toman_amount(price_in_tomans))
-            if crypto_configured:
-                discount_display = build_crypto_discount_display(
-                    language,
-                    build_crypto_discount_metadata(price),
-                )
-                message += discount_display['notice']
             message += get_message_text(language, "purchase_connection_warning")
             message += get_message_text(language, "select_payment_method")
 

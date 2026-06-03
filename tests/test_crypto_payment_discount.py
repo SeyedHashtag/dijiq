@@ -138,7 +138,6 @@ def install_common_stubs(bot, payment_records):
     translations_stub.get_button_text = lambda _language, key: key
     translations_stub.get_message_text = lambda _language, key: {
         "payment_instructions": "Complete ${price} at {payment_url} id {payment_id}",
-        "crypto_discount_notice": "Crypto discount: {percent}% off, pay ${discounted_price} instead of ${original_price}.\n",
         "crypto_discount_summary": "Crypto discount applied: {percent}% off\nOriginal price: ${original_price}\nDiscount: -${discount_amount}\nFinal crypto price: ${discounted_price}",
         "crypto_discount_button": "Crypto - {percent}% OFF",
         "plan_details": "Plan details\n",
@@ -275,7 +274,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         markup = bot.edited_messages[0][1]["reply_markup"]
         button_texts = [button.args[0] for button in markup.buttons]
 
-        self.assertIn("Crypto discount: 5% off, pay $95.00 instead of $100.00.", message)
+        self.assertNotIn("Crypto discount", message)
+        self.assertNotIn("pay $95.00 instead of $100.00", message)
         self.assertIn("Crypto - 5% OFF", button_texts)
 
     def test_reseller_crypto_settlement_uses_discounted_amount(self):
@@ -313,7 +313,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         markup = bot.edited_messages[0][1]["reply_markup"]
         button_texts = [button.args[0] for button in markup.buttons]
 
-        self.assertIn("Crypto discount: 5% off, pay $95.00 instead of $100.00.", message)
+        self.assertNotIn("Crypto discount", message)
+        self.assertNotIn("pay $95.00 instead of $100.00", message)
         self.assertIn("Crypto - 5% OFF", button_texts)
 
     def test_reseller_card_settlement_keeps_full_amount(self):

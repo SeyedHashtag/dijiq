@@ -123,7 +123,6 @@ def install_stubs():
         "discount_amount": float(amount) * 0.05,
     }
     purchase_plan_stub.build_crypto_discount_display = lambda language, metadata: {
-        "notice": "",
         "summary": "",
         "button_text": "Crypto",
     }
