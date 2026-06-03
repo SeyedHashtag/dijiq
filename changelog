@@ -1,3 +1,7 @@
+## v1.13.9
+♻️ Remove crypto discount notice text from purchase and reseller payment selection screens
+✅ Update crypto discount tests to verify discounts stay on payment buttons and payment summaries
+
 ## v1.13.8
 ✨ Localize crypto discount messages in supported Telegram bot languages
 
