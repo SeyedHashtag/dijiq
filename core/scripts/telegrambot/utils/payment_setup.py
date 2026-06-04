@@ -5,10 +5,15 @@ from utils.payment_records import load_payments
 from utils.receipt_checker import (
     RECEIPT_TYPE_REGULAR,
     RECEIPT_TYPE_SETTLEMENT,
+    add_checker_settlement,
+    build_receipt_checker_stats,
+    get_checker_settlements,
     get_receipt_checker_types,
     get_receipt_checker_user_id,
+    get_receipt_checker_share_percent,
     get_receipt_type_label,
     normalize_receipt_types,
+    parse_receipt_checker_share_percent,
 )
 import os
 import datetime
@@ -17,6 +22,7 @@ from dotenv import load_dotenv, set_key
 # FIX: Go up one level ('..') to find the root .env file
 # This prevents creating a duplicate .env inside your handlers/utils folder
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+CHECKER_SETTLEMENT_INPUT_STATE = {}
 
 def create_cancel_markup():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -29,7 +35,7 @@ def create_payment_method_selection_markup():
     markup.row(types.KeyboardButton("💳 Checker Card"), types.KeyboardButton("🔀 Card to Card Mode"))
     markup.row(types.KeyboardButton("💱 Exchange Rate"), types.KeyboardButton("🏢 Reseller Settlement Threshold"))
     markup.row(types.KeyboardButton("👤 Receipt Checker"), types.KeyboardButton("📋 Checker Receipt Types"))
-    markup.row(types.KeyboardButton("📊 Checker Stats"))
+    markup.row(types.KeyboardButton("📊 Checker Stats"), types.KeyboardButton("💸 Checker Share"))
     markup.row(types.KeyboardButton("❌ Cancel"))
     return markup
 
@@ -65,6 +71,8 @@ def process_payment_method_selection(message):
         setup_receipt_checker_types(message)
     elif message.text == "📊 Checker Stats":
         show_receipt_checker_stats(message)
+    elif message.text == "💸 Checker Share":
+        setup_receipt_checker_share(message)
     else:
         bot.reply_to(message, "Invalid selection. Please try again.", reply_markup=create_main_markup(is_admin=True))
 
@@ -301,85 +309,285 @@ def handle_receipt_checker_type_selection(call):
         bot.answer_callback_query(call.id, text=f"Error: {str(e)}")
 
 
-def _parse_payment_datetime(value):
-    if not value:
-        return None
-    try:
-        return datetime.datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
-    except (TypeError, ValueError):
-        return None
-
-
-def show_receipt_checker_stats(message):
-    checker_id = get_receipt_checker_user_id()
-    checker_types = get_receipt_checker_types()
-    payments = load_payments()
-    stats = {
-        RECEIPT_TYPE_REGULAR: {"pending": 0, "approved": 0, "rejected": 0, "approved_total": 0.0},
-        RECEIPT_TYPE_SETTLEMENT: {"pending": 0, "approved": 0, "rejected": 0, "approved_total": 0.0},
-    }
-    latest_review = None
-
-    for payment_id, record in payments.items():
-        if not record.get('routed_to_checker'):
-            continue
-        if checker_id is not None:
-            try:
-                routed_checker_id = int(record.get('receipt_checker_user_id'))
-            except (TypeError, ValueError):
-                routed_checker_id = None
-            if routed_checker_id != checker_id:
-                continue
-        receipt_type = record.get('receipt_type')
-        if receipt_type not in stats:
-            continue
-
-        status = record.get('status')
-        if status == 'pending_approval':
-            stats[receipt_type]["pending"] += 1
-        elif status == 'completed':
-            stats[receipt_type]["approved"] += 1
-            try:
-                stats[receipt_type]["approved_total"] += float(record.get('price', 0) or 0)
-            except (TypeError, ValueError):
-                pass
-        elif status == 'rejected':
-            stats[receipt_type]["rejected"] += 1
-
-        reviewed_at = _parse_payment_datetime(record.get('reviewed_at'))
-        if reviewed_at and (latest_review is None or reviewed_at > latest_review[0]):
-            latest_review = (reviewed_at, payment_id, record)
-
-    checker_label = checker_id if checker_id is not None else "Not configured"
-    type_label = ", ".join(get_receipt_type_label(t) for t in checker_types) if checker_types else "None"
+def setup_receipt_checker_share(message):
+    current_percent = get_receipt_checker_share_percent()
     text = (
-        "📊 Receipt Checker Stats\n\n"
-        f"Checker User ID: {checker_label}\n"
-        f"Enabled Types: {type_label}\n\n"
+        "💸 Checker Share\n\n"
+        f"Current Share: {current_percent:.2f}%\n\n"
+        "Enter the checker share percentage from approved checker-routed receipts (0 to 100):"
     )
-    for receipt_type in (RECEIPT_TYPE_REGULAR, RECEIPT_TYPE_SETTLEMENT):
-        item = stats[receipt_type]
-        text += (
-            f"{get_receipt_type_label(receipt_type)}\n"
-            f"Pending: {item['pending']}\n"
-            f"Approved: {item['approved']} (${item['approved_total']:.2f})\n"
-            f"Rejected: {item['rejected']}\n\n"
+    msg = bot.reply_to(message, text, reply_markup=create_cancel_markup())
+    bot.register_next_step_handler(msg, process_receipt_checker_share)
+
+
+def process_receipt_checker_share(message):
+    if message.text == "❌ Cancel":
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    raw_value = message.text.strip()
+    try:
+        percent = float(raw_value)
+        if percent < 0 or percent > 100:
+            raise ValueError("Checker share must be between 0 and 100.")
+    except (TypeError, ValueError):
+        msg = bot.reply_to(
+            message,
+            "Invalid percentage. Please enter a number from 0 to 100:",
+            reply_markup=create_cancel_markup()
+        )
+        bot.register_next_step_handler(msg, process_receipt_checker_share)
+        return
+
+    percent = parse_receipt_checker_share_percent(percent)
+
+    try:
+        if not os.path.exists(env_path):
+            with open(env_path, 'w') as f:
+                pass
+        set_key(env_path, 'RECEIPT_CHECKER_SHARE_PERCENT', f"{percent:.2f}")
+        load_dotenv(env_path, override=True)
+        bot.reply_to(
+            message,
+            f"✅ Checker share has been updated to {percent:.2f}%.",
+            reply_markup=create_main_markup(is_admin=True)
+        )
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"❌ Error updating checker share: {str(e)}",
+            reply_markup=create_main_markup(is_admin=True)
         )
 
+
+def _format_usd(value):
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", include_checker_details=True):
+    checker_id = stats.get('checker_id')
+    checker_types = stats.get('checker_types') or []
+    type_label = ", ".join(get_receipt_type_label(t) for t in checker_types) if checker_types else "None"
+    checker_label = checker_id if checker_id is not None else "Not configured"
+    text = f"{title}\n\n"
+
+    if include_checker_details:
+        text += (
+            f"Checker User ID: {checker_label}\n"
+            f"Enabled Types: {type_label}\n"
+            f"Share: {stats.get('share_percent', 0):.2f}%\n\n"
+        )
+
+        for receipt_type in (RECEIPT_TYPE_REGULAR, RECEIPT_TYPE_SETTLEMENT):
+            item = stats['types'][receipt_type]
+            text += (
+                f"{get_receipt_type_label(receipt_type)}\n"
+                f"Pending: {item['pending']}\n"
+                f"Approved: {item['approved']} (${_format_usd(item['approved_total'])})\n"
+                f"Rejected: {item['rejected']}\n"
+                f"Checker Share: ${_format_usd(item['checker_owed_total'])}\n\n"
+            )
+    else:
+        text += f"Share: {stats.get('share_percent', 0):.2f}%\n\n"
+
+    text += (
+        "Settlement\n"
+        f"Approved Total: ${_format_usd(stats.get('approved_total'))}\n"
+    )
+    if stats.get('converted_approved_total'):
+        currency = "Mixed" if stats.get('converted_currency_mixed') else (stats.get('converted_currency') or "Converted")
+        text += f"Converted Approved Total: {_format_usd(stats.get('converted_approved_total'))} {currency}\n"
+    if include_checker_details:
+        text += (
+            f"Checker Owed: ${_format_usd(stats.get('owed_total'))}\n"
+            f"Paid to Checker: ${_format_usd(stats.get('paid_total'))}\n"
+            f"Unpaid Balance: ${_format_usd(stats.get('unpaid_total'))}\n"
+        )
+    else:
+        text += (
+            f"Your Share: ${_format_usd(stats.get('owed_total'))}\n"
+            f"Paid to You: ${_format_usd(stats.get('paid_total'))}\n"
+            f"Remaining Balance: ${_format_usd(stats.get('unpaid_total'))}\n"
+        )
+    if stats.get('legacy_estimated_count'):
+        text += f"Legacy Estimated Receipts: {stats.get('legacy_estimated_count')}\n"
+    text += "\n"
+
+    latest_review = stats.get('latest_review')
     if latest_review:
-        reviewed_at, payment_id, record = latest_review
         text += (
             "Latest Review\n"
-            f"Payment ID: {payment_id}\n"
-            f"Type: {get_receipt_type_label(record.get('receipt_type'))}\n"
-            f"Action: {record.get('reviewed_action', 'N/A')}\n"
-            f"Reviewer ID: {record.get('reviewed_by_user_id', 'N/A')}\n"
-            f"Time: {reviewed_at.strftime('%Y-%m-%d %H:%M:%S')}"
+            f"Payment ID: {latest_review.get('payment_id')}\n"
+            f"Type: {get_receipt_type_label(latest_review.get('receipt_type'))}\n"
+            f"Action: {latest_review.get('reviewed_action', 'N/A')}\n"
+            f"Reviewer ID: {latest_review.get('reviewed_by_user_id', 'N/A')}\n"
+            f"Time: {latest_review.get('reviewed_at')}"
         )
     else:
         text += "Latest Review\nNo routed receipts reviewed yet."
 
-    bot.reply_to(message, text, reply_markup=create_main_markup(is_admin=True))
+    return text
+
+
+def _build_checker_stats_markup(is_admin_view):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if is_admin_view:
+        markup.add(
+            types.InlineKeyboardButton("💸 Settle Checker", callback_data="checker_settlement:start"),
+            types.InlineKeyboardButton("📜 Settlement History", callback_data="checker_settlement:history"),
+            types.InlineKeyboardButton("❌ Cancel", callback_data="checker_settlement:cancel"),
+        )
+    return markup
+
+
+def show_receipt_checker_stats(message):
+    stats = build_receipt_checker_stats(load_payments())
+    bot.reply_to(
+        message,
+        _format_checker_stats_text(stats),
+        reply_markup=_build_checker_stats_markup(is_admin_view=True)
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'checker_stats:my')
+def handle_my_checker_stats(call):
+    checker_id = get_receipt_checker_user_id()
+    if checker_id is None or int(call.from_user.id) != checker_id:
+        bot.answer_callback_query(call.id, text="Not authorized.")
+        return
+
+    stats = build_receipt_checker_stats(load_payments(), checker_id=checker_id)
+    bot.send_message(
+        call.message.chat.id,
+        _format_checker_stats_text(stats, title="📊 My Stats", include_checker_details=False)
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('checker_settlement:'))
+def handle_checker_settlement_callback(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, text="Not authorized.")
+        return
+
+    action = call.data.split(':', 1)[1]
+    if action == 'cancel':
+        CHECKER_SETTLEMENT_INPUT_STATE.pop(call.from_user.id, None)
+        try:
+            bot.edit_message_reply_markup(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=None
+            )
+        except Exception:
+            pass
+        bot.answer_callback_query(call.id, text="Canceled.")
+        return
+
+    stats = build_receipt_checker_stats(load_payments())
+
+    if action == 'history':
+        settlements = get_checker_settlements(stats.get('checker_id'))
+        if not settlements:
+            bot.answer_callback_query(call.id, text="No checker settlement history.")
+            return
+        text = "📜 Checker Settlement History\n\n"
+        for item in settlements[-10:][::-1]:
+            text += (
+                f"ID: {item.get('id')}\n"
+                f"Amount: ${_format_usd(item.get('amount'))}\n"
+                f"Admin: {item.get('admin_user_id')}\n"
+                f"Time: {item.get('created_at')}\n"
+                f"Unpaid After: ${_format_usd(item.get('unpaid_after'))}\n\n"
+            )
+        bot.send_message(call.message.chat.id, text)
+        return
+
+    if action == 'start':
+        unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
+        if unpaid_total <= 0:
+            bot.answer_callback_query(call.id, text="No unpaid checker balance.")
+            return
+        CHECKER_SETTLEMENT_INPUT_STATE[call.from_user.id] = {
+            'state': 'waiting_amount',
+            'checker_id': stats.get('checker_id'),
+            'unpaid_total': unpaid_total,
+        }
+        bot.send_message(
+            call.message.chat.id,
+            f"Enter checker payout amount up to ${_format_usd(unpaid_total)}:",
+            reply_markup=create_cancel_markup()
+        )
+        return
+
+    if action.startswith('confirm:'):
+        raw_amount = action.split(':', 1)[1]
+        try:
+            amount = float(raw_amount)
+        except (TypeError, ValueError):
+            bot.answer_callback_query(call.id, text="Invalid amount.")
+            return
+        unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
+        if amount <= 0 or amount > unpaid_total:
+            bot.answer_callback_query(call.id, text="Amount is outside the unpaid balance.")
+            return
+        checkpoint = add_checker_settlement(amount, call.from_user.id, stats, checker_id=stats.get('checker_id'))
+        CHECKER_SETTLEMENT_INPUT_STATE.pop(call.from_user.id, None)
+        bot.edit_message_text(
+            (
+                "✅ Checker settlement checkpoint saved.\n\n"
+                f"Amount: ${_format_usd(checkpoint.get('amount'))}\n"
+                f"Unpaid Before: ${_format_usd(checkpoint.get('unpaid_before'))}\n"
+                f"Unpaid After: ${_format_usd(checkpoint.get('unpaid_after'))}\n"
+                f"Checkpoint ID: {checkpoint.get('id')}"
+            ),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+
+
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and CHECKER_SETTLEMENT_INPUT_STATE.get(message.from_user.id, {}).get('state') == 'waiting_amount')
+def process_checker_settlement_amount(message):
+    if message.text == "❌ Cancel":
+        CHECKER_SETTLEMENT_INPUT_STATE.pop(message.from_user.id, None)
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
+    try:
+        amount = float(message.text.strip())
+    except (TypeError, ValueError):
+        bot.reply_to(message, "Invalid amount. Please enter a numeric payout amount:", reply_markup=create_cancel_markup())
+        return
+
+    stats = build_receipt_checker_stats(load_payments())
+    unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
+    if amount <= 0 or amount > unpaid_total:
+        bot.reply_to(
+            message,
+            f"Amount must be greater than 0 and no more than ${_format_usd(unpaid_total)}.",
+            reply_markup=create_cancel_markup()
+        )
+        return
+
+    unpaid_after = max(0.0, unpaid_total - amount)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("✅ Confirm", callback_data=f"checker_settlement:confirm:{amount:.2f}"),
+        types.InlineKeyboardButton("❌ Cancel", callback_data="checker_settlement:cancel"),
+    )
+    bot.reply_to(
+        message,
+        (
+            "Confirm checker settlement checkpoint:\n\n"
+            f"Amount: ${_format_usd(amount)}\n"
+            f"Approved Total Snapshot: ${_format_usd(stats.get('approved_total'))}\n"
+            f"Unpaid Before: ${_format_usd(unpaid_total)}\n"
+            f"Unpaid After: ${_format_usd(unpaid_after)}"
+        ),
+        reply_markup=markup
+    )
 
 
 def setup_exchange_rate(message):

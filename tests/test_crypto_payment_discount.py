@@ -37,6 +37,7 @@ class DummyBot:
         self.edited_messages = []
         self.deleted_messages = []
         self.callback_answers = []
+        self.replies = []
 
     def message_handler(self, *args, **kwargs):
         return lambda func: func
@@ -59,6 +60,13 @@ class DummyBot:
             chat=types.SimpleNamespace(id=args[0] if args else kwargs.get("chat_id")),
             message_id=321,
             photo=True,
+        )
+
+    def reply_to(self, *args, **kwargs):
+        self.replies.append((args, kwargs))
+        return types.SimpleNamespace(
+            chat=types.SimpleNamespace(id=getattr(args[0], "chat", types.SimpleNamespace(id=None)).id if args else None),
+            message_id=654,
         )
 
 
@@ -189,9 +197,11 @@ def install_common_stubs(bot, payment_records):
     receipt_checker_stub = types.ModuleType("utils.receipt_checker")
     receipt_checker_stub.RECEIPT_TYPE_REGULAR = "regular"
     receipt_checker_stub.RECEIPT_TYPE_SETTLEMENT = "settlement"
+    receipt_checker_stub.calculate_checker_share_amount = lambda amount, percent=None: round(float(amount) * float(percent or 10) / 100, 2)
     receipt_checker_stub.can_review_receipt = lambda *args, **kwargs: True
     receipt_checker_stub.get_card_number_for_receipt_type = lambda _receipt_type: "1234"
     receipt_checker_stub.get_receipt_checker_user_id = lambda: None
+    receipt_checker_stub.get_receipt_checker_share_percent = lambda: 10.0
     receipt_checker_stub.get_receipt_type_label = lambda receipt_type: receipt_type
     receipt_checker_stub.is_receipt_checker = lambda _user_id: False
     receipt_checker_stub.should_route_to_receipt_checker = lambda _receipt_type: False
@@ -330,6 +340,24 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(purchase_plan.user_data[1988]["converted_amount"], 200.0)
         self.assertNotIn("Crypto discount", bot.edited_messages[0][0][0])
         self.assertNotIn("5% off", bot.edited_messages[0][0][0])
+
+    def test_checker_no_pending_confirmations_shows_my_stats_button(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.is_receipt_checker = lambda _user_id: True
+
+        message = types.SimpleNamespace(
+            text="✅ Confirmations",
+            from_user=types.SimpleNamespace(id=1988),
+            chat=types.SimpleNamespace(id=555),
+        )
+        purchase_plan.show_pending_confirmations(message)
+
+        reply_args, reply_kwargs = bot.replies[0]
+        self.assertEqual(reply_args[1], "No pending receipt confirmations.")
+        markup = reply_kwargs["reply_markup"]
+        self.assertEqual(markup.buttons[0].args[0], "📊 My Stats")
+        self.assertEqual(markup.buttons[0].kwargs["callback_data"], "checker_stats:my")
 
     def test_reseller_purchase_details_includes_connection_warning(self):
         purchase_plan = load_purchase_plan()

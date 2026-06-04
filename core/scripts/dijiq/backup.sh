@@ -19,6 +19,7 @@ FILES_TO_BACKUP=(
     "/etc/dijiq/core/scripts/telegrambot/user_languages.json"
     "/etc/dijiq/core/scripts/telegrambot/referrals.json"
     "/etc/dijiq/core/scripts/telegrambot/resellers.json"
+    "/etc/dijiq/core/scripts/telegrambot/checker_settlements.json"
     "/etc/dijiq/core/scripts/telegrambot/traffic_alerts.json"
     "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
 )

@@ -55,6 +55,7 @@ telegram_state_files=(
     "core/scripts/telegrambot/user_languages.json"
     "core/scripts/telegrambot/referrals.json"
     "core/scripts/telegrambot/resellers.json"
+    "core/scripts/telegrambot/checker_settlements.json"
     "core/scripts/telegrambot/traffic_alerts.json"
     "core/scripts/telegrambot/broadcast_failed_users.json"
 )

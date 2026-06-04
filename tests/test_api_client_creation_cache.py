@@ -194,6 +194,7 @@ class ServerConfigPersistenceTests(unittest.TestCase):
             "CARD_TO_CARD_CHECKER_NUMBER": "5555666677778888",
             "RECEIPT_CHECKER_USER_ID": "987654",
             "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "RECEIPT_CHECKER_SHARE_PERCENT": "10",
             "EXCHANGE_RATE": "58000",
             "CARD_TO_CARD_MODE": "checker",
         }

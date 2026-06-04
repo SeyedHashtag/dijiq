@@ -23,9 +23,11 @@ from utils.currency_format import format_toman_amount, format_usd_amount
 from utils.receipt_checker import (
     RECEIPT_TYPE_REGULAR,
     RECEIPT_TYPE_SETTLEMENT,
+    calculate_checker_share_amount,
     can_review_receipt,
     get_card_number_for_receipt_type,
     get_receipt_checker_user_id,
+    get_receipt_checker_share_percent,
     get_receipt_type_label,
     is_receipt_checker,
     should_route_to_receipt_checker,
@@ -227,6 +229,17 @@ def _record_review_audit(payment_id, call, action, reviewer_role):
         "reviewed_action": action,
         "reviewed_at": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
     })
+
+
+def _record_checker_share_audit(payment_id, payment_record):
+    if not payment_record.get('routed_to_checker'):
+        return
+    share_percent = get_receipt_checker_share_percent()
+    update_payment_record_fields(payment_id, {
+        "checker_share_percent": share_percent,
+        "checker_share_amount": calculate_checker_share_amount(payment_record.get('price', 0), share_percent),
+    })
+
 
 def create_sale_username(api_client, user_id):
     if isinstance(api_client, set):
@@ -753,7 +766,12 @@ def show_pending_confirmations(message):
         pending_items.append((payment_id, record))
 
     if not pending_items:
-        bot.reply_to(message, "No pending receipt confirmations.", reply_markup=create_main_markup(is_admin=user_is_admin, user_id=user_id))
+        if not user_is_admin and is_receipt_checker(user_id):
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(types.InlineKeyboardButton("📊 My Stats", callback_data="checker_stats:my"))
+            bot.reply_to(message, "No pending receipt confirmations.", reply_markup=markup)
+        else:
+            bot.reply_to(message, "No pending receipt confirmations.", reply_markup=create_main_markup(is_admin=user_is_admin, user_id=user_id))
         return
 
     bot.reply_to(message, f"Pending receipt confirmations: {len(pending_items)}")
@@ -792,6 +810,7 @@ def handle_admin_approval(call):
             return
         if action == 'approve':
             _record_review_audit(payment_id, call, action, reviewer_role)
+            _record_checker_share_audit(payment_id, payment_record)
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
                  from utils.reseller import apply_reseller_payment
                  apply_reseller_payment(payment_record['user_id'], payment_record.get('price', 0))
