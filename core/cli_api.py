@@ -25,6 +25,13 @@ import psutil
 import requests
 import sys
 
+TELEGRAM_UTILS_PATH = '/etc/dijiq/core/scripts/telegrambot'
+ONLINE_USERS_URL = "http://127.0.0.1:25413/online"
+PAID_STATUSES = {'completed', 'paid', 'success', 'succeeded'}
+FAILED_STATUSES = {'rejected', 'failed', 'canceled', 'cancelled', 'error'}
+EXPIRED_STATUSES = {'expired'}
+PENDING_STATUSES = {'pending', 'pending_approval', 'processing', 'waiting', 'unpaid'}
+
 # region Custom Exceptions
 
 
@@ -132,175 +139,591 @@ def traffic_status():
     traffic.traffic_status()
 
 
-# TODO: it's better to return json
+def _ensure_telegram_utils_path():
+    if TELEGRAM_UTILS_PATH not in sys.path:
+        sys.path.append(TELEGRAM_UTILS_PATH)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_weight(value) -> float:
+    weight = _safe_float(value, 1.0)
+    return weight if weight > 0 else 1.0
+
+
+def _parse_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    raw = str(value).strip()
+    if raw.endswith('Z'):
+        raw = raw[:-1] + '+00:00'
+    try:
+        parsed = datetime.fromisoformat(raw)
+        return parsed.replace(tzinfo=None)
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(str(value), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _empty_order_bucket():
+    return {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0}
+
+
+def _bump_order_bucket(bucket: dict, status: str, price: float):
+    bucket['orders'] += 1
+    if status in PAID_STATUSES:
+        bucket['paid'] += 1
+        bucket['revenue'] += price
+    elif status in FAILED_STATUSES:
+        bucket['failed'] += 1
+    elif status in EXPIRED_STATUSES:
+        bucket['expired'] += 1
+    elif status in PENDING_STATUSES:
+        bucket['pending'] += 1
+
+
+def _iter_named_user_records(users):
+    if isinstance(users, dict):
+        for username, data in users.items():
+            if isinstance(data, dict):
+                yield str(data.get("username") or username), data
+    elif isinstance(users, list):
+        for data in users:
+            if isinstance(data, dict) and data.get("username"):
+                yield str(data.get("username")), data
+
+
+def _format_bytes(value) -> str:
+    amount = float(value or 0)
+    units = ("B", "KB", "MB", "GB", "TB", "PB")
+    unit = units[0]
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            break
+        amount /= 1024
+    if unit == "B":
+        return f"{int(amount)}B"
+    return f"{amount:.2f}{unit}"
+
+
+def _sum_online_value(value):
+    if isinstance(value, bool):
+        return int(value), True
+    if isinstance(value, (int, float)):
+        return int(value), True
+    if isinstance(value, str):
+        try:
+            return int(float(value)), True
+        except ValueError:
+            return 0, False
+    if isinstance(value, dict):
+        total = 0
+        found = False
+        for item in value.values():
+            count, has_number = _sum_online_value(item)
+            total += count
+            found = found or has_number
+        return total, found
+    if isinstance(value, list):
+        total = 0
+        found = False
+        for item in value:
+            count, has_number = _sum_online_value(item)
+            total += count
+            found = found or has_number
+        return total, found
+    return 0, False
+
+
+def parse_online_users_payload(payload):
+    total, found = _sum_online_value(payload)
+    return total if found else None
+
+
+def fetch_online_users(api_client_module=None) -> dict:
+    try:
+        if api_client_module is None:
+            _ensure_telegram_utils_path()
+            from utils import api_client as api_client_module
+        servers = api_client_module.get_server_configs()
+    except Exception as e:
+        return {"count": None, "status": "error", "error": str(e)}
+
+    enabled_servers = [server for server in servers if server.get("enabled", True)]
+    if not enabled_servers:
+        return {"count": None, "status": "unavailable", "error": "No enabled VPN server configured."}
+
+    token = enabled_servers[0].get("token")
+    if not token:
+        return {"count": None, "status": "unavailable", "error": "No VPN API token configured."}
+
+    try:
+        resp = requests.get(ONLINE_USERS_URL, headers={'Authorization': token}, timeout=5)
+        if resp.status_code != 200:
+            return {"count": None, "status": "error", "error": f"HTTP {resp.status_code}"}
+        count = parse_online_users_payload(resp.json())
+        if count is None:
+            return {"count": None, "status": "error", "error": "Unsupported online users payload."}
+        return {"count": count, "status": "ok", "error": None}
+    except Exception as e:
+        return {"count": None, "status": "error", "error": str(e)}
+
+
+def _collect_payment_stats(payments: dict, now: datetime) -> dict:
+    current_month = now.strftime('%Y-%m')
+    current_day = now.strftime('%Y-%m-%d')
+    last_30_days_start = now - timedelta(days=30)
+    seven_day_start = now.date() - timedelta(days=6)
+
+    buckets = {
+        'all': _empty_order_bucket(),
+        'month': _empty_order_bucket(),
+        'today': _empty_order_bucket(),
+        'last30': _empty_order_bucket(),
+    }
+    daily_sales = []
+    daily_sales_by_date = {}
+    for offset in range(7):
+        date_key = now.date() - timedelta(days=offset)
+        entry = {"date": date_key.isoformat(), "label": date_key.strftime("%b %d"), "revenue": 0.0, "paid": 0}
+        daily_sales.append(entry)
+        daily_sales_by_date[date_key] = entry
+
+    plan_revenue = {}
+    plan_count = {}
+
+    for payment in payments.values():
+        if not isinstance(payment, dict):
+            continue
+        status = str(payment.get('status', '')).lower()
+        price = _safe_float(payment.get('price', 0))
+        date_to_check = payment.get('updated_at') or payment.get('created_at') or ''
+        payment_dt = _parse_datetime(date_to_check)
+        in_month = str(date_to_check).startswith(current_month) if date_to_check else False
+        in_today = str(date_to_check).startswith(current_day) if date_to_check else False
+        in_last30 = payment_dt is not None and payment_dt >= last_30_days_start
+
+        _bump_order_bucket(buckets['all'], status, price)
+        if in_month:
+            _bump_order_bucket(buckets['month'], status, price)
+        if in_today:
+            _bump_order_bucket(buckets['today'], status, price)
+        if in_last30:
+            _bump_order_bucket(buckets['last30'], status, price)
+
+        if status in PAID_STATUSES:
+            if payment_dt and seven_day_start <= payment_dt.date() <= now.date():
+                daily_sales_by_date[payment_dt.date()]["revenue"] += price
+                daily_sales_by_date[payment_dt.date()]["paid"] += 1
+            plan = str(payment.get('plan_gb') or 'Unknown')
+            plan_revenue[plan] = plan_revenue.get(plan, 0.0) + price
+            plan_count[plan] = plan_count.get(plan, 0) + 1
+
+    def aov(bucket: str) -> float:
+        paid = buckets[bucket]['paid']
+        return buckets[bucket]['revenue'] / paid if paid else 0.0
+
+    return {
+        "buckets": buckets,
+        "aov": {"all": aov('all'), "last30": aov('last30')},
+        "daily_sales": daily_sales,
+        "top_plans_revenue": sorted(plan_revenue.items(), key=lambda item: item[1], reverse=True)[:3],
+        "top_plans_orders": sorted(plan_count.items(), key=lambda item: item[1], reverse=True)[:3],
+    }
+
+
+def _empty_sold_traffic_bucket():
+    return {"used_bytes": 0, "sold_bytes": 0, "matched_configs": 0, "sold_configs": 0}
+
+
+def _plan_gb_to_bytes(value) -> int:
+    return int(max(0.0, _safe_float(value, 0.0)) * (1024 ** 3))
+
+
+def _sold_traffic_snapshot():
+    return {
+        "direct": _empty_sold_traffic_bucket(),
+        "reseller": _empty_sold_traffic_bucket(),
+        "total": {"used_bytes": 0, "sold_bytes": 0, "usage_percent": None},
+        "missing_configs": 0,
+        "skipped_no_username": 0,
+        "unavailable_servers": 0,
+    }
+
+
+def _collect_vpn_and_live_users(api_client_module=None) -> tuple[dict, dict]:
+    vpn = {
+        "configured": 0,
+        "enabled": 0,
+        "disabled": 0,
+        "healthy": 0,
+        "unhealthy": 0,
+        "active_configs": 0,
+        "servers": [],
+        "error": None,
+    }
+    live_users = {"by_server": {}, "by_username": {}, "unavailable_servers": set()}
+    try:
+        if api_client_module is None:
+            _ensure_telegram_utils_path()
+            from utils import api_client as api_client_module
+        multi_api = api_client_module.MultiServerAPI()
+        for index, (server, client) in enumerate(multi_api.iter_clients(include_disabled=True)):
+            server_id = str(server.get("id") or getattr(client, "server_id", None) or f"server{index + 1}")
+            users = client.get_users()
+            healthy = users is not None
+            active_count = multi_api.active_user_count(users) if healthy else None
+            weight = _safe_weight(server.get("weight", 1))
+            enabled = bool(server.get("enabled", True))
+
+            vpn["configured"] += 1
+            vpn["enabled" if enabled else "disabled"] += 1
+            vpn["healthy" if healthy else "unhealthy"] += 1
+            if active_count is not None:
+                vpn["active_configs"] += active_count
+
+            server_status = {
+                "id": server_id,
+                "name": server.get("name") or server_id,
+                "enabled": enabled,
+                "healthy": healthy,
+                "active_count": active_count,
+                "weight": weight,
+                "load_ratio": (active_count / weight) if healthy else None,
+            }
+            vpn["servers"].append(server_status)
+
+            if healthy:
+                for username, user in _iter_named_user_records(users):
+                    username_key = username.lower()
+                    live_users["by_server"][(server_id, username_key)] = user
+                    live_users["by_username"].setdefault(username_key, user)
+            else:
+                live_users["unavailable_servers"].add(server_id)
+    except Exception as e:
+        vpn["error"] = str(e)
+    return vpn, live_users
+
+
+def _is_regular_paid_payment(record: dict) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("status", "")).lower() not in PAID_STATUSES:
+        return False
+    if record.get("type") == "settlement" or record.get("plan_gb") == "Settlement":
+        return False
+    return True
+
+
+def _find_live_sold_user(live_users: dict, server_id, username):
+    username_key = str(username).lower()
+    if server_id:
+        matched = live_users.get("by_server", {}).get((str(server_id), username_key))
+        if matched is not None:
+            return matched
+    return live_users.get("by_username", {}).get(username_key)
+
+
+def _add_sold_config(traffic: dict, live_users: dict, seen: set, source: str, username, quota_gb, server_id=None):
+    if not username:
+        traffic["skipped_no_username"] += 1
+        return
+
+    username = str(username)
+    server_key = str(server_id or "")
+    key = (source, server_key, username.lower())
+    if key in seen:
+        return
+    seen.add(key)
+
+    bucket = traffic[source]
+    bucket["sold_configs"] += 1
+    quota_bytes = _plan_gb_to_bytes(quota_gb)
+    bucket["sold_bytes"] += quota_bytes
+    traffic["total"]["sold_bytes"] += quota_bytes
+
+    live_user = _find_live_sold_user(live_users, server_id, username)
+    if not live_user:
+        traffic["missing_configs"] += 1
+        return
+
+    used_bytes = _safe_int(live_user.get("upload_bytes", 0)) + _safe_int(live_user.get("download_bytes", 0))
+    bucket["used_bytes"] += used_bytes
+    bucket["matched_configs"] += 1
+    traffic["total"]["used_bytes"] += used_bytes
+
+
+def _collect_sold_traffic_stats(payments: dict, live_users: dict, reseller_module=None) -> dict:
+    traffic = _sold_traffic_snapshot()
+    traffic["unavailable_servers"] = len(live_users.get("unavailable_servers", set()))
+    seen = set()
+
+    for record in (payments or {}).values():
+        if not _is_regular_paid_payment(record):
+            continue
+        _add_sold_config(
+            traffic,
+            live_users,
+            seen,
+            "direct",
+            record.get("username"),
+            record.get("plan_gb"),
+            server_id=record.get("server_id"),
+        )
+
+    try:
+        if reseller_module is None:
+            _ensure_telegram_utils_path()
+            from utils import reseller as reseller_module
+        resellers = reseller_module.get_all_resellers()
+    except Exception:
+        resellers = {}
+
+    if isinstance(resellers, dict):
+        for reseller_data in resellers.values():
+            configs = reseller_data.get("configs", []) if isinstance(reseller_data, dict) else []
+            if not isinstance(configs, list):
+                continue
+            for config in configs:
+                if not isinstance(config, dict):
+                    continue
+                _add_sold_config(
+                    traffic,
+                    live_users,
+                    seen,
+                    "reseller",
+                    config.get("username"),
+                    config.get("gb"),
+                    server_id=config.get("server_id"),
+                )
+
+    if traffic["total"]["sold_bytes"] > 0:
+        traffic["total"]["usage_percent"] = (traffic["total"]["used_bytes"] / traffic["total"]["sold_bytes"]) * 100
+    return traffic
+
+
+def _collect_referral_stats(referral_module) -> dict:
+    try:
+        referral_data = referral_module.load_referrals()
+    except Exception:
+        referral_data = {}
+    total_payouts = 0.0
+    if isinstance(referral_data, dict) and 'stats' in referral_data:
+        for stat in referral_data['stats'].values():
+            if isinstance(stat, dict):
+                total_payouts += _safe_float(stat.get('total_earnings', 0))
+    return {"total_rewards": total_payouts}
+
+
+def _collect_language_stats(language_module, translations_module) -> dict:
+    try:
+        lang_prefs = language_module.load_user_languages()
+    except Exception:
+        lang_prefs = {}
+    lang_counts = {}
+    if isinstance(lang_prefs, dict):
+        for lang in lang_prefs.values():
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+    total_prefs = sum(lang_counts.values())
+    languages = []
+    for code, count in sorted(lang_counts.items(), key=lambda item: item[1], reverse=True):
+        percent = (count / total_prefs) * 100 if total_prefs else 0
+        lang_name = getattr(translations_module, "LANGUAGES", {}).get(code, code)
+        languages.append({"code": code, "name": lang_name, "count": count, "percent": percent})
+    return {"total": total_prefs, "languages": languages}
+
+
+def build_server_info_snapshot(now=None) -> dict:
+    '''Collects server information as structured data.'''
+    _ensure_telegram_utils_path()
+    from utils import payment_records, referral, language, translations, api_client, reseller
+
+    now = now or datetime.now()
+    ram = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    payments = payment_records.load_payments()
+    if not isinstance(payments, dict):
+        payments = {}
+
+    vpn, live_users = _collect_vpn_and_live_users(api_client)
+    traffic = _collect_sold_traffic_stats(payments, live_users, reseller)
+    sales = _collect_payment_stats(payments, now)
+    online = fetch_online_users(api_client)
+    referrals = _collect_referral_stats(referral)
+    languages = _collect_language_stats(language, translations)
+
+    return {
+        "generated_at": now,
+        "system": {
+            "cpu_percent": psutil.cpu_percent(interval=1),
+            "ram_percent": ram.percent,
+            "ram_used_mb": ram.used // (1024 * 1024),
+            "ram_total_mb": ram.total // (1024 * 1024),
+            "disk_percent": disk.percent,
+            "disk_used_gb": disk.used // (1024 * 1024 * 1024),
+            "disk_total_gb": disk.total // (1024 * 1024 * 1024),
+        },
+        "online": online,
+        "vpn": vpn,
+        "traffic": traffic,
+        "sales": sales,
+        "referrals": referrals,
+        "languages": languages,
+    }
+
+
+def _dashboard_status(snapshot: dict) -> str:
+    system = snapshot.get("system", {})
+    vpn = snapshot.get("vpn", {})
+    sales = snapshot.get("sales", {}).get("buckets", {})
+    pending = sales.get("all", {}).get("pending", 0)
+    disk_percent = _safe_float(system.get("disk_percent", 0))
+
+    if disk_percent >= 95 or (vpn.get("configured", 0) and vpn.get("healthy", 0) == 0):
+        return "🔴 Attention needed"
+    if disk_percent >= 85 or vpn.get("unhealthy", 0) or pending or snapshot.get("online", {}).get("status") != "ok":
+        return "🟡 Watch"
+    return "🟢 Healthy"
+
+
+def _format_orders(bucket: dict) -> str:
+    return (
+        f"${bucket['revenue']:,.2f} • {bucket['orders']} orders "
+        f"(✅ {bucket['paid']} • ❌ {bucket['failed']} • ⌛ {bucket['expired']} • ⏳ {bucket['pending']})"
+    )
+
+
+def format_server_info(snapshot: dict) -> str:
+    '''Formats a server information snapshot for Telegram/CLI output.'''
+    system = snapshot.get("system", {})
+    online = snapshot.get("online", {})
+    vpn = snapshot.get("vpn", {})
+    traffic = snapshot.get("traffic", {})
+    sales = snapshot.get("sales", {})
+    buckets = sales.get("buckets", {})
+    referrals = snapshot.get("referrals", {})
+    languages = snapshot.get("languages", {})
+
+    online_text = str(online.get("count")) if online.get("status") == "ok" else "N/A"
+    total_traffic = traffic.get("total", {})
+    direct_traffic = traffic.get("direct", {})
+    reseller_traffic = traffic.get("reseller", {})
+    usage_percent = total_traffic.get("usage_percent")
+    usage_text = f" ({usage_percent:.1f}%)" if usage_percent is not None else ""
+
+    output = []
+    output.append("📊 **Server Info**")
+    output.append(f"Status: {_dashboard_status(snapshot)}")
+    output.append("")
+    output.append("🖥️ **System**")
+    output.append(f"CPU: {system.get('cpu_percent', 0)}% • RAM: {system.get('ram_percent', 0)}% ({system.get('ram_used_mb', 0)}MB/{system.get('ram_total_mb', 0)}MB)")
+    output.append(f"Disk: {system.get('disk_percent', 0)}% ({system.get('disk_used_gb', 0)}GB/{system.get('disk_total_gb', 0)}GB)")
+    output.append(f"Online Users: {online_text}")
+    if online.get("status") not in (None, "ok"):
+        output.append(f"Online Check: {online.get('status')} ({online.get('error')})")
+    output.append("")
+    output.append("⚖️ **VPN**")
+    output.append(
+        f"Servers: {vpn.get('configured', 0)} configured • {vpn.get('enabled', 0)} enabled • "
+        f"{vpn.get('healthy', 0)} healthy • {vpn.get('unhealthy', 0)} unhealthy"
+    )
+    output.append(f"Active Configs: {vpn.get('active_configs', 0)}")
+    notable_servers = sorted(
+        vpn.get("servers", []),
+        key=lambda item: (item.get("healthy", True), -(item.get("load_ratio") or 0)),
+    )[:3]
+    for server in notable_servers:
+        health = "healthy" if server.get("healthy") else "unhealthy"
+        load_ratio = server.get("load_ratio")
+        load_text = f"{load_ratio:.2f}" if load_ratio is not None else "N/A"
+        output.append(f"- {server.get('name')}: {health} • active {server.get('active_count', 'N/A')} • load {load_text}")
+    if vpn.get("error"):
+        output.append(f"VPN Check: error ({vpn.get('error')})")
+    output.append("")
+    output.append("🚦 **Traffic**")
+    output.append(
+        f"Total Sold: {_format_bytes(total_traffic.get('used_bytes', 0))} served / "
+        f"{_format_bytes(total_traffic.get('sold_bytes', 0))} sold{usage_text}"
+    )
+    output.append(
+        f"Direct: {_format_bytes(direct_traffic.get('used_bytes', 0))} / "
+        f"{_format_bytes(direct_traffic.get('sold_bytes', 0))} • "
+        f"{direct_traffic.get('matched_configs', 0)} configs"
+    )
+    output.append(
+        f"Reseller: {_format_bytes(reseller_traffic.get('used_bytes', 0))} / "
+        f"{_format_bytes(reseller_traffic.get('sold_bytes', 0))} • "
+        f"{reseller_traffic.get('matched_configs', 0)} configs"
+    )
+    if traffic.get("missing_configs"):
+        output.append(f"Missing Sold Configs: {traffic.get('missing_configs')}")
+    if traffic.get("skipped_no_username"):
+        output.append(f"Sold Records Without Username: {traffic.get('skipped_no_username')}")
+    if traffic.get("unavailable_servers"):
+        output.append(f"Unavailable Servers For Traffic: {traffic.get('unavailable_servers')}")
+    output.append("")
+    output.append("💰 **Sales**")
+    output.append(f"Today: {_format_orders(buckets.get('today', _empty_order_bucket()))}")
+    output.append(f"This Month: {_format_orders(buckets.get('month', _empty_order_bucket()))}")
+    output.append(f"Last 30 Days: {_format_orders(buckets.get('last30', _empty_order_bucket()))}")
+    output.append(f"All Time: {_format_orders(buckets.get('all', _empty_order_bucket()))}")
+    output.append(f"AOV: ${sales.get('aov', {}).get('all', 0):,.2f} all • ${sales.get('aov', {}).get('last30', 0):,.2f} 30d")
+    pending = buckets.get('all', {}).get('pending', 0)
+    if pending:
+        output.append(f"⚠️ Pending Payments: {pending}")
+    output.append(f"Referral Rewards: ${referrals.get('total_rewards', 0):,.2f}")
+    all_revenue = buckets.get('all', {}).get('revenue', 0)
+    if all_revenue > 0:
+        output.append(f"Referral Share: {(referrals.get('total_rewards', 0) / all_revenue) * 100:.1f}%")
+    output.append("")
+    output.append("📆 **Last 7 Days Sales**")
+    for day in sales.get("daily_sales", []):
+        output.append(f"{day['label']}: ${day['revenue']:,.2f} • {day['paid']} paid")
+
+    if sales.get("top_plans_revenue") or sales.get("top_plans_orders"):
+        output.append("")
+        output.append("🏷️ **Top Plans**")
+        if sales.get("top_plans_revenue"):
+            revenue_parts = [f"{plan}: ${amount:,.2f}" for plan, amount in sales.get("top_plans_revenue", [])]
+            output.append("Revenue: " + " • ".join(revenue_parts))
+        if sales.get("top_plans_orders"):
+            order_parts = [f"{plan}: {count}" for plan, count in sales.get("top_plans_orders", [])]
+            output.append("Orders: " + " • ".join(order_parts))
+
+    output.append("")
+    output.append("🌐 **Languages**")
+    if languages.get("languages"):
+        for lang in languages["languages"][:5]:
+            output.append(f"{lang['name']}: {lang['percent']:.1f}% ({lang['count']})")
+    else:
+        output.append("No language data available.")
+
+    return "\n".join(output)
+
+
 def server_info() -> str | None:
     '''Retrieves server information.'''
     try:
-        # Add path for utils
-        sys.path.append('/etc/dijiq/core/scripts/telegrambot')
-        from utils import payment_records, referral, language, translations
-        
-        # 1. System Stats
-        cpu = psutil.cpu_percent(interval=1)
-        ram = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        # 2. Online Users
-        online_users = 0
-        try:
-            # Load env for token
-            env_vars = dotenv_values('/etc/dijiq/core/scripts/telegrambot/.env')
-            token = env_vars.get('TOKEN')
-            url = "http://127.0.0.1:25413/online"
-            if token:
-                headers = {'Authorization': token}
-                resp = requests.get(url, headers=headers, timeout=5)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, dict):
-                         online_users = sum(data.values())
-                    elif isinstance(data, list):
-                         online_users = sum(data)
-        except Exception:
-             pass 
-             
-        # 3. Sales Stats
-        payments = payment_records.load_payments()
-        paid_statuses = {'completed', 'paid', 'success', 'succeeded'}
-        failed_statuses = {'rejected', 'failed', 'canceled', 'cancelled', 'error'}
-        expired_statuses = {'expired'}
-        pending_statuses = {'pending', 'pending_approval', 'processing', 'waiting', 'unpaid'}
-
-        now = datetime.now()
-        current_month = now.strftime('%Y-%m')
-        current_day = now.strftime('%Y-%m-%d')
-        last_30_days_start = now - timedelta(days=30)
-
-        def parse_date(value: str):
-            if not value:
-                return None
-            if isinstance(value, datetime):
-                return value
-            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
-                try:
-                    return datetime.strptime(str(value), fmt)
-                except ValueError:
-                    continue
-            return None
-
-        stats = {
-            'all': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
-            'month': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
-            'today': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
-            'last30': {'revenue': 0.0, 'orders': 0, 'paid': 0, 'failed': 0, 'expired': 0, 'pending': 0},
-        }
-
-        plan_revenue = {}
-        plan_count = {}
-
-        for p in payments.values():
-            status = str(p.get('status', '')).lower()
-            price_raw = p.get('price', 0)
-            try:
-                price = float(price_raw or 0)
-            except (ValueError, TypeError):
-                price = 0.0
-
-            date_to_check = p.get('updated_at') or p.get('created_at') or ''
-            payment_dt = parse_date(date_to_check)
-            in_month = str(date_to_check).startswith(current_month) if date_to_check else False
-            in_today = str(date_to_check).startswith(current_day) if date_to_check else False
-            in_last30 = payment_dt is not None and payment_dt >= last_30_days_start
-
-            def bump(bucket: str):
-                stats[bucket]['orders'] += 1
-                if status in paid_statuses:
-                    stats[bucket]['paid'] += 1
-                    stats[bucket]['revenue'] += price
-                elif status in failed_statuses:
-                    stats[bucket]['failed'] += 1
-                elif status in expired_statuses:
-                    stats[bucket]['expired'] += 1
-                elif status in pending_statuses:
-                    stats[bucket]['pending'] += 1
-
-            bump('all')
-            if in_month:
-                bump('month')
-            if in_today:
-                bump('today')
-            if in_last30:
-                bump('last30')
-
-            if status in paid_statuses:
-                plan = p.get('plan_gb', 'Unknown')
-                plan_revenue[plan] = plan_revenue.get(plan, 0.0) + price
-                plan_count[plan] = plan_count.get(plan, 0) + 1
-
-        def aov(bucket: str) -> float:
-            paid = stats[bucket]['paid']
-            return stats[bucket]['revenue'] / paid if paid else 0.0
-
-        # 4. Referral Stats
-        referral_data = referral.load_referrals()
-        total_payouts = 0.0
-        if 'stats' in referral_data:
-             for stat in referral_data['stats'].values():
-                 total_payouts += float(stat.get('total_earnings', 0))
-
-        # 5. Language Stats
-        lang_prefs = language.load_user_languages()
-        total_prefs = len(lang_prefs)
-        lang_counts = {}
-        for lang in lang_prefs.values():
-            lang_counts[lang] = lang_counts.get(lang, 0) + 1
-
-        # Format Output
-        output = []
-        output.append("📊 **Server Statistics**")
-        output.append(f"💻 **CPU Usage:** {cpu}%")
-        output.append(f"🧠 **RAM Usage:** {ram.percent}% ({ram.used // (1024*1024)}MB / {ram.total // (1024*1024)}MB)")
-        output.append(f"💾 **Disk Usage:** {disk.percent}% ({disk.used // (1024*1024*1024)}GB / {disk.total // (1024*1024*1024)}GB)")
-        output.append(f"👥 **Online Users:** {online_users}")
-        output.append("")
-        output.append("💰 **Business Statistics**")
-        output.append(f"💵 **Total Revenue:** ${stats['all']['revenue']:,.2f}")
-        output.append(f"📦 **Total Orders:** {stats['all']['orders']} (✅ {stats['all']['paid']} • ❌ {stats['all']['failed']} • ⌛ {stats['all']['expired']} • ⏳ {stats['all']['pending']})")
-        output.append(f"🧾 **AOV (All Time):** ${aov('all'):,.2f}")
-        output.append("")
-        output.append(f"📆 **Today:** ${stats['today']['revenue']:,.2f} • {stats['today']['orders']} orders (✅ {stats['today']['paid']} • ❌ {stats['today']['failed']} • ⌛ {stats['today']['expired']} • ⏳ {stats['today']['pending']})")
-        output.append(f"📅 **This Month:** ${stats['month']['revenue']:,.2f} • {stats['month']['orders']} orders (✅ {stats['month']['paid']} • ❌ {stats['month']['failed']} • ⌛ {stats['month']['expired']} • ⏳ {stats['month']['pending']})")
-        output.append(f"🗓️ **Last 30 Days:** ${stats['last30']['revenue']:,.2f} • {stats['last30']['orders']} orders (✅ {stats['last30']['paid']} • ❌ {stats['last30']['failed']} • ⌛ {stats['last30']['expired']} • ⏳ {stats['last30']['pending']})")
-        output.append(f"🧾 **AOV (30 Days):** ${aov('last30'):,.2f}")
-        output.append(f"🤝 **Total Referral Rewards:** ${total_payouts:,.2f}")
-        if stats['all']['revenue'] > 0:
-            share = (total_payouts / stats['all']['revenue']) * 100
-            output.append(f"🤝 **Referral Share of Revenue:** {share:.1f}%")
-
-        if plan_revenue:
-            output.append("")
-            output.append("🏷️ **Top Plans (Revenue)**")
-            for plan, amount in sorted(plan_revenue.items(), key=lambda item: item[1], reverse=True)[:3]:
-                output.append(f"   - {plan}: ${amount:,.2f}")
-        if plan_count:
-            output.append("🏷️ **Top Plans (Orders)**")
-            for plan, count in sorted(plan_count.items(), key=lambda item: item[1], reverse=True)[:3]:
-                output.append(f"   - {plan}: {count}")
-        output.append("")
-        output.append("🌐 **Language Distribution**")
-        
-        if total_prefs > 0:
-            sorted_langs = sorted(lang_counts.items(), key=lambda item: item[1], reverse=True)
-            for code, count in sorted_langs:
-                percent = (count / total_prefs) * 100
-                lang_name = translations.LANGUAGES.get(code, code)
-                # Remove flag emoji for cleaner CLI output if needed, but keeping for now
-                output.append(f"   - {lang_name}: {percent:.1f}% ({count})")
-        else:
-            output.append("   No language data available.")
-        
-        return "\n".join(output)
-
+        return format_server_info(build_server_info_snapshot())
     except Exception as e:
         return f"Error generating server info: {str(e)}"
 
