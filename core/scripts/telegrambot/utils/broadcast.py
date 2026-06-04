@@ -501,7 +501,9 @@ def send_broadcast(message, target, target_label, explicit_user_ids=None):
     failed_by_error = {}  # Dict: error_message -> list of user IDs
     newly_failed_user_ids = set()
     
-    status_msg = bot.reply_to(message, f"Broadcasting message to {len(user_ids)} users (pool: {total_pool} total, {total_pool - len(user_ids)} pre-excluded)...")
+    skipped_count = total_pool - len(user_ids)
+    status_msg = bot.reply_to(message, f"Broadcasting message to {len(user_ids)} users (pool: {total_pool} total, {skipped_count} pre-excluded)...")
+    last_status_update = 0
     
     for user_id in user_ids:
         try:
@@ -534,17 +536,23 @@ def send_broadcast(message, target, target_label, explicit_user_ids=None):
                 newly_failed_user_ids.add(str(user_id))
             print(f"Failed to send broadcast to {user_id}: {error_msg}")
             
-        # Update status every 10 users
+        # Update status every 10 users, but avoid editing too frequently.
         processed = len(success_users) + sum(len(u) for u in failed_by_error.values())
-        if processed % 10 == 0:
+        now_monotonic = time.monotonic()
+        should_update_status = (
+            processed == len(user_ids)
+            or (processed % 10 == 0 and now_monotonic - last_status_update >= 3)
+        )
+        if should_update_status:
             try:
                 bot.edit_message_text(
-                    f"Broadcasting: {processed}/{len(user_ids)} completed...",
+                    f"Broadcasting: {processed}/{len(user_ids)} attempted ({skipped_count} skipped from {total_pool} pool)...",
                     chat_id=status_msg.chat.id,
                     message_id=status_msg.message_id
                 )
-            except:
-                pass
+                last_status_update = now_monotonic
+            except Exception as e:
+                print(f"Failed to update broadcast progress message: {str(e)}")
     
     # Update failed users list
     if newly_failed_user_ids:
