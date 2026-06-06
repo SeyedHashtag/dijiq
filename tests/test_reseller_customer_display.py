@@ -76,6 +76,7 @@ def install_stubs():
         "admin_status_suspended": "Suspended",
         "admin_status_banned": "Banned",
         "admin_status_rejected": "Rejected",
+        "admin_action_suspend": "Suspend",
         "cancel": "Cancel",
     }
     translations_stub = types.ModuleType("utils.translations")
@@ -91,6 +92,7 @@ def install_stubs():
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
+    reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     sys.modules["utils.reseller"] = reseller_stub
 
     edit_plans_stub = types.ModuleType("utils.edit_plans")
@@ -244,6 +246,19 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             "✅ 1988 (@buyer) - Debt: $35.50 | Paid: $64.50",
             row_texts,
         )
+
+    def test_approved_reseller_detail_has_suspend_and_ban_actions(self):
+        markup = reseller_handlers._build_admin_reseller_detail_markup(
+            "en",
+            "1988",
+            {"status": "approved", "telegram_username": "buyer", "debt": 0.0, "configs": []},
+            "approved",
+            0,
+        )
+
+        actions = {button.callback_data: button.text for button in markup.buttons}
+        self.assertEqual(actions["admin_reseller_ui:action:1988:suspend"], "Suspend")
+        self.assertIn("admin_reseller_ui:action:1988:ban", actions)
 
 
 if __name__ == "__main__":

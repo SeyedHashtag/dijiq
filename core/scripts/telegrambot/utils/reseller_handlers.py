@@ -13,7 +13,8 @@ from utils.language import get_user_language
 from utils.translations import get_message_text, get_button_text, BUTTON_TRANSLATIONS
 from utils.reseller import (
     get_reseller_data, update_reseller_status, add_reseller_debt,
-    get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD
+    get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD,
+    SUSPENDED_REASON_UNBAN_GRACE,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -1546,6 +1547,13 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
                 callback_data=f"admin_reseller_ui:action:{reseller_id}:reject",
             )
         )
+    if status == "approved":
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_suspend"),
+                callback_data=f"admin_reseller_ui:action:{reseller_id}:suspend",
+            )
+        )
     if status == "banned":
         markup.add(
             types.InlineKeyboardButton(
@@ -1902,7 +1910,9 @@ def handle_admin_reseller_ui(call):
         elif target_action == "ban":
             update_reseller_status(reseller_id, "banned")
         elif target_action == "unban":
-            update_reseller_status(reseller_id, "approved")
+            update_reseller_status(reseller_id, "suspended", suspended_reason=SUSPENDED_REASON_UNBAN_GRACE)
+        elif target_action == "suspend":
+            update_reseller_status(reseller_id, "suspended")
         else:
             bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
             return

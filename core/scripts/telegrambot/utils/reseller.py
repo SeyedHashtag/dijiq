@@ -20,6 +20,9 @@ DEBT_SETTLEMENT_THRESHOLD = _safe_float_env('RESELLER_SETTLEMENT_THRESHOLD', 1.0
 DEBT_REMINDER_INTERVAL_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_REMINDER_INTERVAL_HOURS', 24.0))
 DEBT_SUSPEND_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_SUSPEND_DEADLINE_HOURS', 48.0))
 DEBT_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_BAN_DEADLINE_HOURS', 72.0))
+UNBAN_GRACE_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_UNBAN_GRACE_BAN_DEADLINE_HOURS', 24.0))
+SUSPENDED_REASON_DEBT = 'debt'
+SUSPENDED_REASON_UNBAN_GRACE = 'unban_grace'
 
 
 def _safe_float(value, default=0.0):
@@ -56,6 +59,7 @@ def _ensure_reseller_defaults(record):
     data['status'] = data.get('status', 'pending')
     data.setdefault('telegram_username', None)
     data.setdefault('suspended_reason', None)
+    data.setdefault('suspended_at', None)
     debt = _safe_float(data.get('debt', 0.0))
     data['debt'] = debt
     data.setdefault('configs', [])
@@ -81,10 +85,11 @@ def _restore_auto_suspended_if_debt_cleared(data):
     if (
         _safe_float(data.get('debt', 0.0)) < DEBT_SETTLEMENT_THRESHOLD
         and data.get('status') == 'suspended'
-        and data.get('suspended_reason') == 'debt'
+        and data.get('suspended_reason') == SUSPENDED_REASON_DEBT
     ):
         data['status'] = 'approved'
         data['suspended_reason'] = None
+        data['suspended_at'] = None
     return data
 
 
@@ -122,7 +127,7 @@ def get_all_resellers():
     return normalized
 
 
-def update_reseller_status(user_id, status, telegram_username=None):
+def update_reseller_status(user_id, status, telegram_username=None, suspended_reason=None):
     user_id = str(user_id)
     with reseller_lock:
         try:
@@ -135,8 +140,16 @@ def update_reseller_status(user_id, status, telegram_username=None):
             resellers = {}
 
         current = _ensure_reseller_defaults(resellers.get(user_id, {}))
+        previous_status = current.get('status')
+        previous_reason = current.get('suspended_reason')
         current['status'] = status
-        current['suspended_reason'] = None
+        if status == 'suspended':
+            current['suspended_reason'] = suspended_reason
+            if previous_status != 'suspended' or previous_reason != suspended_reason or not current.get('suspended_at'):
+                current['suspended_at'] = _now_str()
+        else:
+            current['suspended_reason'] = None
+            current['suspended_at'] = None
         if telegram_username is not None:
             username_clean = str(telegram_username).strip().lstrip('@')
             current['telegram_username'] = username_clean or None
@@ -374,19 +387,31 @@ def evaluate_reseller_debt_policies():
             # Automatic status changes based on deadlines.
             auto_suspended = False
             auto_banned = False
-            debt_suspended = current.get('suspended_reason') == 'debt'
+            debt_suspended = current.get('suspended_reason') == SUSPENDED_REASON_DEBT
+            unban_grace_suspended = current.get('suspended_reason') == SUSPENDED_REASON_UNBAN_GRACE
+
+            if original_status == 'suspended' and unban_grace_suspended:
+                suspended_at = _parse_time(current.get('suspended_at'))
+                if suspended_at and (now - suspended_at) >= timedelta(hours=UNBAN_GRACE_BAN_DEADLINE_HOURS):
+                    current['status'] = 'banned'
+                    current['suspended_reason'] = None
+                    current['suspended_at'] = None
+                    auto_banned = True
+                    changed = True
             
             if debt >= DEBT_SETTLEMENT_THRESHOLD and original_status in {'approved', 'suspended'}:
                 if ban_deadline_passed:
                     if original_status == 'approved' or debt_suspended:
                         current['status'] = 'banned'
                         current['suspended_reason'] = None
+                        current['suspended_at'] = None
                         auto_banned = True
                         changed = True
                 elif suspend_deadline_passed:
                     if current.get('status') == 'approved':
                         current['status'] = 'suspended'
-                        current['suspended_reason'] = 'debt'
+                        current['suspended_reason'] = SUSPENDED_REASON_DEBT
+                        current['suspended_at'] = _now_str()
                         auto_suspended = True
                         changed = True
             
@@ -394,10 +419,11 @@ def evaluate_reseller_debt_policies():
             if (
                 debt < DEBT_SETTLEMENT_THRESHOLD
                 and current.get('status') == 'suspended'
-                and current.get('suspended_reason') == 'debt'
+                and current.get('suspended_reason') == SUSPENDED_REASON_DEBT
             ):
                 current['status'] = 'approved'
                 current['suspended_reason'] = None
+                current['suspended_at'] = None
                 changed = True
 
             # Reminder logic
