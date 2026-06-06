@@ -1,3 +1,9 @@
+## v1.13.14
+✨ Add reseller unban grace-period handling with automatic re-ban after the grace deadline
+✨ Add an admin suspend action for approved resellers
+🌐 Add suspend action translations for supported Telegram bot languages
+✅ Add tests for reseller unban grace-period and temporary suspension behavior
+
 ## v1.13.13
 🐛 Use the reseller settlement threshold when deciding whether debt should keep an account active
 ✅ Add coverage for low-debt reseller auto-suspension after the suspension deadline
