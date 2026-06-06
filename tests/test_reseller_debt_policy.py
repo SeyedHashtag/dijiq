@@ -51,6 +51,24 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(saved["suspended_reason"], "debt")
         self.assertTrue(any(event["auto_suspended"] for event in events))
 
+    def test_low_debt_reseller_auto_suspends_after_suspend_deadline(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 9.70,
+                "debt_since": self.hours_ago(49),
+                "configs": [],
+            }
+        })
+
+        events = self.reseller.evaluate_reseller_debt_policies()
+        saved = self.read_resellers()["1988"]
+
+        self.assertEqual(saved["status"], "suspended")
+        self.assertEqual(saved["debt_state"], "suspended")
+        self.assertEqual(saved["suspended_reason"], "debt")
+        self.assertTrue(any(event["auto_suspended"] for event in events))
+
     def test_auto_suspended_reseller_auto_bans_after_ban_deadline(self):
         self.write_resellers({
             "1988": {

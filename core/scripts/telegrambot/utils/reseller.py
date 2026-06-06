@@ -313,7 +313,7 @@ def _compute_debt_state_with_deadline(debt, debt_since, now):
     """
     debt_amount = _safe_float(debt, 0.0)
     
-    if debt_amount < DEBT_WARNING_THRESHOLD:
+    if debt_amount < DEBT_SETTLEMENT_THRESHOLD:
         return 'active', False, False
     
     # Calculate time since debt started
@@ -328,10 +328,9 @@ def _compute_debt_state_with_deadline(debt, debt_since, now):
     if debt_amount >= DEBT_SUSPEND_THRESHOLD:
         # High debt - always suspended state
         return 'suspended', suspend_deadline_passed, ban_deadline_passed
-    elif debt_amount >= DEBT_WARNING_THRESHOLD:
-        # Warning level debt
-        if suspend_deadline_passed:
-            return 'suspended', True, ban_deadline_passed
+    if suspend_deadline_passed:
+        return 'suspended', True, ban_deadline_passed
+    if debt_amount >= DEBT_WARNING_THRESHOLD:
         return 'warning', False, ban_deadline_passed
     
     return 'active', False, False
