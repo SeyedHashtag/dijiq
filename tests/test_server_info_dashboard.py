@@ -114,12 +114,12 @@ class ServerInfoDashboardTests(unittest.TestCase):
             "failed": {"status": "failed", "price": 50, "updated_at": "2026-06-02", "plan_gb": 10},
             "old-paid": {"status": "succeeded", "price": 5, "updated_at": "2026-05-28", "plan_gb": 5},
         }
-        cli_api = load_cli_api(payments=payments)
+        cli_api = load_cli_api(payments=payments, online_response=OnlineResponse(401, {"ignored": 3}))
 
         snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
         text = cli_api.format_server_info(snapshot)
 
-        self.assertEqual(snapshot["online"]["count"], 5)
+        self.assertEqual(snapshot["online"]["count"], 1)
         self.assertEqual(snapshot["online"]["status"], "ok")
         self.assertEqual(snapshot["sales"]["daily_sales"][0]["label"], "Jun 04")
         self.assertEqual(snapshot["sales"]["daily_sales"][0]["revenue"], 10)
@@ -128,6 +128,8 @@ class ServerInfoDashboardTests(unittest.TestCase):
         self.assertEqual(snapshot["sales"]["buckets"]["all"]["pending"], 1)
         self.assertEqual(snapshot["sales"]["buckets"]["all"]["revenue"], 35)
         self.assertIn("Jun 04: $10.00 • 1 paid", text)
+        self.assertIn("Online Users: 1", text)
+        self.assertNotIn("Online Check: error (HTTP 401)", text)
         self.assertIn("⚠️ Pending Payments: 1", text)
         self.assertIn("Backup: unhealthy", text)
 
@@ -197,8 +199,53 @@ class ServerInfoDashboardTests(unittest.TestCase):
         self.assertEqual(cli_api.parse_online_users_payload([0, {"nested": [4, "5"]}]), 9)
         self.assertIsNone(cli_api.parse_online_users_payload({"unsupported": object()}))
 
+    def test_online_userlist_count_excludes_blocked_and_disabled_servers(self):
+        servers = [
+            {"id": "primary", "name": "Primary", "url": "https://primary.test", "token": "token", "enabled": True, "weight": 1},
+            {"id": "backup", "name": "Backup", "url": "https://backup.test", "token": "token2", "enabled": True, "weight": 1},
+            {"id": "disabled", "name": "Disabled", "url": "https://disabled.test", "token": "token3", "enabled": False, "weight": 1},
+        ]
+        clients = {
+            "primary": FakeClient({
+                "a": {"blocked": False},
+                "b": {"blocked": True},
+            }),
+            "backup": FakeClient([
+                {"username": "c", "blocked": False},
+                {"username": "d", "blocked": False},
+                {"username": "e", "blocked": True},
+            ]),
+            "disabled": FakeClient({
+                "ignored": {"blocked": False},
+            }),
+        }
+        cli_api = load_cli_api(servers=servers, clients=clients)
+
+        snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
+        text = cli_api.format_server_info(snapshot)
+
+        self.assertEqual(snapshot["online"]["count"], 3)
+        self.assertEqual(snapshot["online"]["status"], "ok")
+        self.assertIn("Online Users: 3", text)
+
+    def test_online_userlist_partial_failure_still_formats_count(self):
+        cli_api = load_cli_api()
+
+        snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
+        text = cli_api.format_server_info(snapshot)
+
+        self.assertEqual(snapshot["online"]["count"], 1)
+        self.assertEqual(snapshot["online"]["status"], "ok")
+        self.assertIn("Online Users: 1", text)
+        self.assertNotIn("Online Users: N/A", text)
+
     def test_online_failure_formats_as_na_not_zero(self):
-        cli_api = load_cli_api(online_response=OnlineResponse(500, {"ignored": 3}))
+        servers = [
+            {"id": "primary", "name": "Primary", "url": "https://primary.test", "token": "token", "enabled": True, "weight": 1},
+            {"id": "backup", "name": "Backup", "url": "https://backup.test", "token": "token2", "enabled": True, "weight": 1},
+        ]
+        clients = {"primary": FakeClient(None), "backup": FakeClient(None)}
+        cli_api = load_cli_api(servers=servers, clients=clients)
 
         snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
         text = cli_api.format_server_info(snapshot)
@@ -207,6 +254,20 @@ class ServerInfoDashboardTests(unittest.TestCase):
         self.assertEqual(snapshot["online"]["status"], "error")
         self.assertIn("Online Users: N/A", text)
         self.assertNotIn("Online Users: 0", text)
+
+    def test_online_unavailable_when_no_enabled_server_is_configured(self):
+        servers = [
+            {"id": "disabled", "name": "Disabled", "url": "https://disabled.test", "token": "token", "enabled": False, "weight": 1},
+        ]
+        clients = {"disabled": FakeClient({"ignored": {"blocked": False}})}
+        cli_api = load_cli_api(servers=servers, clients=clients)
+
+        snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
+        text = cli_api.format_server_info(snapshot)
+
+        self.assertIsNone(snapshot["online"]["count"])
+        self.assertEqual(snapshot["online"]["status"], "unavailable")
+        self.assertIn("Online Users: N/A", text)
 
 
 class DummyMarkup:

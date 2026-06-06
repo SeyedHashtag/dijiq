@@ -288,6 +288,19 @@ def fetch_online_users(api_client_module=None) -> dict:
         return {"count": None, "status": "error", "error": str(e)}
 
 
+def build_online_users_from_userlist(vpn: dict) -> dict:
+    enabled_servers = [server for server in vpn.get("servers", []) if server.get("enabled", True)]
+    if not enabled_servers:
+        return {"count": None, "status": "unavailable", "error": "No enabled VPN server configured."}
+
+    healthy_servers = [server for server in enabled_servers if server.get("healthy")]
+    if not healthy_servers:
+        return {"count": None, "status": "error", "error": "No enabled VPN server userlist available."}
+
+    count = sum(_safe_int(server.get("active_count", 0)) for server in healthy_servers)
+    return {"count": count, "status": "ok", "error": None}
+
+
 def _collect_payment_stats(payments: dict, now: datetime) -> dict:
     current_month = now.strftime('%Y-%m')
     current_day = now.strftime('%Y-%m-%d')
@@ -567,7 +580,7 @@ def build_server_info_snapshot(now=None) -> dict:
     vpn, live_users = _collect_vpn_and_live_users(api_client)
     traffic = _collect_sold_traffic_stats(payments, live_users, reseller)
     sales = _collect_payment_stats(payments, now)
-    online = fetch_online_users(api_client)
+    online = build_online_users_from_userlist(vpn)
     referrals = _collect_referral_stats(referral)
     languages = _collect_language_stats(language, translations)
 
@@ -623,7 +636,7 @@ def format_server_info(snapshot: dict) -> str:
     referrals = snapshot.get("referrals", {})
     languages = snapshot.get("languages", {})
 
-    online_text = str(online.get("count")) if online.get("status") == "ok" else "N/A"
+    online_text = str(online.get("count")) if online.get("count") is not None else "N/A"
     total_traffic = traffic.get("total", {})
     direct_traffic = traffic.get("direct", {})
     reseller_traffic = traffic.get("reseller", {})
