@@ -183,7 +183,9 @@ def install_common_stubs(bot, payment_records):
     reseller_stub.evaluate_reseller_debt_policies = lambda: []
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
     reseller_stub.DEBT_SUSPEND_THRESHOLD = 50.0
+    reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     reseller_stub.get_reseller_data = lambda _user_id: {"status": "approved", "debt": 100.0}
+    reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
     reseller_stub.update_reseller_status = lambda *args, **kwargs: True
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
@@ -371,6 +373,21 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(bot.edited_messages[0][0][0], "Select payment method")
         reseller_handlers.handle_reseller_generate(make_call("reseller:generate"))
         self.assertIn("Account suspended due to debt", bot.callback_answers[-1][0][1])
+
+    def test_suspended_low_debt_reseller_generate_message_shows_full_debt_to_unlock(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "suspended",
+            "debt": 14.36,
+            "debt_state": "suspended",
+        }
+
+        reseller_handlers.handle_reseller_generate(make_call("reseller:generate"))
+
+        self.assertIn("unlock $14.36", bot.callback_answers[-1][0][1])
+        self.assertNotIn("unlock $0.00", bot.callback_answers[-1][0][1])
 
     def test_checker_no_pending_confirmations_shows_my_stats_button(self):
         bot = DummyBot()

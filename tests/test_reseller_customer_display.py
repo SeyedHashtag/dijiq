@@ -91,6 +91,7 @@ def install_stubs():
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
     reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     sys.modules["utils.reseller"] = reseller_stub

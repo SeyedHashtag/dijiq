@@ -54,6 +54,10 @@ def _compute_debt_state(debt):
     return 'active'
 
 
+def get_reseller_unlock_amount(debt):
+    return max(0.0, _safe_float(debt, 0.0))
+
+
 def _ensure_reseller_defaults(record):
     data = dict(record or {})
     data['status'] = data.get('status', 'pending')
@@ -471,9 +475,7 @@ def evaluate_reseller_debt_policies():
                     debt_age_hours = (now - debt_since_dt).total_seconds() / 3600
                     debt_age_days = max(0, (now - debt_since_dt).days)
 
-                unlock_amount = 0.0
-                if debt_state == 'suspended':
-                    unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+                unlock_amount = get_reseller_unlock_amount(debt) if debt_state == 'suspended' else 0.0
 
                 # Calculate time remaining until deadlines
                 hours_until_suspend = max(0, DEBT_SUSPEND_DEADLINE_HOURS - debt_age_hours)

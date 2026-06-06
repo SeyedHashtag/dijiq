@@ -14,7 +14,7 @@ from utils.translations import get_message_text, get_button_text, BUTTON_TRANSLA
 from utils.reseller import (
     get_reseller_data, update_reseller_status, add_reseller_debt,
     get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD,
-    SUSPENDED_REASON_UNBAN_GRACE,
+    SUSPENDED_REASON_UNBAN_GRACE, get_reseller_unlock_amount,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -299,7 +299,7 @@ def handle_reseller_generate(call):
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
-        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        unlock_amount = get_reseller_unlock_amount(debt)
         bot.answer_callback_query(
             call.id,
             get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
@@ -337,7 +337,7 @@ def handle_reseller_buy(call):
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
-        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        unlock_amount = get_reseller_unlock_amount(debt)
         bot.answer_callback_query(
             call.id,
             get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
@@ -390,7 +390,7 @@ def handle_reseller_purchase_details(call):
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
-        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        unlock_amount = get_reseller_unlock_amount(debt)
         bot.answer_callback_query(
             call.id,
             get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
@@ -423,7 +423,7 @@ def handle_reseller_confirm_buy(call):
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
-        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        unlock_amount = get_reseller_unlock_amount(debt)
         bot.answer_callback_query(
             call.id,
             get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount)
@@ -472,7 +472,7 @@ def handle_reseller_username_input(message):
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
-        unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD)
+        unlock_amount = get_reseller_unlock_amount(debt)
         if user_id in user_data:
             del user_data[user_id]
         bot.reply_to(message, get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount))
@@ -566,7 +566,7 @@ def handle_reseller_debt(call):
     debt_state_text = get_message_text(language, _debt_state_label(debt_state))
     debt_since = reseller_data.get('debt_since') or 'N/A'
     last_payment_at = reseller_data.get('last_payment_at') or 'N/A'
-    unlock_amount = max(0.0, debt - DEBT_WARNING_THRESHOLD) if debt_state == 'suspended' else 0.0
+    unlock_amount = get_reseller_unlock_amount(debt) if debt_state == 'suspended' else 0.0
     
     markup = types.InlineKeyboardMarkup()
     if debt > 0:
