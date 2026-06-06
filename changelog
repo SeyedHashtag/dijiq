@@ -1,3 +1,7 @@
+## v1.13.13
+🐛 Use the reseller settlement threshold when deciding whether debt should keep an account active
+✅ Add coverage for low-debt reseller auto-suspension after the suspension deadline
+
 ## v1.13.12
 ✨ Add reseller auto-suspension and restoration based on debt status
 ✨ Add settlement amount handling to purchase payment processing
