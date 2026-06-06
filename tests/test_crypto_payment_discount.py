@@ -166,6 +166,7 @@ def install_common_stubs(bot, payment_records):
         "plan_not_found": "plan not found",
         "debt_cleared": "debt cleared",
         "card_to_card_payment": "Transfer {price} at {exchange_rate} to {card_number}",
+        "reseller_suspended_due_debt": "Account suspended due to debt (${debt:.2f}); unlock ${unlock_amount:.2f}",
         "cancel": "cancel",
     }.get(key, key)
     sys.modules["utils.translations"] = translations_stub
@@ -302,8 +303,10 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(record["plan_gb"], "Settlement")
         self.assertEqual(record["price"], 95.0)
         self.assertEqual(record["original_price"], 100.0)
+        self.assertEqual(record["settlement_amount"], 100.0)
         self.assertEqual(record["discount_percent"], 5)
         self.assertEqual(record["discount_amount"], 5.0)
+        self.assertEqual(purchase_plan._settlement_credit_amount(record), 100.0)
         caption = bot.sent_photos[0][1]["caption"]
         self.assertIn("$95.00", caption)
         self.assertIn("5% off", caption)
@@ -337,9 +340,37 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         self.assertEqual(FakeCryptoPayment.calls, [])
         self.assertEqual(purchase_plan.user_data[1988]["price"], 100.0)
+        self.assertEqual(purchase_plan.user_data[1988]["settlement_amount"], 100.0)
         self.assertEqual(purchase_plan.user_data[1988]["converted_amount"], 200.0)
         self.assertNotIn("Crypto discount", bot.edited_messages[0][0][0])
         self.assertNotIn("5% off", bot.edited_messages[0][0][0])
+
+    def test_old_crypto_settlement_record_credits_original_amount(self):
+        purchase_plan = load_purchase_plan()
+        record = {
+            "type": "settlement",
+            "price": 95.0,
+            "original_price": 100.0,
+        }
+
+        self.assertEqual(purchase_plan._settlement_credit_amount(record), 100.0)
+
+    def test_suspended_reseller_can_open_settlement_but_not_generate(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "suspended",
+            "debt": 100.0,
+            "debt_state": "suspended",
+        }
+
+        with patch.dict("os.environ", {"CRYPTO_MERCHANT_ID": "merchant", "CRYPTO_API_KEY": "key"}):
+            reseller_handlers.handle_reseller_settle(make_call("reseller:settle:100.00"))
+
+        self.assertEqual(bot.edited_messages[0][0][0], "Select payment method")
+        reseller_handlers.handle_reseller_generate(make_call("reseller:generate"))
+        self.assertIn("Account suspended due to debt", bot.callback_answers[-1][0][1])
 
     def test_checker_no_pending_confirmations_shows_my_stats_button(self):
         bot = DummyBot()

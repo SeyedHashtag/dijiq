@@ -45,6 +45,13 @@ def _get_approved_reseller_data(user_id):
     return reseller_data
 
 
+def _get_active_reseller_data(user_id):
+    reseller_data = get_reseller_data(user_id)
+    if not reseller_data or reseller_data.get('status') not in ('approved', 'suspended'):
+        return None
+    return reseller_data
+
+
 def _is_reseller_suspended(reseller_data):
     """Check if reseller is suspended (either by status or debt state)."""
     if not reseller_data:
@@ -285,7 +292,7 @@ def handle_admin_reseller(call):
 def handle_reseller_generate(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -323,7 +330,7 @@ def handle_reseller_generate(call):
 def handle_reseller_buy(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -376,7 +383,7 @@ def handle_reseller_buy(call):
 def handle_reseller_purchase_details(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -409,7 +416,7 @@ def handle_reseller_purchase_details(call):
 def handle_reseller_confirm_buy(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -456,7 +463,7 @@ def handle_reseller_confirm_buy(call):
 def handle_reseller_username_input(message):
     user_id = message.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         if user_id in user_data:
             del user_data[user_id]
@@ -549,7 +556,7 @@ def handle_reseller_username_input(message):
 def handle_reseller_debt(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -582,7 +589,7 @@ def handle_reseller_debt(call):
 def handle_reseller_settle(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -619,7 +626,7 @@ def handle_reseller_settle(call):
 def handle_reseller_payment(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
@@ -655,6 +662,7 @@ def handle_reseller_payment(call):
                 'status': 'pending',
                 'type': 'settlement',
                 'payment_method': 'Crypto',
+                'settlement_amount': amount_to_pay,
                 **discount_metadata,
             }
             add_payment_record(payment_id, payment_record)
@@ -709,6 +717,7 @@ def handle_reseller_payment(call):
             'state': 'waiting_receipt',
             'plan_gb': 'Settlement',
             'price': amount_to_pay,
+            'settlement_amount': amount_to_pay,
             'converted_amount': price_in_tomans,
             'converted_currency': 'Tomans',
             'exchange_rate': exchange_rate,
@@ -729,7 +738,7 @@ def handle_reseller_cancel(call):
 def handle_reseller_stats(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
     
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")
@@ -1032,7 +1041,7 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
 def handle_reseller_my_customers(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    reseller_data = _get_approved_reseller_data(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
 
     if not reseller_data:
         bot.answer_callback_query(call.id, "Reseller access required.")

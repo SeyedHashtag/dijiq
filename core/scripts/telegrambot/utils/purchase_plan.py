@@ -120,6 +120,13 @@ def _receipt_type_from_record(payment_record):
     return RECEIPT_TYPE_REGULAR
 
 
+def _settlement_credit_amount(payment_record):
+    return payment_record.get(
+        'settlement_amount',
+        payment_record.get('original_price', payment_record.get('price', 0))
+    )
+
+
 def _build_receipt_approval_markup(payment_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -634,6 +641,9 @@ def process_receipt_photo(message, plan_gb, price):
             converted_currency = user_data[user_id].get('converted_currency')
             exchange_rate = user_data[user_id].get('exchange_rate')
             receipt_type = user_data[user_id].get('receipt_type', receipt_type)
+            settlement_amount = user_data[user_id].get('settlement_amount')
+        else:
+            settlement_amount = None
         file_id = message.photo[-1].file_id
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -660,7 +670,8 @@ def process_receipt_photo(message, plan_gb, price):
                 'receipt_type': RECEIPT_TYPE_SETTLEMENT,
                 'routed_to_checker': routed_to_checker,
                 'receipt_checker_user_id': checker_id,
-                'payment_method': 'Card to Card'
+                'payment_method': 'Card to Card',
+                'settlement_amount': settlement_amount if settlement_amount is not None else price,
             }
         else:
             plans = load_plans()
@@ -813,7 +824,7 @@ def handle_admin_approval(call):
             _record_checker_share_audit(payment_id, payment_record)
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
                  from utils.reseller import apply_reseller_payment
-                 apply_reseller_payment(payment_record['user_id'], payment_record.get('price', 0))
+                 apply_reseller_payment(payment_record['user_id'], _settlement_credit_amount(payment_record))
                  update_payment_status(payment_id, 'completed')
                  
                  user_to_notify = payment_record['user_id']
@@ -975,7 +986,7 @@ def handle_check_payment(call):
         
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
              from utils.reseller import apply_reseller_payment
-             apply_reseller_payment(user_id, payment_record.get('price', 0))
+             apply_reseller_payment(user_id, _settlement_credit_amount(payment_record))
              update_payment_status(payment_id, 'completed')
              bot.send_message(
                 call.message.chat.id,
@@ -1071,7 +1082,7 @@ def process_payment_webhook(request_data):
                 
                 if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
                      from utils.reseller import apply_reseller_payment
-                     apply_reseller_payment(user_id, payment_record.get('price', 0))
+                     apply_reseller_payment(user_id, _settlement_credit_amount(payment_record))
                      update_payment_status(record_key, 'completed')
                      bot.send_message(
                         user_id,
@@ -1181,7 +1192,7 @@ def check_pending_payments():
                         
                         if record.get('type') == 'settlement' or plan_gb == 'Settlement':
                              from utils.reseller import apply_reseller_payment
-                             apply_reseller_payment(user_id, record.get('price', 0))
+                             apply_reseller_payment(user_id, _settlement_credit_amount(record))
                              update_payment_status(payment_id, 'completed')
                              try:
                                 user_language = get_user_language(user_id)
