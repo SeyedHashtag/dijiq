@@ -1,3 +1,8 @@
+## v1.13.12
+✨ Add reseller auto-suspension and restoration based on debt status
+✨ Add settlement amount handling to purchase payment processing
+✅ Add tests for reseller debt policy handling and settlement amount calculations
+
 ## v1.13.11
 ✨ Add checker settlement tracking, backup/restore coverage, and related payment setup flows
 ✨ Add receipt checker sharing and checker statistics panel support
