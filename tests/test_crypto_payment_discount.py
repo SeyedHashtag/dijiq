@@ -167,8 +167,13 @@ def install_common_stubs(bot, payment_records):
         "purchase_connection_warning": "",
         "reseller_purchase_details": (
             "Plan {plan_gb} GB for {days} days costs ${price}. "
-            "Debt ${current_debt} -> ${projected_debt}."
+            "Debt ${current_debt} -> ${projected_debt}. Limit ${trust_limit}."
         ),
+        "reseller_trust_limit_exceeded": (
+            "Trust limit exceeded: debt ${current_debt:.2f}, add ${purchase_adds:.2f}, "
+            "projected ${projected_debt:.2f}, limit ${trust_limit:.2f}, credit ${available_credit:.2f}."
+        ),
+        "reseller_trust_limit_exceeded_short": "Trust limit ${trust_limit:.2f}; credit ${available_credit:.2f}.",
         "error_creating_payment": "error {error}",
         "invalid_payment_response": "invalid",
         "plan_not_found": "plan not found",
@@ -195,6 +200,16 @@ def install_common_stubs(bot, payment_records):
     reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     reseller_stub.get_reseller_data = lambda _user_id: {"status": "approved", "debt": 100.0}
     reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
+    reseller_stub.get_reseller_total_paid = lambda data: max(
+        0.0,
+        float(data.get("total_paid", sum(float(config.get("price", 0.0)) for config in data.get("configs", [])) - float(data.get("debt", 0.0))) or 0.0),
+    )
+    reseller_stub.get_reseller_trust_limit = lambda total_paid: min(30.0, 5.0 + int(float(total_paid or 0.0) // 10.0) * 5.0)
+    reseller_stub.can_reseller_add_debt = lambda data, amount: (
+        float(data.get("debt", 0.0)) + float(amount or 0.0) <= reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)),
+        reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)),
+        max(0.0, reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)) - float(data.get("debt", 0.0))),
+    )
     reseller_stub.update_reseller_status = lambda *args, **kwargs: True
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
@@ -259,6 +274,19 @@ def make_call(data):
     )
 
 
+def make_admin_approval_call(action):
+    return types.SimpleNamespace(
+        data=f"admin_approval:{action}:settlement-payment",
+        id="approval-callback-id",
+        from_user=types.SimpleNamespace(id=1, first_name="Admin"),
+        message=types.SimpleNamespace(
+            chat=types.SimpleNamespace(id=555),
+            message_id=777,
+            caption="Pending settlement",
+        ),
+    )
+
+
 class CryptoPaymentDiscountTests(unittest.TestCase):
     def test_crypto_discount_helper_rounds_to_two_decimals(self):
         purchase_plan = load_purchase_plan()
@@ -307,6 +335,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         payment_records = []
         purchase_plan = load_purchase_plan(bot, payment_records)
         reseller_handlers = load_reseller_handlers(purchase_plan)
+        apply_calls = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount))
 
         reseller_handlers.handle_reseller_payment(make_call("reseller:pay:crypto:100.00"))
 
@@ -326,6 +356,56 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertIn("Original price: $100.00", caption)
         self.assertIn("Discount: -$5.00", caption)
         self.assertIn("Final crypto price: $95.00", caption)
+        self.assertEqual(apply_calls, [])
+
+    def test_approved_settlement_payment_applies_reseller_credit(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        payment_record = {
+            "status": "pending_approval",
+            "type": "settlement",
+            "plan_gb": "Settlement",
+            "user_id": 1988,
+            "price": 95.0,
+            "settlement_amount": 100.0,
+            "payment_method": "Crypto",
+        }
+        apply_calls = []
+        statuses = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount))
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.get_payment_record = lambda _payment_id: payment_record
+        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+
+        purchase_plan.handle_admin_approval(make_admin_approval_call("approve"))
+
+        self.assertEqual(apply_calls, [(1988, 100.0)])
+        self.assertEqual(statuses, [("settlement-payment", "completed")])
+
+    def test_rejected_settlement_payment_does_not_apply_reseller_credit(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        payment_record = {
+            "status": "pending_approval",
+            "type": "settlement",
+            "plan_gb": "Settlement",
+            "user_id": 1988,
+            "price": 95.0,
+            "settlement_amount": 100.0,
+            "payment_method": "Crypto",
+        }
+        apply_calls = []
+        statuses = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount))
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.get_payment_record = lambda _payment_id: payment_record
+        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+
+        purchase_plan.handle_admin_approval(make_admin_approval_call("reject"))
+
+        self.assertEqual(apply_calls, [])
+        self.assertEqual(statuses, [("settlement-payment", "rejected")])
 
     def test_reseller_settlement_screen_advertises_crypto_discount(self):
         bot = DummyBot()
@@ -357,6 +437,84 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(purchase_plan.user_data[1988]["converted_amount"], 200.0)
         self.assertNotIn("Crypto discount", bot.edited_messages[0][0][0])
         self.assertNotIn("5% off", bot.edited_messages[0][0][0])
+
+    def test_zero_paid_reseller_can_reach_five_dollar_trust_limit(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.load_plans = lambda: {"5": {"price": 6.25, "days": 30, "unlimited": False}}
+        reseller_handlers.get_exchange_rate = lambda: 1.0
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 0.0,
+            "total_paid": 0.0,
+            "configs": [],
+        }
+
+        reseller_handlers.handle_reseller_buy(make_call("reseller:buy:5"))
+
+        message = bot.edited_messages[0][0][0]
+        self.assertIn("Debt $0.00 -> $5.00", message)
+        self.assertIn("Limit $5.00", message)
+        self.assertNotIn("Trust limit exceeded", message)
+
+    def test_zero_paid_reseller_purchase_over_five_dollars_is_blocked(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.load_plans = lambda: {"5": {"price": 2.5, "days": 30, "unlimited": False}}
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 4.0,
+            "total_paid": 0.0,
+            "configs": [],
+        }
+
+        reseller_handlers.handle_reseller_buy(make_call("reseller:buy:5"))
+
+        message = bot.edited_messages[0][0][0]
+        self.assertIn("Trust limit exceeded", message)
+        self.assertIn("projected $6.00", message)
+        self.assertIn("limit $5.00", message)
+
+    def test_ten_paid_reseller_can_reach_ten_dollar_trust_limit(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.load_plans = lambda: {"5": {"price": 2.5, "days": 30, "unlimited": False}}
+        reseller_handlers.get_exchange_rate = lambda: 1.0
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 8.0,
+            "total_paid": 10.0,
+            "configs": [],
+        }
+
+        reseller_handlers.handle_reseller_buy(make_call("reseller:buy:5"))
+
+        message = bot.edited_messages[0][0][0]
+        self.assertIn("Debt $8.00 -> $10.00", message)
+        self.assertIn("Limit $10.00", message)
+        self.assertNotIn("Trust limit exceeded", message)
+
+    def test_fifty_paid_reseller_is_capped_at_thirty_dollar_trust_limit(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        reseller_handlers.load_plans = lambda: {"5": {"price": 2.5, "days": 30, "unlimited": False}}
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 29.0,
+            "total_paid": 50.0,
+            "configs": [],
+        }
+
+        reseller_handlers.handle_reseller_buy(make_call("reseller:buy:5"))
+
+        message = bot.edited_messages[0][0][0]
+        self.assertIn("Trust limit exceeded", message)
+        self.assertIn("limit $30.00", message)
+        self.assertIn("credit $1.00", message)
 
     def test_old_crypto_settlement_record_credits_original_amount(self):
         purchase_plan = load_purchase_plan()
@@ -455,7 +613,7 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
             "purchase_connection_warning": "\n\nVPN warning",
         }.get(key, key)
 
-        details = reseller_handlers._build_reseller_purchase_details("en", "40", 30, 80.0, 10.0)
+        details = reseller_handlers._build_reseller_purchase_details("en", "40", 30, 80.0, 10.0, 30.0)
 
         self.assertIn("Plan 40 costs $80.00.", details)
         self.assertIn("VPN warning", details)

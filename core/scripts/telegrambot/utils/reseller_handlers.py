@@ -16,6 +16,7 @@ from utils.reseller import (
     get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD,
     SUSPENDED_REASON_UNBAN_GRACE, get_reseller_unlock_amount,
     get_banned_reseller_cleanup_candidates, cleanup_banned_reseller_users,
+    can_reseller_add_debt, get_reseller_total_paid, get_reseller_trust_limit,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -138,7 +139,7 @@ def _create_reseller_user_with_note(api_client, user_id, gb, days, chosen_userna
     return multi_api.create_user_with_retry(allocate, create, fallback_client=api_client)
 
 
-def _build_reseller_purchase_details(language, gb, days, price, current_debt):
+def _build_reseller_purchase_details(language, gb, days, price, current_debt, trust_limit):
     exchange_rate = get_exchange_rate()
     converted_price = price * exchange_rate
     projected_debt = current_debt + price
@@ -150,6 +151,7 @@ def _build_reseller_purchase_details(language, gb, days, price, current_debt):
         toman_price=format_toman_amount(converted_price),
         current_debt=format_usd_amount(current_debt),
         projected_debt=format_usd_amount(projected_debt),
+        trust_limit=format_usd_amount(trust_limit),
     ) + get_message_text(language, "purchase_connection_warning")
 
 
@@ -159,13 +161,32 @@ def _reseller_username_prompt_markup(language):
     return markup
 
 
-def _show_reseller_purchase_details(call, language, gb, days, price, current_debt):
+def _show_reseller_purchase_details(call, language, gb, days, price, current_debt, trust_limit):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(get_button_text(language, "confirm"), callback_data=f"reseller:confirm_buy:{gb}"))
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
 
     bot.edit_message_text(
-        _build_reseller_purchase_details(language, gb, days, price, current_debt),
+        _build_reseller_purchase_details(language, gb, days, price, current_debt, trust_limit),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup
+    )
+
+
+def _show_reseller_trust_limit_block(call, language, current_debt, purchase_adds, trust_limit, available_credit):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if current_debt > 0:
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "settle_debt"), callback_data=f"reseller:settle:{current_debt:.2f}"))
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    bot.edit_message_text(
+        get_message_text(language, "reseller_trust_limit_exceeded").format(
+            current_debt=current_debt,
+            purchase_adds=purchase_adds,
+            projected_debt=current_debt + purchase_adds,
+            trust_limit=trust_limit,
+            available_credit=available_credit,
+        ),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=markup
@@ -195,7 +216,9 @@ def reseller_panel(message):
         )
         debt = float(reseller_data.get('debt', 0.0))
         debt_state_text = get_message_text(language, _debt_state_label(reseller_data.get('debt_state', 'active')))
+        trust_limit = get_reseller_trust_limit(get_reseller_total_paid(reseller_data))
         intro = get_message_text(language, "reseller_intro").replace("${debt}", f"${format_usd_amount(debt)}")
+        intro += "\n" + get_message_text(language, "reseller_trust_limit_line").format(trust_limit=trust_limit)
         intro += "\n" + get_message_text(language, "reseller_debt_status_line").format(debt_state=debt_state_text)
         if _is_reseller_suspended(reseller_data) or status == 'suspended':
             intro += "\n" + get_message_text(language, "reseller_suspended_intro_notice")
@@ -361,6 +384,11 @@ def handle_reseller_buy(call):
 
     current_debt = float(reseller_data.get('debt', 0.0))
     projected_debt = current_debt + price
+    can_add, trust_limit, available_credit = can_reseller_add_debt(reseller_data, price)
+    if not can_add:
+        _show_reseller_trust_limit_block(call, language, current_debt, price, trust_limit, available_credit)
+        return
+
     if projected_debt >= DEBT_WARNING_THRESHOLD:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(get_message_text(language, "continue_action"), callback_data=f"reseller:details:{gb}"))
@@ -378,7 +406,7 @@ def handle_reseller_buy(call):
         )
         return
     
-    _show_reseller_purchase_details(call, language, gb, days, price, current_debt)
+    _show_reseller_purchase_details(call, language, gb, days, price, current_debt, trust_limit)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:details:"))
@@ -411,7 +439,12 @@ def handle_reseller_purchase_details(call):
 
     price = float(plan['price']) * 0.8
     current_debt = float(reseller_data.get('debt', 0.0))
-    _show_reseller_purchase_details(call, language, gb, plan['days'], price, current_debt)
+    can_add, trust_limit, available_credit = can_reseller_add_debt(reseller_data, price)
+    if not can_add:
+        _show_reseller_trust_limit_block(call, language, current_debt, price, trust_limit, available_credit)
+        return
+
+    _show_reseller_purchase_details(call, language, gb, plan['days'], price, current_debt, trust_limit)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:confirm_buy:"))
@@ -445,6 +478,19 @@ def handle_reseller_confirm_buy(call):
     original_price = float(plan['price'])
     price = original_price * 0.8
     days = plan['days']
+    current_debt = float(reseller_data.get('debt', 0.0))
+    can_add, trust_limit, available_credit = can_reseller_add_debt(reseller_data, price)
+    if not can_add:
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "reseller_trust_limit_exceeded_short").format(
+                trust_limit=trust_limit,
+                available_credit=available_credit,
+            ),
+            show_alert=True
+        )
+        _show_reseller_trust_limit_block(call, language, current_debt, price, trust_limit, available_credit)
+        return
 
     user_data[user_id] = {
         'state': 'waiting_reseller_username',
@@ -567,6 +613,7 @@ def handle_reseller_debt(call):
     debt_state_text = get_message_text(language, _debt_state_label(debt_state))
     debt_since = reseller_data.get('debt_since') or 'N/A'
     last_payment_at = reseller_data.get('last_payment_at') or 'N/A'
+    trust_limit = get_reseller_trust_limit(get_reseller_total_paid(reseller_data))
     unlock_amount = get_reseller_unlock_amount(debt) if debt_state == 'suspended' else 0.0
     
     markup = types.InlineKeyboardMarkup()
@@ -577,6 +624,7 @@ def handle_reseller_debt(call):
     bot.edit_message_text(
         (
             f"{get_message_text(language, 'current_debt').replace('${debt}', f'${format_usd_amount(debt)}')}\n"
+            f"{get_message_text(language, 'reseller_trust_limit_line').format(trust_limit=trust_limit)}\n"
             f"{get_message_text(language, 'reseller_debt_status_line').format(debt_state=debt_state_text)}\n"
             f"{get_message_text(language, 'reseller_oldest_unpaid_date_line').format(debt_since=debt_since)}\n"
             f"{get_message_text(language, 'reseller_last_payment_date_line').format(last_payment_at=last_payment_at)}\n"
@@ -751,7 +799,8 @@ def handle_reseller_stats(call):
     
     total_value = sum(float(c.get('price', 0)) for c in configs)
     current_debt = float(reseller_data.get('debt', 0.0))
-    total_paid = total_value - current_debt
+    total_paid = get_reseller_total_paid(reseller_data)
+    trust_limit = get_reseller_trust_limit(total_paid)
     
     msg = get_message_text(language, "reseller_stats_message").format(
         user_id=user_id,
@@ -759,7 +808,8 @@ def handle_reseller_stats(call):
         total_configs=total_configs,
         total_value=format_usd_amount(total_value),
         total_paid=format_usd_amount(total_paid),
-        current_debt=format_usd_amount(current_debt)
+        current_debt=format_usd_amount(current_debt),
+        trust_limit=format_usd_amount(trust_limit),
     )
     
     markup = types.InlineKeyboardMarkup()
@@ -1335,7 +1385,8 @@ def _reseller_financial_stats(reseller_data):
         if isinstance(config, dict)
     )
     current_debt = _safe_float((reseller_data or {}).get("debt", 0.0))
-    total_paid = max(0.0, total_turnover - current_debt)
+    total_paid = get_reseller_total_paid(reseller_data)
+    trust_limit = get_reseller_trust_limit(total_paid)
     average_config_value = total_turnover / total_configs if total_configs else 0.0
     last_config_at = "N/A"
 
@@ -1352,6 +1403,7 @@ def _reseller_financial_stats(reseller_data):
         "total_turnover": total_turnover,
         "total_paid": total_paid,
         "total_debt": current_debt,
+        "trust_limit": trust_limit,
         "average_config_value": average_config_value,
         "last_config_at": last_config_at,
     }
@@ -1448,6 +1500,7 @@ def _build_admin_reseller_list_markup(language, grouped, active_status=ADMIN_RES
                             username_display=_username_display(language, data),
                             debt=_safe_float(data.get("debt", 0.0)),
                             total_paid=stats["total_paid"],
+                            trust_limit=stats["trust_limit"],
                         ),
                         callback_data=f"admin_reseller_ui:detail:{rid}:{status}:{page}",
                     )
@@ -1523,6 +1576,7 @@ def _build_admin_reseller_detail_text(language, reseller_id, reseller_data):
         configs_count=stats["total_configs"],
         total_turnover=format_usd_amount(stats["total_turnover"]),
         total_paid=format_usd_amount(stats["total_paid"]),
+        trust_limit=format_usd_amount(stats["trust_limit"]),
         average_config_value=format_usd_amount(stats["average_config_value"]),
         last_config_at=_escape_markdown(stats["last_config_at"]),
         created_at=_escape_markdown((reseller_data or {}).get("created_at", "N/A")),

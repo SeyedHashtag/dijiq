@@ -34,6 +34,96 @@ class ResellerDebtPolicyTests(unittest.TestCase):
     def hours_ago(self, hours):
         return (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
 
+    def test_trust_limit_tiers_cap_at_thirty(self):
+        cases = [
+            (0.0, 5.0),
+            (9.99, 5.0),
+            (10.0, 10.0),
+            (20.0, 15.0),
+            (30.0, 20.0),
+            (40.0, 25.0),
+            (50.0, 30.0),
+            (200.0, 30.0),
+        ]
+
+        for total_paid, expected_limit in cases:
+            with self.subTest(total_paid=total_paid):
+                self.assertEqual(self.reseller.get_reseller_trust_limit(total_paid), expected_limit)
+
+    def test_missing_total_paid_is_derived_from_legacy_turnover_minus_debt(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 15.0,
+                "configs": [
+                    {"price": 20.0},
+                    {"price": 10.0},
+                ],
+            }
+        })
+
+        data = self.reseller.get_reseller_data("1988")
+
+        self.assertEqual(data["total_paid"], 15.0)
+        self.assertEqual(data["trust_limit"], 10.0)
+
+    def test_successful_payment_increments_total_paid_by_debt_credit(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 15.0,
+                "total_paid": 20.0,
+                "configs": [
+                    {"price": 20.0},
+                    {"price": 15.0},
+                ],
+            }
+        })
+
+        success, new_debt = self.reseller.apply_reseller_payment("1988", 10.0)
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual(new_debt, 5.0)
+        self.assertEqual(saved["total_paid"], 30.0)
+        self.assertEqual(saved["trust_limit"], 20.0)
+        self.assertIsNotNone(saved["last_payment_at"])
+
+    def test_overpayment_only_increments_total_paid_by_debt_reduction(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 8.0,
+                "total_paid": 0.0,
+                "configs": [{"price": 8.0}],
+            }
+        })
+
+        success, new_debt = self.reseller.apply_reseller_payment("1988", 20.0)
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual(new_debt, 0.0)
+        self.assertEqual(saved["total_paid"], 8.0)
+        self.assertEqual(saved["trust_limit"], 5.0)
+
+    def test_can_reseller_add_debt_uses_current_trust_limit(self):
+        reseller_data = {
+            "debt": 4.0,
+            "total_paid": 0.0,
+            "configs": [],
+        }
+
+        can_add, trust_limit, available_credit = self.reseller.can_reseller_add_debt(reseller_data, 1.0)
+        self.assertTrue(can_add)
+        self.assertEqual(trust_limit, 5.0)
+        self.assertEqual(available_credit, 1.0)
+
+        can_add, trust_limit, available_credit = self.reseller.can_reseller_add_debt(reseller_data, 1.01)
+        self.assertFalse(can_add)
+        self.assertEqual(trust_limit, 5.0)
+        self.assertEqual(available_credit, 1.0)
+
     def test_approved_reseller_auto_suspends_after_suspend_deadline(self):
         self.write_resellers({
             "1988": {

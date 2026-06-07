@@ -80,7 +80,7 @@ def install_stubs():
         "reseller_customer_category_active": "Active",
         "reseller_customer_status_unavailable": "Status unavailable",
         "admin_reseller_section_button": "{status_icon} {status_label} ({count})",
-        "admin_reseller_row_compact": "{status_icon} {user_id} ({username_display}) - Debt: ${debt:.2f} | Paid: ${total_paid:.2f}",
+        "admin_reseller_row_compact": "{status_icon} {user_id} ({username_display}) - Debt: ${debt:.2f} | Paid: ${total_paid:.2f} | Limit: ${trust_limit:.2f}",
         "admin_status_approved": "Approved",
         "admin_status_pending": "Pending",
         "admin_status_suspended": "Suspended",
@@ -122,6 +122,16 @@ def install_stubs():
     reseller_stub.get_banned_reseller_cleanup_candidates = lambda reseller_data: []
     reseller_stub.cleanup_banned_reseller_users = lambda user_id, multi_api: (True, {})
     reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
+    reseller_stub.get_reseller_total_paid = lambda data: max(
+        0.0,
+        float(data.get("total_paid", sum(float(config.get("price", 0.0)) for config in data.get("configs", [])) - float(data.get("debt", 0.0))) or 0.0),
+    )
+    reseller_stub.get_reseller_trust_limit = lambda total_paid: min(30.0, 5.0 + int(float(total_paid or 0.0) // 10.0) * 5.0)
+    reseller_stub.can_reseller_add_debt = lambda data, amount: (
+        float(data.get("debt", 0.0)) + float(amount or 0.0) <= reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)),
+        reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)),
+        max(0.0, reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)) - float(data.get("debt", 0.0))),
+    )
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
     reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     sys.modules["utils.reseller"] = reseller_stub
@@ -274,7 +284,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
 
         row_texts = [button.text for button in markup.buttons]
         self.assertIn(
-            "✅ 1988 (@buyer) - Debt: $35.50 | Paid: $64.50",
+            "✅ 1988 (@buyer) - Debt: $35.50 | Paid: $64.50 | Limit: $30.00",
             row_texts,
         )
 

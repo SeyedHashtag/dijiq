@@ -23,6 +23,10 @@ DEBT_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_BAN_DEADLINE_H
 UNBAN_GRACE_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_UNBAN_GRACE_BAN_DEADLINE_HOURS', 24.0))
 SUSPENDED_REASON_DEBT = 'debt'
 SUSPENDED_REASON_UNBAN_GRACE = 'unban_grace'
+RESELLER_TRUST_START_LIMIT = 5.0
+RESELLER_TRUST_LIMIT_STEP = 5.0
+RESELLER_TRUST_PAID_STEP = 10.0
+RESELLER_TRUST_MAX_LIMIT = 30.0
 
 
 def _safe_float(value, default=0.0):
@@ -30,6 +34,47 @@ def _safe_float(value, default=0.0):
         return float(value)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _reseller_config_total(record):
+    configs = (record or {}).get('configs', [])
+    if not isinstance(configs, list):
+        return 0.0
+    return sum(
+        _safe_float(config.get('price', 0.0))
+        for config in configs
+        if isinstance(config, dict)
+    )
+
+
+def get_reseller_total_paid(record):
+    data = record or {}
+    if 'total_paid' in data:
+        return max(0.0, _safe_float(data.get('total_paid', 0.0)))
+    debt = _safe_float(data.get('debt', 0.0))
+    return max(0.0, _reseller_config_total(data) - debt)
+
+
+def get_reseller_trust_limit(total_paid):
+    paid_amount = max(0.0, _safe_float(total_paid, 0.0))
+    paid_steps = int(paid_amount // RESELLER_TRUST_PAID_STEP)
+    limit = RESELLER_TRUST_START_LIMIT + (paid_steps * RESELLER_TRUST_LIMIT_STEP)
+    return min(RESELLER_TRUST_MAX_LIMIT, limit)
+
+
+def get_reseller_available_credit(record):
+    data = record or {}
+    debt = _safe_float(data.get('debt', 0.0))
+    trust_limit = get_reseller_trust_limit(get_reseller_total_paid(data))
+    return max(0.0, trust_limit - debt)
+
+
+def can_reseller_add_debt(record, amount):
+    data = record or {}
+    debt = _safe_float(data.get('debt', 0.0))
+    amount_value = _safe_float(amount, 0.0)
+    trust_limit = get_reseller_trust_limit(get_reseller_total_paid(data))
+    return debt + amount_value <= trust_limit, trust_limit, max(0.0, trust_limit - debt)
 
 
 def _now_str():
@@ -67,6 +112,9 @@ def _ensure_reseller_defaults(record):
     debt = _safe_float(data.get('debt', 0.0))
     data['debt'] = debt
     data.setdefault('configs', [])
+    total_paid = get_reseller_total_paid(data)
+    data['total_paid'] = total_paid
+    data['trust_limit'] = get_reseller_trust_limit(total_paid)
     data.setdefault('created_at', _now_str())
     data.setdefault('last_payment_at', None)
     data.setdefault('debt_since', None)
@@ -427,10 +475,12 @@ def apply_reseller_payment(user_id, amount):
 
         current = _ensure_reseller_defaults(resellers[user_id])
         current_debt = _safe_float(current.get('debt', 0.0))
+        credited_amount = max(0.0, min(paid_amount, current_debt))
         new_debt = max(0.0, current_debt - paid_amount)
         current['debt'] = new_debt
 
-        if paid_amount > 0:
+        if credited_amount > 0:
+            current['total_paid'] = get_reseller_total_paid(current) + credited_amount
             current['last_payment_at'] = _now_str()
         if new_debt < DEBT_SETTLEMENT_THRESHOLD:
             current['debt_since'] = None
