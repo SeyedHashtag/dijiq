@@ -3,13 +3,46 @@ import os
 import threading
 import random
 import string
+import uuid
 from datetime import datetime
 
 REFERRALS_FILE = '/etc/dijiq/core/scripts/telegrambot/referrals.json'
-referral_lock = threading.Lock()
+referral_lock = threading.RLock()
 
 # Configuration
 REFERRAL_REWARD_PERCENTAGE = 20  # 20% reward
+REFERRAL_MIN_PAYOUT_BALANCE = 2.0
+
+def _default_referrals_data():
+    return {
+        "referrals": {},  # user_id -> referrer_id
+        "stats": {},      # user_id -> { "count": 0, "total_earnings": 0, "available_balance": 0 }
+        "codes": {},      # code -> user_id
+        "user_codes": {},  # user_id -> code
+        "wallets": {},    # user_id -> wallet_address
+        "referral_details": {},  # invited user_id -> invite metadata
+        "payouts": []     # paid referral payout audit records
+    }
+
+def _ensure_referrals_shape(data):
+    defaults = _default_referrals_data()
+    for key, value in defaults.items():
+        data.setdefault(key, value.copy() if isinstance(value, dict) else list(value))
+    if not isinstance(data.get("payouts"), list):
+        data["payouts"] = []
+    return data
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
 
 def load_referrals():
     with referral_lock:
@@ -17,23 +50,10 @@ def load_referrals():
             if os.path.exists(REFERRALS_FILE):
                 with open(REFERRALS_FILE, 'r') as f:
                     data = json.load(f)
-                    data.setdefault("referrals", {})
-                    data.setdefault("stats", {})
-                    data.setdefault("codes", {})
-                    data.setdefault("user_codes", {})
-                    data.setdefault("wallets", {})
-                    data.setdefault("referral_details", {})
-                    return data
+                    return _ensure_referrals_shape(data)
         except Exception:
             pass
-        return {
-            "referrals": {},  # user_id -> referrer_id
-            "stats": {},      # user_id -> { "count": 0, "total_earnings": 0, "available_balance": 0 }
-            "codes": {},      # code -> user_id
-            "user_codes": {},  # user_id -> code
-            "wallets": {},    # user_id -> wallet_address
-            "referral_details": {}  # invited user_id -> invite metadata
-        }
+        return _default_referrals_data()
 
 def save_referrals(data):
     with referral_lock:
@@ -153,6 +173,65 @@ def get_wallet_address(user_id):
     data = load_referrals()
     user_id_str = str(user_id)
     return data.get("wallets", {}).get(user_id_str)
+
+def get_eligible_referral_users(min_balance=REFERRAL_MIN_PAYOUT_BALANCE):
+    data = load_referrals()
+    wallets = data.get("wallets", {})
+    eligible_users = []
+
+    for user_id, stats in data.get("stats", {}).items():
+        if not isinstance(stats, dict):
+            continue
+        available_balance = _safe_float(stats.get("available_balance", 0))
+        if available_balance < float(min_balance):
+            continue
+        wallet = wallets.get(str(user_id))
+        eligible_users.append({
+            "user_id": str(user_id),
+            "available_balance": available_balance,
+            "total_earnings": _safe_float(stats.get("total_earnings", 0)),
+            "invited_count": _safe_int(stats.get("count", 0)),
+            "wallet": wallet,
+            "has_wallet": bool(wallet),
+        })
+
+    eligible_users.sort(key=lambda item: (-item["available_balance"], str(item["user_id"])))
+    return eligible_users
+
+def mark_referral_payout_paid(user_id, admin_user_id):
+    with referral_lock:
+        data = load_referrals()
+        user_id_str = str(user_id)
+        stats = data.get("stats", {}).get(user_id_str)
+
+        if not isinstance(stats, dict):
+            return False, "No stats found"
+
+        available_balance = _safe_float(stats.get("available_balance", 0))
+        if available_balance < REFERRAL_MIN_PAYOUT_BALANCE:
+            return False, "Insufficient balance (Minimum $2.00)"
+
+        wallet = data.get("wallets", {}).get(user_id_str)
+        if not wallet:
+            return False, "Wallet address not set"
+
+        payout = {
+            "id": str(uuid.uuid4()),
+            "user_id": user_id_str,
+            "admin_user_id": str(admin_user_id),
+            "amount": available_balance,
+            "wallet": wallet,
+            "paid_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "available_balance_before": available_balance,
+            "available_balance_after": 0,
+            "total_earnings_snapshot": _safe_float(stats.get("total_earnings", 0)),
+            "invited_count_snapshot": _safe_int(stats.get("count", 0)),
+        }
+
+        stats["available_balance"] = 0
+        data.setdefault("payouts", []).append(payout)
+        save_referrals(data)
+        return True, payout
 
 def _get_invitee_payments(invitee_user_id):
     try:
