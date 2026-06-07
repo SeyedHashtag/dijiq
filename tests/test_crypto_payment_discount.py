@@ -34,6 +34,7 @@ class DummyQR:
 class DummyBot:
     def __init__(self):
         self.sent_photos = []
+        self.sent_messages = []
         self.edited_messages = []
         self.deleted_messages = []
         self.callback_answers = []
@@ -60,6 +61,13 @@ class DummyBot:
             chat=types.SimpleNamespace(id=args[0] if args else kwargs.get("chat_id")),
             message_id=321,
             photo=True,
+        )
+
+    def send_message(self, *args, **kwargs):
+        self.sent_messages.append((args, kwargs))
+        return types.SimpleNamespace(
+            chat=types.SimpleNamespace(id=args[0] if args else kwargs.get("chat_id")),
+            message_id=987,
         )
 
     def reply_to(self, *args, **kwargs):
@@ -177,6 +185,7 @@ def install_common_stubs(bot, payment_records):
 
     referral_stub = types.ModuleType("utils.referral")
     referral_stub.add_referral_reward = lambda *args, **kwargs: None
+    referral_stub.get_pending_withdrawal_requests = lambda: []
     sys.modules["utils.referral"] = referral_stub
 
     reseller_stub = types.ModuleType("utils.reseller")
@@ -406,6 +415,35 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         markup = reply_kwargs["reply_markup"]
         self.assertEqual(markup.buttons[0].args[0], "📊 My Stats")
         self.assertEqual(markup.buttons[0].kwargs["callback_data"], "checker_stats:my")
+
+    def test_admin_pending_confirmations_include_referral_withdrawals(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.get_pending_withdrawal_requests = lambda: [{
+            "id": "req-1",
+            "user_id": "20",
+            "telegram_username": "alice",
+            "amount": 4.5,
+            "wallet": "ltc20",
+            "requested_at": "2026-06-01 10:00:00",
+            "available_balance_after": 0,
+            "total_earnings": 9.25,
+            "invited_count": 4,
+        }]
+
+        message = types.SimpleNamespace(
+            text="✅ Confirmations",
+            from_user=types.SimpleNamespace(id=1),
+            chat=types.SimpleNamespace(id=555),
+        )
+        purchase_plan.show_pending_confirmations(message)
+
+        self.assertEqual(bot.replies[0][0][1], "Pending confirmations: 1")
+        self.assertIn("Pending Referral Withdrawal", bot.sent_messages[0][0][1])
+        self.assertIn("Request ID: `req-1`", bot.sent_messages[0][0][1])
+        markup = bot.sent_messages[0][1]["reply_markup"]
+        self.assertEqual(markup.buttons[0].kwargs["callback_data"], "admin_pay_ref:req-1")
 
     def test_reseller_purchase_details_includes_connection_warning(self):
         purchase_plan = load_purchase_plan()

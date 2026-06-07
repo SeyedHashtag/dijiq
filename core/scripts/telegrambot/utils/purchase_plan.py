@@ -17,7 +17,7 @@ from utils.payment_records import (
 from utils.api_client import APIClient, MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
-from utils.referral import add_referral_reward
+from utils.referral import add_referral_reward, get_pending_withdrawal_requests
 from utils.reseller import evaluate_reseller_debt_policies, DEBT_WARNING_THRESHOLD, DEBT_SUSPEND_THRESHOLD
 from utils.currency_format import format_toman_amount, format_usd_amount
 from utils.receipt_checker import (
@@ -182,6 +182,39 @@ def _send_receipt_confirmation(chat_id, payment_id, payment_record, caption=None
             parse_mode="HTML"
         )
     return sent_message
+
+
+def _build_referral_withdrawal_markup(request_id):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"admin_pay_ref:{request_id}"))
+    return markup
+
+
+def _format_pending_referral_withdrawal(withdrawal_request):
+    username = str(withdrawal_request.get("telegram_username") or "").strip().lstrip("@")
+    telegram_line = f"Telegram: `@{username}`\n" if username else ""
+    return (
+        "💸 **Pending Referral Withdrawal**\n\n"
+        f"Request ID: `{withdrawal_request.get('id')}`\n"
+        f"User ID: `{withdrawal_request.get('user_id')}`\n"
+        f"{telegram_line}"
+        f"Amount: ${float(withdrawal_request.get('amount', 0) or 0):.2f}\n"
+        f"Wallet: `{withdrawal_request.get('wallet')}`\n\n"
+        "📊 **Referral Stats**\n"
+        f"Invited Users: {withdrawal_request.get('invited_count', 0)}\n"
+        f"Total Earnings: ${float(withdrawal_request.get('total_earnings', 0) or 0):.2f}\n"
+        f"Remaining Balance: ${float(withdrawal_request.get('available_balance_after', 0) or 0):.2f}\n"
+        f"Requested At: {withdrawal_request.get('requested_at', '')}"
+    )
+
+
+def _send_referral_withdrawal_confirmation(chat_id, withdrawal_request):
+    return bot.send_message(
+        chat_id,
+        _format_pending_referral_withdrawal(withdrawal_request),
+        reply_markup=_build_referral_withdrawal_markup(withdrawal_request.get("id")),
+        parse_mode="Markdown"
+    )
 
 
 def _save_receipt_message_refs(payment_id, refs):
@@ -775,17 +808,19 @@ def show_pending_confirmations(message):
         if not can_review_receipt(user_id, record, is_admin_user=user_is_admin):
             continue
         pending_items.append((payment_id, record))
+    pending_withdrawals = get_pending_withdrawal_requests() if user_is_admin else []
 
-    if not pending_items:
+    if not pending_items and not pending_withdrawals:
         if not user_is_admin and is_receipt_checker(user_id):
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(types.InlineKeyboardButton("📊 My Stats", callback_data="checker_stats:my"))
             bot.reply_to(message, "No pending receipt confirmations.", reply_markup=markup)
         else:
-            bot.reply_to(message, "No pending receipt confirmations.", reply_markup=create_main_markup(is_admin=user_is_admin, user_id=user_id))
+            bot.reply_to(message, "No pending confirmations.", reply_markup=create_main_markup(is_admin=user_is_admin, user_id=user_id))
         return
 
-    bot.reply_to(message, f"Pending receipt confirmations: {len(pending_items)}")
+    total_pending = len(pending_items) + len(pending_withdrawals)
+    bot.reply_to(message, f"Pending confirmations: {total_pending}")
     for payment_id, record in pending_items:
         try:
             sent_message = _send_receipt_confirmation(message.chat.id, payment_id, record)
@@ -800,6 +835,11 @@ def show_pending_confirmations(message):
             _save_receipt_message_refs(payment_id, refs)
         except Exception as e:
             bot.send_message(message.chat.id, f"Failed to show receipt {payment_id}: {str(e)}")
+    for withdrawal_request in pending_withdrawals:
+        try:
+            _send_referral_withdrawal_confirmation(message.chat.id, withdrawal_request)
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Failed to show withdrawal {withdrawal_request.get('id')}: {str(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
 def handle_admin_approval(call):

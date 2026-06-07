@@ -40,6 +40,8 @@ class DummyBot:
         self.replies = []
         self.edits = []
         self.answers = []
+        self.messages = []
+        self.documents = []
 
     def message_handler(self, *args, **kwargs):
         return lambda func: func
@@ -55,6 +57,12 @@ class DummyBot:
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
+
+    def send_message(self, *args, **kwargs):
+        self.messages.append((args, kwargs))
+
+    def send_document(self, *args, **kwargs):
+        self.documents.append((args, kwargs))
 
 
 def load_referral_handlers_module():
@@ -89,6 +97,7 @@ def load_referral_handlers_module():
     referral_stub.build_withdrawal_audit_payload = lambda *args, **kwargs: {}
     referral_stub.get_eligible_referral_users = lambda: []
     referral_stub.mark_referral_payout_paid = lambda user_id, admin_id: (False, "not used")
+    referral_stub.mark_withdrawal_request_paid = lambda request_id, admin_id: (False, "not used")
     sys.modules["utils.referral"] = referral_stub
 
     translations_stub = types.ModuleType("utils.translations")
@@ -138,6 +147,16 @@ class ReferralAdminHelperTests(unittest.TestCase):
         self.assertEqual(eligible[1]["available_balance"], 2.0)
         self.assertTrue(eligible[0]["has_wallet"])
 
+    def test_load_referrals_migrates_missing_pending_withdrawals(self):
+        self.write_referrals({
+            "stats": {},
+            "wallets": {},
+        })
+
+        data = self.referral.load_referrals()
+
+        self.assertEqual(data["pending_withdrawals"], [])
+
     def test_mark_paid_clears_balance_and_appends_audit_record(self):
         self.write_referrals({
             "stats": {
@@ -185,6 +204,83 @@ class ReferralAdminHelperTests(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(reason, "Wallet address not set")
         self.assertEqual(saved["stats"]["10"]["available_balance"], 2.0)
+
+    def test_process_withdrawal_request_reserves_balance_and_persists_pending_request(self):
+        self.write_referrals({
+            "stats": {"10": {"count": 4, "total_earnings": 9.25, "available_balance": 4.5}},
+            "wallets": {"10": "ltc10"},
+        })
+
+        success, request_data = self.referral.process_withdrawal_request("10", telegram_username="alice")
+        saved = self.read_referrals()
+
+        self.assertTrue(success)
+        self.assertEqual(saved["stats"]["10"]["available_balance"], 0)
+        self.assertEqual(len(saved["pending_withdrawals"]), 1)
+        pending = saved["pending_withdrawals"][0]
+        self.assertEqual(pending["id"], request_data["id"])
+        self.assertEqual(pending["status"], "pending")
+        self.assertEqual(pending["user_id"], "10")
+        self.assertEqual(pending["telegram_username"], "alice")
+        self.assertEqual(pending["amount"], 4.5)
+        self.assertEqual(pending["wallet"], "ltc10")
+        self.assertEqual(pending["available_balance_before"], 4.5)
+        self.assertEqual(pending["available_balance_after"], 0)
+        self.assertEqual(pending["total_earnings"], 9.25)
+        self.assertEqual(pending["invited_count"], 4)
+
+    def test_process_withdrawal_request_blocks_duplicate_pending_request(self):
+        self.write_referrals({
+            "stats": {"10": {"count": 1, "total_earnings": 4.0, "available_balance": 4.0}},
+            "wallets": {"10": "ltc10"},
+            "pending_withdrawals": [{
+                "id": "req-1",
+                "status": "pending",
+                "user_id": "10",
+                "amount": 3.0,
+                "wallet": "ltc10",
+            }],
+        })
+
+        success, reason = self.referral.process_withdrawal_request("10", telegram_username="alice")
+        saved = self.read_referrals()
+
+        self.assertFalse(success)
+        self.assertEqual(reason, "Withdrawal request already pending")
+        self.assertEqual(saved["stats"]["10"]["available_balance"], 4.0)
+        self.assertEqual(len(saved["pending_withdrawals"]), 1)
+
+    def test_mark_withdrawal_request_paid_records_audit_and_updates_status(self):
+        self.write_referrals({
+            "stats": {"10": {"count": 4, "total_earnings": 9.25, "available_balance": 0}},
+            "wallets": {"10": "ltc10"},
+            "pending_withdrawals": [{
+                "id": "req-1",
+                "status": "pending",
+                "user_id": "10",
+                "telegram_username": "alice",
+                "amount": 4.5,
+                "wallet": "ltc10",
+                "requested_at": "2026-06-01 10:00:00",
+                "available_balance_before": 4.5,
+                "available_balance_after": 0,
+                "total_earnings": 9.25,
+                "invited_count": 4,
+            }],
+        })
+
+        success, payout = self.referral.mark_withdrawal_request_paid("req-1", 1)
+        saved = self.read_referrals()
+
+        self.assertTrue(success)
+        self.assertEqual(payout["withdrawal_request_id"], "req-1")
+        self.assertEqual(payout["amount"], 4.5)
+        self.assertEqual(payout["user_id"], "10")
+        self.assertEqual(saved["pending_withdrawals"][0]["status"], "paid")
+        self.assertEqual(saved["pending_withdrawals"][0]["admin_user_id"], "1")
+        self.assertEqual(len(saved["payouts"]), 1)
+        self.assertEqual(saved["payouts"][0]["withdrawal_request_id"], "req-1")
+        self.assertEqual(saved["payouts"][0]["wallet"], "ltc10")
 
 
 class ReferralAdminHandlerTests(unittest.TestCase):
@@ -248,6 +344,48 @@ class ReferralAdminHandlerTests(unittest.TestCase):
 
         self.assertEqual(bot.answers[0][0][1], "Marked paid: $7.50")
         self.assertIn("Eligible Users: *0*", bot.edits[0][0][0])
+
+    def test_admin_withdrawal_mark_paid_uses_request_id(self):
+        module, bot = load_referral_handlers_module()
+
+        def mark_request_paid(request_id, admin_id):
+            return True, {"amount": 4.5, "withdrawal_request_id": request_id, "admin_user_id": str(admin_id)}
+
+        module.mark_withdrawal_request_paid = mark_request_paid
+        call = types.SimpleNamespace(
+            id="ok",
+            data="admin_pay_ref:req-1",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(
+                chat=types.SimpleNamespace(id=10),
+                message_id=77,
+                text="Withdrawal request",
+            ),
+        )
+
+        module.handle_admin_mark_paid(call)
+
+        self.assertEqual(bot.answers[0][0][1], "Marked as paid.")
+        self.assertIn("Paid by Admin 1", bot.edits[0][1]["text"])
+        self.assertIn("Audit recorded: `$4.50`", bot.edits[0][1]["text"])
+
+    def test_admin_withdrawal_mark_paid_blocks_non_admin(self):
+        module, bot = load_referral_handlers_module()
+        call = types.SimpleNamespace(
+            id="bad",
+            data="admin_pay_ref:req-1",
+            from_user=types.SimpleNamespace(id=2),
+            message=types.SimpleNamespace(
+                chat=types.SimpleNamespace(id=10),
+                message_id=77,
+                text="Withdrawal request",
+            ),
+        )
+
+        module.handle_admin_mark_paid(call)
+
+        self.assertEqual(bot.answers[0][0][1], "⛔ Unauthorized")
+        self.assertEqual(bot.edits, [])
 
 
 if __name__ == "__main__":

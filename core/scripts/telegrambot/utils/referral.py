@@ -21,6 +21,7 @@ def _default_referrals_data():
         "user_codes": {},  # user_id -> code
         "wallets": {},    # user_id -> wallet_address
         "referral_details": {},  # invited user_id -> invite metadata
+        "pending_withdrawals": [],  # referral withdrawal requests awaiting admin payout
         "payouts": []     # paid referral payout audit records
     }
 
@@ -30,6 +31,8 @@ def _ensure_referrals_shape(data):
         data.setdefault(key, value.copy() if isinstance(value, dict) else list(value))
     if not isinstance(data.get("payouts"), list):
         data["payouts"] = []
+    if not isinstance(data.get("pending_withdrawals"), list):
+        data["pending_withdrawals"] = []
     return data
 
 def _safe_float(value, default=0.0):
@@ -233,6 +236,56 @@ def mark_referral_payout_paid(user_id, admin_user_id):
         save_referrals(data)
         return True, payout
 
+def _is_pending_withdrawal_request(request_data):
+    return isinstance(request_data, dict) and request_data.get("status") == "pending"
+
+def get_pending_withdrawal_requests():
+    data = load_referrals()
+    pending_requests = [
+        dict(request_data)
+        for request_data in data.get("pending_withdrawals", [])
+        if _is_pending_withdrawal_request(request_data)
+    ]
+    pending_requests.sort(key=lambda item: (item.get("requested_at") or "", str(item.get("user_id") or "")))
+    return pending_requests
+
+def mark_withdrawal_request_paid(request_id, admin_user_id):
+    with referral_lock:
+        data = load_referrals()
+        request_id_str = str(request_id)
+
+        for withdrawal_request in data.get("pending_withdrawals", []):
+            if str(withdrawal_request.get("id")) != request_id_str:
+                continue
+
+            if withdrawal_request.get("status") != "pending":
+                return False, f"Withdrawal request already {withdrawal_request.get('status', 'processed')}"
+
+            paid_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            withdrawal_request["status"] = "paid"
+            withdrawal_request["paid_at"] = paid_at
+            withdrawal_request["admin_user_id"] = str(admin_user_id)
+
+            payout = {
+                "id": str(uuid.uuid4()),
+                "withdrawal_request_id": request_id_str,
+                "user_id": str(withdrawal_request.get("user_id")),
+                "admin_user_id": str(admin_user_id),
+                "amount": _safe_float(withdrawal_request.get("amount", 0)),
+                "wallet": withdrawal_request.get("wallet"),
+                "paid_at": paid_at,
+                "available_balance_before": _safe_float(withdrawal_request.get("available_balance_before", 0)),
+                "available_balance_after": _safe_float(withdrawal_request.get("available_balance_after", 0)),
+                "total_earnings_snapshot": _safe_float(withdrawal_request.get("total_earnings", 0)),
+                "invited_count_snapshot": _safe_int(withdrawal_request.get("invited_count", 0)),
+            }
+
+            data.setdefault("payouts", []).append(payout)
+            save_referrals(data)
+            return True, payout
+
+        return False, "Withdrawal request not found"
+
 def _get_invitee_payments(invitee_user_id):
     try:
         from utils.payment_records import load_payments
@@ -296,31 +349,45 @@ def build_withdrawal_audit_payload(user_id, telegram_username, withdrawal_data):
         "invitees": invitees
     }
 
-def process_withdrawal_request(user_id):
-    data = load_referrals()
-    user_id_str = str(user_id)
-    
-    stats = data["stats"].get(user_id_str)
-    if not stats:
-        return False, "No stats found"
-        
-    if stats["available_balance"] < 2.0:
-        return False, "Insufficient balance (Minimum $2.00)"
-        
-    wallet = data.get("wallets", {}).get(user_id_str)
-    if not wallet:
-        return False, "Wallet address not set"
-        
-    amount = stats["available_balance"]
-    requested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    stats["available_balance"] = 0
-    
-    save_referrals(data)
-    return True, {
-        "amount": amount,
-        "wallet": wallet,
-        "requested_at": requested_at,
-        "available_balance_after": stats["available_balance"],
-        "total_earnings": stats.get("total_earnings", 0),
-        "invited_count": stats.get("count", 0)
-    }
+def process_withdrawal_request(user_id, telegram_username=None):
+    with referral_lock:
+        data = load_referrals()
+        user_id_str = str(user_id)
+
+        if any(
+            _is_pending_withdrawal_request(request_data) and str(request_data.get("user_id")) == user_id_str
+            for request_data in data.get("pending_withdrawals", [])
+        ):
+            return False, "Withdrawal request already pending"
+
+        stats = data["stats"].get(user_id_str)
+        if not stats:
+            return False, "No stats found"
+
+        available_balance = _safe_float(stats.get("available_balance", 0))
+        if available_balance < REFERRAL_MIN_PAYOUT_BALANCE:
+            return False, "Insufficient balance (Minimum $2.00)"
+
+        wallet = data.get("wallets", {}).get(user_id_str)
+        if not wallet:
+            return False, "Wallet address not set"
+
+        requested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        withdrawal_request = {
+            "id": str(uuid.uuid4()),
+            "status": "pending",
+            "user_id": user_id_str,
+            "telegram_username": telegram_username,
+            "amount": available_balance,
+            "wallet": wallet,
+            "requested_at": requested_at,
+            "available_balance_before": available_balance,
+            "available_balance_after": 0,
+            "total_earnings": _safe_float(stats.get("total_earnings", 0)),
+            "invited_count": _safe_int(stats.get("count", 0)),
+        }
+
+        stats["available_balance"] = 0
+        data.setdefault("pending_withdrawals", []).append(withdrawal_request)
+        save_referrals(data)
+        return True, dict(withdrawal_request)

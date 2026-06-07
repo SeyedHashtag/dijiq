@@ -11,7 +11,8 @@ from utils.referral import (
     process_withdrawal_request,
     build_withdrawal_audit_payload,
     get_eligible_referral_users,
-    mark_referral_payout_paid
+    mark_referral_payout_paid,
+    mark_withdrawal_request_paid
 )
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
@@ -311,7 +312,7 @@ def handle_withdraw_confirm(call):
         )
         return
     
-    success, result = process_withdrawal_request(user_id)
+    success, result = process_withdrawal_request(user_id, telegram_username=telegram_username)
     
     if success:
         amount = result["amount"]
@@ -335,7 +336,8 @@ def handle_withdraw_confirm(call):
 
 def notify_admins_withdrawal(user_id, telegram_username, amount, wallet, withdrawal_data, audit_payload):
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"admin_pay_ref:{user_id}"))
+    request_id = withdrawal_data.get("id", user_id)
+    markup.add(types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"admin_pay_ref:{request_id}"))
     
     msg_text = get_message_text("en", "admin_withdraw_request").format(
         user_id=user_id,
@@ -364,10 +366,13 @@ def notify_admins_withdrawal(user_id, telegram_username, amount, wallet, withdra
 def handle_admin_mark_paid(call):
     user_id_admin = call.from_user.id
     if not is_admin(user_id_admin):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized", show_alert=True)
         return
 
-    target_user_id = call.data.split(":", 1)[1]
-    success, result = mark_referral_payout_paid(target_user_id, user_id_admin)
+    request_id = call.data.split(":", 1)[1]
+    success, result = mark_withdrawal_request_paid(request_id, user_id_admin)
+    if not success and result == "Withdrawal request not found":
+        success, result = mark_referral_payout_paid(request_id, user_id_admin)
     audit_note = ""
     if success:
         audit_note = f"\nAudit recorded: `${result['amount']:.2f}`"
