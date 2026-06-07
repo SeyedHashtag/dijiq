@@ -16,11 +16,21 @@ MODULE_PATH = (
 
 
 class DummyBot:
+    def __init__(self):
+        self.edits = []
+        self.answers = []
+
     def message_handler(self, *args, **kwargs):
         return lambda func: func
 
     def callback_query_handler(self, *args, **kwargs):
         return lambda func: func
+
+    def edit_message_text(self, *args, **kwargs):
+        self.edits.append((args, kwargs))
+
+    def answer_callback_query(self, *args, **kwargs):
+        self.answers.append((args, kwargs))
 
 
 class DummyMarkup:
@@ -77,6 +87,24 @@ def install_stubs():
         "admin_status_banned": "Banned",
         "admin_status_rejected": "Rejected",
         "admin_action_suspend": "Suspend",
+        "admin_action_unban": "Unban",
+        "admin_action_ban": "Ban",
+        "admin_action_reject": "Reject",
+        "admin_action_approve": "Approve",
+        "admin_action_adjust_debt": "Adjust Debt",
+        "admin_action_refresh": "Refresh",
+        "admin_action_back_to_list": "Back to List",
+        "admin_action_back_to_detail": "Back",
+        "admin_action_cleanup_unpaid": "Remove Unpaid Users",
+        "admin_debt_cancel": "Cancel",
+        "admin_cleanup_preview_title": "Remove Unpaid Users",
+        "admin_cleanup_no_payment": "No successful payment",
+        "admin_cleanup_no_candidates": "No unpaid reseller-created users were found for this banned reseller.",
+        "admin_cleanup_confirm_warning": "Confirming deletes live VPN users and removes their reseller records.",
+        "admin_cleanup_confirm_delete": "Confirm Delete",
+        "admin_cleanup_result_title": "Cleanup Result",
+        "admin_cleanup_banned_only": "Cleanup is only available for banned resellers.",
+        "admin_invalid_action": "Invalid action.",
         "cancel": "Cancel",
     }
     translations_stub = types.ModuleType("utils.translations")
@@ -91,6 +119,8 @@ def install_stubs():
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.get_banned_reseller_cleanup_candidates = lambda reseller_data: []
+    reseller_stub.cleanup_banned_reseller_users = lambda user_id, multi_api: (True, {})
     reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
     reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
@@ -260,6 +290,128 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         actions = {button.callback_data: button.text for button in markup.buttons}
         self.assertEqual(actions["admin_reseller_ui:action:1988:suspend"], "Suspend")
         self.assertIn("admin_reseller_ui:action:1988:ban", actions)
+
+    def test_banned_reseller_detail_has_cleanup_action(self):
+        markup = reseller_handlers._build_admin_reseller_detail_markup(
+            "en",
+            "1988",
+            {"status": "banned", "telegram_username": "buyer", "debt": 7.0, "configs": []},
+            "banned",
+            0,
+        )
+
+        actions = {button.callback_data: button.text for button in markup.buttons}
+        self.assertEqual(actions["admin_reseller_ui:cleanup:1988:banned:0"], "Remove Unpaid Users")
+
+    def test_non_banned_reseller_detail_does_not_have_cleanup_action(self):
+        for status in ("approved", "suspended", "rejected", "pending"):
+            markup = reseller_handlers._build_admin_reseller_detail_markup(
+                "en",
+                "1988",
+                {"status": status, "telegram_username": "buyer", "debt": 7.0, "configs": []},
+                status,
+                0,
+            )
+
+            self.assertFalse(
+                any(
+                    str(button.callback_data).startswith("admin_reseller_ui:cleanup:")
+                    for button in markup.buttons
+                )
+            )
+
+    def test_cleanup_preview_text_lists_users_timestamps_prices_and_totals(self):
+        candidates = [
+            {
+                "username": "r1988a",
+                "customer_name": "ali",
+                "timestamp": "2026-06-02 10:00:00",
+                "price": 5.5,
+            },
+            {
+                "username": "r1988b",
+                "timestamp": "2026-06-03 10:00:00",
+                "price": 2.25,
+            },
+        ]
+
+        text = reseller_handlers._build_admin_cleanup_preview_text(
+            "en",
+            "1988",
+            {"last_payment_at": "2026-06-01 09:00:00"},
+            candidates,
+        )
+
+        self.assertIn("Last successful payment: `2026-06-01 09:00:00`", text)
+        self.assertIn("Matched users: *2*", text)
+        self.assertIn("Total matched value: *$7.75*", text)
+        self.assertIn("`r1988a` (ali) | 2026-06-02 10:00:00 | $5.50", text)
+        self.assertIn("`r1988b` | 2026-06-03 10:00:00 | $2.25", text)
+
+    def test_cleanup_result_text_lists_deleted_missing_and_failed_users(self):
+        text = reseller_handlers._build_admin_cleanup_result_text(
+            "en",
+            "1988",
+            {
+                "deleted": [{"username": "deleted", "timestamp": "2026-06-02", "price": 5}],
+                "already_missing": [{"username": "missing", "timestamp": "2026-06-03", "price": 3}],
+                "failed": [{"username": "failed", "timestamp": "2026-06-04", "price": 2}],
+                "removed_count": 2,
+                "removed_value": 8,
+                "remaining_configs": 1,
+                "remaining_debt": 2,
+            },
+        )
+
+        self.assertIn("Deleted from VPN", text)
+        self.assertIn("`deleted`", text)
+        self.assertIn("Already missing, record removed", text)
+        self.assertIn("`missing`", text)
+        self.assertIn("Failed, record kept", text)
+        self.assertIn("`failed`", text)
+        self.assertIn("Remaining debt: *$2.00*", text)
+
+    def test_cleanup_confirm_calls_cleanup_helper_at_confirmation_time(self):
+        calls = []
+        original_is_admin = reseller_handlers.is_admin
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_cleanup = reseller_handlers.cleanup_banned_reseller_users
+        try:
+            reseller_handlers.is_admin = lambda user_id: True
+            reseller_handlers.MultiServerAPI = lambda: object()
+
+            def cleanup(user_id, multi_api):
+                calls.append((user_id, multi_api))
+                return True, {
+                    "deleted": [],
+                    "already_missing": [{"username": "fresh", "timestamp": "2026-06-05", "price": 1}],
+                    "failed": [],
+                    "removed_count": 1,
+                    "removed_value": 1,
+                    "remaining_configs": 0,
+                    "remaining_debt": 0,
+                }
+
+            reseller_handlers.cleanup_banned_reseller_users = cleanup
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="admin_reseller_ui:cleanupconfirm:1988:banned:0",
+                from_user=types.SimpleNamespace(id=1),
+                message=types.SimpleNamespace(
+                    chat=types.SimpleNamespace(id=100),
+                    message_id=200,
+                ),
+            )
+
+            reseller_handlers.handle_admin_reseller_ui(call)
+
+            self.assertEqual(calls[0][0], "1988")
+            edit_text = reseller_handlers.bot.edits[-1][0][0]
+            self.assertIn("`fresh`", edit_text)
+        finally:
+            reseller_handlers.is_admin = original_is_admin
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.cleanup_banned_reseller_users = original_cleanup
 
 
 if __name__ == "__main__":

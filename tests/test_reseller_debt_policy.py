@@ -165,6 +165,138 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(saved["status"], "suspended")
         self.assertIsNone(saved["suspended_reason"])
 
+    def test_cleanup_candidates_include_only_configs_after_last_payment(self):
+        candidates = self.reseller.get_banned_reseller_cleanup_candidates({
+            "status": "banned",
+            "last_payment_at": "2026-06-01 12:00:00",
+            "configs": [
+                {"username": "old", "timestamp": "2026-06-01 11:59:59", "price": 2},
+                {"username": "new", "timestamp": "2026-06-01 12:00:01", "price": 3},
+                {"username": "", "timestamp": "2026-06-01 12:00:02", "price": 4},
+                {"timestamp": "2026-06-01 12:00:03", "price": 5},
+            ],
+        })
+
+        self.assertEqual([candidate["username"] for candidate in candidates], ["new"])
+        self.assertEqual(candidates[0]["config_index"], 1)
+
+    def test_cleanup_candidates_without_payment_include_all_reseller_configs(self):
+        candidates = self.reseller.get_banned_reseller_cleanup_candidates({
+            "status": "banned",
+            "last_payment_at": None,
+            "configs": [
+                {"username": "first", "timestamp": "2026-05-01 00:00:00", "price": 2},
+                {"username": "second", "timestamp": "2026-06-01 00:00:00", "price": 3},
+            ],
+        })
+
+        self.assertEqual([candidate["username"] for candidate in candidates], ["first", "second"])
+
+    def test_cleanup_deletes_success_and_missing_records_and_keeps_failures(self):
+        class FakeClient:
+            def __init__(self, delete_result):
+                self.delete_result = delete_result
+                self.deleted = []
+
+            def delete_user(self, username):
+                self.deleted.append(username)
+                return self.delete_result
+
+        class FakeMultiAPI:
+            def __init__(self):
+                self.success_client = FakeClient({"ok": True})
+                self.failed_client = FakeClient(None)
+
+            def find_user(self, username, preferred_server_id=None):
+                if username == "deleted":
+                    return self.success_client, {"username": username}
+                if username == "failed":
+                    return self.failed_client, {"username": username}
+                return None, None
+
+        self.write_resellers({
+            "1988": {
+                "status": "banned",
+                "debt": 15.0,
+                "last_payment_at": "2026-06-01 12:00:00",
+                "configs": [
+                    {"username": "paid", "timestamp": "2026-06-01 11:00:00", "price": 4.0},
+                    {"username": "deleted", "timestamp": "2026-06-01 13:00:00", "price": 5.0},
+                    {"username": "missing", "timestamp": "2026-06-01 14:00:00", "price": 3.0},
+                    {"username": "failed", "timestamp": "2026-06-01 15:00:00", "price": 2.0},
+                ],
+            }
+        })
+
+        success, result = self.reseller.cleanup_banned_reseller_users("1988", FakeMultiAPI())
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual([item["username"] for item in result["deleted"]], ["deleted"])
+        self.assertEqual([item["username"] for item in result["already_missing"]], ["missing"])
+        self.assertEqual([item["username"] for item in result["failed"]], ["failed"])
+        self.assertEqual([config["username"] for config in saved["configs"]], ["paid", "failed"])
+        self.assertEqual(saved["debt"], 7.0)
+        self.assertEqual(result["remaining_debt"], 7.0)
+
+    def test_cleanup_reduces_debt_no_below_zero(self):
+        class MissingMultiAPI:
+            def find_user(self, username, preferred_server_id=None):
+                return None, None
+
+        self.write_resellers({
+            "1988": {
+                "status": "banned",
+                "debt": 2.0,
+                "last_payment_at": None,
+                "configs": [
+                    {"username": "one", "timestamp": "2026-06-01 13:00:00", "price": 5.0},
+                ],
+            }
+        })
+
+        success, result = self.reseller.cleanup_banned_reseller_users("1988", MissingMultiAPI())
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual(saved["debt"], 0.0)
+        self.assertEqual(saved["configs"], [])
+        self.assertEqual(result["remaining_debt"], 0.0)
+
+    def test_cleanup_keeps_failed_config_value_in_debt(self):
+        class FakeClient:
+            def __init__(self, delete_result):
+                self.delete_result = delete_result
+
+            def delete_user(self, username):
+                return self.delete_result
+
+        class FakeMultiAPI:
+            def find_user(self, username, preferred_server_id=None):
+                if username == "removed":
+                    return FakeClient({"ok": True}), {"username": username}
+                return FakeClient(None), {"username": username}
+
+        self.write_resellers({
+            "1988": {
+                "status": "banned",
+                "debt": 4.0,
+                "last_payment_at": None,
+                "configs": [
+                    {"username": "removed", "timestamp": "2026-06-01 13:00:00", "price": 5.0},
+                    {"username": "failed", "timestamp": "2026-06-01 14:00:00", "price": 2.0},
+                ],
+            }
+        })
+
+        success, result = self.reseller.cleanup_banned_reseller_users("1988", FakeMultiAPI())
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual([config["username"] for config in saved["configs"]], ["failed"])
+        self.assertEqual(saved["debt"], 2.0)
+        self.assertEqual(result["remaining_debt"], 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

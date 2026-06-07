@@ -199,6 +199,8 @@ def install_common_stubs(bot, payment_records):
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.get_banned_reseller_cleanup_candidates = lambda reseller_data: []
+    reseller_stub.cleanup_banned_reseller_users = lambda user_id, multi_api: (True, {})
     sys.modules["utils.reseller"] = reseller_stub
 
     currency_stub = types.ModuleType("utils.currency_format")

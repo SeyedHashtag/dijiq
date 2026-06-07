@@ -283,6 +283,128 @@ def delete_reseller(user_id):
         return True
 
 
+def get_banned_reseller_cleanup_candidates(reseller_data):
+    """Return reseller-created customer configs eligible for banned cleanup."""
+    data = _ensure_reseller_defaults(reseller_data or {})
+    configs = data.get('configs', [])
+    if not isinstance(configs, list):
+        configs = []
+
+    last_payment_at = data.get('last_payment_at')
+    last_payment_dt = _parse_time(last_payment_at)
+    candidates = []
+
+    for index, config in enumerate(configs):
+        if not isinstance(config, dict):
+            continue
+        username = str(config.get('username') or '').strip()
+        if not username:
+            continue
+        timestamp = config.get('timestamp')
+        timestamp_dt = _parse_time(timestamp)
+        if last_payment_dt and (not timestamp_dt or timestamp_dt <= last_payment_dt):
+            continue
+        candidates.append({
+            'config_index': index,
+            'username': username,
+            'customer_name': str(config.get('customer_name') or '').strip(),
+            'timestamp': timestamp or 'N/A',
+            'price': _safe_float(config.get('price', 0.0)),
+            'server_id': config.get('server_id'),
+        })
+
+    return candidates
+
+
+def cleanup_banned_reseller_users(user_id, multi_api):
+    """Delete unpaid customer configs for a banned reseller and update accounting."""
+    user_id = str(user_id)
+    with reseller_lock:
+        try:
+            if os.path.exists(RESELLERS_FILE):
+                with open(RESELLERS_FILE, 'r') as f:
+                    resellers = json.load(f)
+            else:
+                return False, {'reason': 'Reseller not found'}
+        except Exception:
+            return False, {'reason': 'Unable to load resellers'}
+
+        if user_id not in resellers:
+            return False, {'reason': 'Reseller not found'}
+
+        current = _ensure_reseller_defaults(resellers[user_id])
+        if current.get('status') != 'banned':
+            return False, {'reason': 'Cleanup is only available for banned resellers'}
+
+        candidates = get_banned_reseller_cleanup_candidates(current)
+        if not candidates:
+            return True, {
+                'deleted': [],
+                'already_missing': [],
+                'failed': [],
+                'removed_count': 0,
+                'removed_value': 0.0,
+                'remaining_debt': _safe_float(current.get('debt', 0.0)),
+                'remaining_configs': len(current.get('configs', []) or []),
+                'last_payment_at': current.get('last_payment_at'),
+            }
+
+        deleted = []
+        already_missing = []
+        failed = []
+        removed_indexes = set()
+
+        for candidate in candidates:
+            username = candidate['username']
+            api_client, live_user = multi_api.find_user(username, preferred_server_id=candidate.get('server_id'))
+            if api_client is None or live_user is None:
+                already_missing.append(candidate)
+                removed_indexes.add(candidate['config_index'])
+                continue
+
+            result = api_client.delete_user(username)
+            if result is None:
+                failed.append(candidate)
+                continue
+
+            deleted.append(candidate)
+            removed_indexes.add(candidate['config_index'])
+
+        removed_value = sum(
+            _safe_float(candidate.get('price', 0.0))
+            for candidate in candidates
+            if candidate.get('config_index') in removed_indexes
+        )
+        failed_value = sum(_safe_float(candidate.get('price', 0.0)) for candidate in failed)
+
+        configs = current.get('configs', [])
+        if not isinstance(configs, list):
+            configs = []
+        current['configs'] = [
+            config
+            for index, config in enumerate(configs)
+            if index not in removed_indexes
+        ]
+        current['debt'] = max(failed_value, _safe_float(current.get('debt', 0.0)) - removed_value)
+        current = _ensure_reseller_defaults(current)
+        resellers[user_id] = current
+
+        os.makedirs(os.path.dirname(RESELLERS_FILE), exist_ok=True)
+        with open(RESELLERS_FILE, 'w') as f:
+            json.dump(resellers, f, indent=4)
+
+        return True, {
+            'deleted': deleted,
+            'already_missing': already_missing,
+            'failed': failed,
+            'removed_count': len(removed_indexes),
+            'removed_value': removed_value,
+            'remaining_debt': _safe_float(current.get('debt', 0.0)),
+            'remaining_configs': len(current.get('configs', []) or []),
+            'last_payment_at': current.get('last_payment_at'),
+        }
+
+
 def apply_reseller_payment(user_id, amount):
     user_id = str(user_id)
     with reseller_lock:

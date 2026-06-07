@@ -15,6 +15,7 @@ from utils.reseller import (
     get_reseller_data, update_reseller_status, add_reseller_debt,
     get_all_resellers, set_reseller_debt, DEBT_WARNING_THRESHOLD,
     SUSPENDED_REASON_UNBAN_GRACE, get_reseller_unlock_amount,
+    get_banned_reseller_cleanup_candidates, cleanup_banned_reseller_users,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -1250,6 +1251,7 @@ ADMIN_RESELLER_MAX_DEBT = 100000.0
 ADMIN_RESELLER_DEFAULT_LIST_STATUS = "pending"
 ADMIN_RESELLER_DEBT_INPUT_STATE = {}
 ADMIN_RESELLER_VIEW_CONTEXT = {}
+ADMIN_RESELLER_CLEANUP_MAX_ITEMS = 45
 
 
 def _admin_status_icon(status):
@@ -1561,6 +1563,12 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
                 callback_data=f"admin_reseller_ui:action:{reseller_id}:unban",
             )
         )
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_cleanup_unpaid"),
+                callback_data=f"admin_reseller_ui:cleanup:{reseller_id}:{return_status}:{return_page}",
+            )
+        )
     if status == "suspended":
         markup.add(
             types.InlineKeyboardButton(
@@ -1632,6 +1640,143 @@ def _render_admin_reseller_detail(call, reseller_id, return_status, return_page)
             message_id=call.message.message_id,
             reply_markup=detail_markup,
         )
+
+
+def _cleanup_no_payment_text(language):
+    return get_message_text(language, "admin_cleanup_no_payment") or "No successful payment"
+
+
+def _cleanup_item_line(candidate):
+    username = _escape_markdown(candidate.get("username", "N/A"))
+    customer_name = str(candidate.get("customer_name") or "").strip()
+    customer_display = f" ({_escape_markdown(customer_name)})" if customer_name else ""
+    timestamp = _escape_markdown(candidate.get("timestamp") or "N/A")
+    price = format_usd_amount(_safe_float(candidate.get("price", 0.0)))
+    return f"- `{username}`{customer_display} | {timestamp} | ${price}"
+
+
+def _cleanup_item_lines(candidates):
+    visible = list(candidates[:ADMIN_RESELLER_CLEANUP_MAX_ITEMS])
+    lines = [_cleanup_item_line(candidate) for candidate in visible]
+    omitted = max(0, len(candidates) - len(visible))
+    if omitted:
+        lines.append(f"... and {omitted} more")
+    return "\n".join(lines)
+
+
+def _build_admin_cleanup_preview_text(language, reseller_id, reseller_data, candidates):
+    last_payment_at = (reseller_data or {}).get("last_payment_at") or _cleanup_no_payment_text(language)
+    total_value = sum(_safe_float(candidate.get("price", 0.0)) for candidate in candidates)
+
+    if not candidates:
+        return (
+            f"{get_message_text(language, 'admin_cleanup_preview_title')}\n\n"
+            f"Reseller: `{_escape_markdown(reseller_id)}`\n"
+            f"Last successful payment: `{_escape_markdown(last_payment_at)}`\n\n"
+            f"{get_message_text(language, 'admin_cleanup_no_candidates')}"
+        )
+
+    return (
+        f"{get_message_text(language, 'admin_cleanup_preview_title')}\n\n"
+        f"Reseller: `{_escape_markdown(reseller_id)}`\n"
+        f"Last successful payment: `{_escape_markdown(last_payment_at)}`\n"
+        f"Matched users: *{len(candidates)}*\n"
+        f"Total matched value: *${format_usd_amount(total_value)}*\n\n"
+        f"*Users to delete:*\n{_cleanup_item_lines(candidates)}\n\n"
+        f"{get_message_text(language, 'admin_cleanup_confirm_warning')}"
+    )
+
+
+def _build_admin_cleanup_result_text(language, reseller_id, result):
+    def _section(title, items):
+        if not items:
+            return f"*{title}:* 0"
+        return f"*{title}:* {len(items)}\n{_cleanup_item_lines(items)}"
+
+    deleted = result.get("deleted", [])
+    already_missing = result.get("already_missing", [])
+    failed = result.get("failed", [])
+
+    return (
+        f"{get_message_text(language, 'admin_cleanup_result_title')}\n\n"
+        f"Reseller: `{_escape_markdown(reseller_id)}`\n"
+        f"Removed records: *{result.get('removed_count', 0)}*\n"
+        f"Removed value: *${format_usd_amount(result.get('removed_value', 0.0))}*\n"
+        f"Remaining configs: *{result.get('remaining_configs', 0)}*\n"
+        f"Remaining debt: *${format_usd_amount(result.get('remaining_debt', 0.0))}*\n\n"
+        f"{_section('Deleted from VPN', deleted)}\n\n"
+        f"{_section('Already missing, record removed', already_missing)}\n\n"
+        f"{_section('Failed, record kept', failed)}"
+    )
+
+
+def _render_admin_reseller_cleanup_preview(call, reseller_id, return_status, return_page):
+    language = get_user_language(call.from_user.id)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+        _render_admin_reseller_list(call.message.chat.id, call.message.message_id, call.from_user.id, return_status, return_page)
+        return
+    if reseller_data.get("status") != "banned":
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_cleanup_banned_only"), show_alert=True)
+        _render_admin_reseller_detail(call, reseller_id, return_status, return_page)
+        return
+
+    candidates = get_banned_reseller_cleanup_candidates(reseller_data)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    if candidates:
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_cleanup_confirm_delete"),
+                callback_data=f"admin_reseller_ui:cleanupconfirm:{reseller_id}:{return_status}:{return_page}",
+            ),
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_debt_cancel"),
+                callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+            ),
+        )
+    else:
+        markup.add(
+            types.InlineKeyboardButton(
+                get_message_text(language, "admin_action_back_to_detail"),
+                callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+            )
+        )
+
+    bot.edit_message_text(
+        _build_admin_cleanup_preview_text(language, reseller_id, reseller_data, candidates),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id)
+
+
+def _render_admin_reseller_cleanup_result(call, reseller_id, return_status, return_page):
+    language = get_user_language(call.from_user.id)
+    multi_api = MultiServerAPI()
+    success, result = cleanup_banned_reseller_users(reseller_id, multi_api)
+    if not success:
+        bot.answer_callback_query(call.id, result.get("reason", get_message_text(language, "admin_invalid_action")), show_alert=True)
+        _render_admin_reseller_detail(call, reseller_id, return_status, return_page)
+        return
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_action_back_to_detail"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{return_status}:{return_page}",
+        )
+    )
+    bot.edit_message_text(
+        _build_admin_cleanup_result_text(language, reseller_id, result),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id)
 
 
 def _render_admin_debt_adjust(call, reseller_id, return_status, return_page):
@@ -2022,6 +2167,34 @@ def handle_admin_reseller_ui(call):
         set_reseller_debt(reseller_id, _normalize_debt_amount(new_amount))
         context = _admin_view_context(call.from_user.id)
         _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
+        return
+
+    if action == "cleanup":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _render_admin_reseller_cleanup_preview(call, reseller_id, return_status, return_page)
+        return
+
+    if action == "cleanupconfirm":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        _render_admin_reseller_cleanup_result(call, reseller_id, return_status, return_page)
         return
 
     if action == "delete":
