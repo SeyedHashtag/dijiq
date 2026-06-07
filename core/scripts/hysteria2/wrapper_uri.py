@@ -41,7 +41,9 @@ def generate_uri(username: str, auth_password: str, ip: str, port: str,
     query_params = [f"{k}={v}" for k, v in uri_params.items() if v is not None and v != '']
     query_string = "&".join(query_params)
     
-    return f"{uri_base}?{query_string}#{fragment_tag}"
+    if query_string:
+        return f"{uri_base}?{query_string}#{fragment_tag}"
+    return f"{uri_base}#{fragment_tag}"
 
 def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
     config = load_json_file(CONFIG_FILE)
@@ -65,7 +67,9 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
     default_pin = tls_config.get("pinSHA256")
     default_insecure = tls_config.get("insecure", True)
     
-    base_uri_params = {"insecure": "1" if default_insecure else "0"}
+    base_uri_params = {}
+    if not default_insecure:
+        base_uri_params["insecure"] = "0"
     if default_sni: base_uri_params["sni"] = default_sni
     if default_obfs:
         base_uri_params["obfs"] = "salamander"
@@ -106,7 +110,9 @@ def process_users(target_usernames: List[str]) -> List[Dict[str, Any]]:
             node_pin = node.get("pinSHA256", default_pin)
             node_insecure = node.get("insecure", default_insecure)
             
-            node_params = {"insecure": "1" if node_insecure else "0"}
+            node_params = {}
+            if not node_insecure:
+                node_params["insecure"] = "0"
             if node_sni: node_params["sni"] = node_sni
             if node_obfs:
                 node_params["obfs"] = "salamander"

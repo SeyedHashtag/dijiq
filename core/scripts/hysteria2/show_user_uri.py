@@ -82,10 +82,13 @@ def generate_uri(username: str, auth_password: str, ip: str, port: str,
     if sni:
         params.append(f"sni={sni}")
     
-    params.append(f"insecure={'1' if insecure else '0'}")
+    if not insecure:
+        params.append("insecure=0")
     
     query_string = "&".join(params)
-    return f"{uri_base}?{query_string}#{fragment_tag}"
+    if query_string:
+        return f"{uri_base}?{query_string}#{fragment_tag}"
+    return f"{uri_base}#{fragment_tag}"
 
 def generate_qr_code(uri: str) -> List[str]:
     try:
@@ -130,10 +133,6 @@ def show_uri(args: argparse.Namespace) -> None:
         print("\033[0;31mError:\033[0m Database connection failed.")
         return
 
-    # if not is_service_active("hysteria-server.service"):
-    #     print("\033[0;31mError:\033[0m Hysteria2 is not active.")
-    #     return
-    
     try:
         with open(CONFIG_FILE, 'r') as f:
             config = json.load(f)
