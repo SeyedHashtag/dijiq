@@ -1,3 +1,10 @@
+## v1.13.15
+✨ Add referral payout management with admin eligibility checks and status tracking
+✨ Add referral withdrawal request review with admin confirmation messages
+✨ Add cleanup tools for banned reseller accounts and related customer deletion
+✨ Improve reseller trust-limit handling and debt/unlock messaging
+✅ Add tests for referral payouts, reseller cleanup, trust limits, and related payment flows
+
 ## v1.13.14
 ✨ Add reseller unban grace-period handling with automatic re-ban after the grace deadline
 ✨ Add an admin suspend action for approved resellers
