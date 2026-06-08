@@ -43,7 +43,8 @@ jobs:
              "SECURITY.md" \
              "changelog" \
              "core/scripts/auth/go.*" \
-             "core/scripts/auth/user_auth.go"
+             "core/scripts/auth/user_auth.go" \
+             ".vscode/*"
         rm core/scripts/auth/user_auth
         echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
 
@@ -63,7 +64,8 @@ jobs:
              "SECURITY.md" \
              "changelog" \
              "core/scripts/auth/go.*" \
-             "core/scripts/auth/user_auth.go"
+             "core/scripts/auth/user_auth.go" \
+             ".vscode/*"
         rm core/scripts/auth/user_auth
         echo "zip_name=$zip_name" >> $GITHUB_OUTPUT
 
