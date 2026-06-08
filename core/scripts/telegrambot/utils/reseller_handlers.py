@@ -17,6 +17,7 @@ from utils.reseller import (
     SUSPENDED_REASON_UNBAN_GRACE, get_reseller_unlock_amount,
     get_banned_reseller_cleanup_candidates, cleanup_banned_reseller_users,
     can_reseller_add_debt, get_reseller_total_paid, get_reseller_trust_limit,
+    apply_reseller_payment, validate_reseller_manual_payment_amount,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -1850,6 +1851,12 @@ def _render_admin_debt_adjust(call, reseller_id, return_status, return_page):
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_manual_payment_button"),
+            callback_data=f"admin_reseller_ui:manualpay:{reseller_id}:{return_status}:{return_page}",
+        )
+    )
+    markup.add(
         types.InlineKeyboardButton(get_message_text(language, "admin_debt_set_zero"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:set:0"),
         types.InlineKeyboardButton(get_message_text(language, "admin_debt_plus_five"), callback_data=f"admin_reseller_ui:debtquick:{reseller_id}:add:5"),
     )
@@ -1927,6 +1934,117 @@ def _render_admin_debt_confirm(call, reseller_id, new_amount):
         message_id=call.message.message_id,
         reply_markup=markup,
     )
+
+
+def _manual_payment_record_id(reseller_id):
+    return f"manual-settlement-{reseller_id}-{uuid.uuid4()}"
+
+
+def _create_manual_payment_audit_record(reseller_id, admin_id, amount, notify_user):
+    payment_id = _manual_payment_record_id(reseller_id)
+    add_payment_record(payment_id, {
+        "user_id": int(reseller_id) if str(reseller_id).isdigit() else reseller_id,
+        "plan_gb": "Settlement",
+        "days": 0,
+        "payment_id": payment_id,
+        "status": "completed",
+        "type": "settlement",
+        "payment_method": "Manual Admin",
+        "price": amount,
+        "settlement_amount": amount,
+        "manual_recorded_by": int(admin_id),
+        "manual_notify_user": bool(notify_user),
+    })
+    return payment_id
+
+
+def _send_manual_payment_confirmation(chat_id, admin_id, reseller_id, amount):
+    language = get_user_language(admin_id)
+    context = _admin_view_context(admin_id)
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        bot.send_message(chat_id, get_message_text(language, "admin_reseller_not_found"))
+        return
+
+    current_debt = _safe_float(reseller_data.get("debt", 0.0))
+    valid, normalized, reason = validate_reseller_manual_payment_amount(amount, current_debt)
+    if not valid:
+        if reason == "over_debt":
+            bot.send_message(
+                chat_id,
+                get_message_text(language, "admin_manual_payment_over_debt").format(
+                    current_debt=format_usd_amount(current_debt)
+                ),
+            )
+        else:
+            bot.send_message(chat_id, get_message_text(language, "admin_manual_payment_invalid"))
+        return
+
+    remaining_debt = max(0.0, round(current_debt - normalized, 2))
+    msg = get_message_text(language, "admin_manual_payment_confirm").format(
+        user_id=reseller_id,
+        amount=format_usd_amount(normalized),
+        current_debt=format_usd_amount(current_debt),
+        remaining_debt=format_usd_amount(remaining_debt),
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_manual_payment_confirm_notify"),
+            callback_data=f"admin_reseller_ui:manualpayconfirm:{reseller_id}:{normalized:.2f}:notify",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_manual_payment_confirm_silent"),
+            callback_data=f"admin_reseller_ui:manualpayconfirm:{reseller_id}:{normalized:.2f}:silent",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_cancel"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{context['return_status']}:{context['return_page']}",
+        ),
+    )
+    bot.send_message(chat_id, msg, reply_markup=markup)
+
+
+@bot.message_handler(func=lambda message: message.from_user.id in ADMIN_RESELLER_DEBT_INPUT_STATE and ADMIN_RESELLER_DEBT_INPUT_STATE[message.from_user.id].get("state") == "waiting_manual_payment")
+def handle_admin_manual_payment_input(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    language = get_user_language(message.from_user.id)
+    state = ADMIN_RESELLER_DEBT_INPUT_STATE.get(message.from_user.id) or {}
+    reseller_id = state.get("reseller_id")
+    if not reseller_id:
+        ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+        return
+
+    try:
+        amount = float((message.text or "").strip())
+    except ValueError:
+        bot.reply_to(message, get_message_text(language, "admin_manual_payment_invalid"))
+        return
+
+    reseller_data = get_reseller_data(reseller_id)
+    if not reseller_data:
+        ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+        bot.reply_to(message, get_message_text(language, "admin_reseller_not_found"))
+        return
+
+    current_debt = _safe_float(reseller_data.get("debt", 0.0))
+    valid, normalized, reason = validate_reseller_manual_payment_amount(amount, current_debt)
+    if not valid:
+        if reason == "over_debt":
+            bot.reply_to(
+                message,
+                get_message_text(language, "admin_manual_payment_over_debt").format(
+                    current_debt=format_usd_amount(current_debt)
+                ),
+            )
+        else:
+            bot.reply_to(message, get_message_text(language, "admin_manual_payment_invalid"))
+        return
+
+    ADMIN_RESELLER_DEBT_INPUT_STATE.pop(message.from_user.id, None)
+    _send_manual_payment_confirmation(message.chat.id, message.from_user.id, reseller_id, normalized)
 
 
 @bot.message_handler(func=lambda message: message.from_user.id in ADMIN_RESELLER_DEBT_INPUT_STATE and ADMIN_RESELLER_DEBT_INPUT_STATE[message.from_user.id].get("state") == "waiting_custom_debt")
@@ -2132,6 +2250,112 @@ def handle_admin_reseller_ui(call):
             bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
             return
         _render_admin_debt_adjust(call, reseller_id, return_status, return_page)
+        return
+
+    if action == "manualpay":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        return_status = parts[3]
+        try:
+            return_page = int(parts[4])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            return
+
+        current_debt = _safe_float(reseller_data.get("debt", 0.0))
+        if current_debt <= 0:
+            bot.answer_callback_query(call.id, get_message_text(language, "debt_cleared"), show_alert=True)
+            return
+
+        _set_admin_view_context(call.from_user.id, return_status, return_page)
+        ADMIN_RESELLER_DEBT_INPUT_STATE[call.from_user.id] = {
+            "state": "waiting_manual_payment",
+            "reseller_id": reseller_id,
+            "return_status": return_status,
+            "return_page": return_page,
+        }
+        bot.send_message(
+            call.message.chat.id,
+            get_message_text(language, "admin_manual_payment_prompt").format(
+                user_id=reseller_id,
+                current_debt=format_usd_amount(current_debt),
+            ),
+        )
+        bot.answer_callback_query(call.id)
+        return
+
+    if action == "manualpayconfirm":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        try:
+            amount = float(parts[3])
+        except ValueError:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        notify_user = parts[4] == "notify"
+        if parts[4] not in {"notify", "silent"}:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+
+        reseller_data = get_reseller_data(reseller_id)
+        if not reseller_data:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            return
+
+        current_debt = _safe_float(reseller_data.get("debt", 0.0))
+        valid, normalized, reason = validate_reseller_manual_payment_amount(amount, current_debt)
+        if not valid:
+            if reason == "over_debt":
+                bot.answer_callback_query(
+                    call.id,
+                    get_message_text(language, "admin_manual_payment_over_debt").format(
+                        current_debt=format_usd_amount(current_debt)
+                    ),
+                    show_alert=True,
+                )
+            else:
+                bot.answer_callback_query(call.id, get_message_text(language, "admin_manual_payment_invalid"), show_alert=True)
+            return
+
+        success, new_debt = apply_reseller_payment(reseller_id, normalized)
+        if not success:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            return
+
+        payment_id = _create_manual_payment_audit_record(reseller_id, call.from_user.id, normalized, notify_user)
+        if notify_user and str(reseller_id).isdigit():
+            try:
+                user_language = get_user_language(int(reseller_id))
+                bot.send_message(
+                    int(reseller_id),
+                    get_message_text(user_language, "reseller_manual_payment_recorded").format(
+                        amount=format_usd_amount(normalized),
+                        remaining_debt=format_usd_amount(new_debt),
+                    ),
+                )
+            except Exception:
+                pass
+
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "admin_manual_payment_success").format(
+                amount=format_usd_amount(normalized),
+                remaining_debt=format_usd_amount(new_debt),
+                payment_id=payment_id,
+            ),
+            show_alert=True,
+        )
+        context = _admin_view_context(call.from_user.id)
+        _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
         return
 
     if action == "debtquick":

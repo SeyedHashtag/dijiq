@@ -107,6 +107,22 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(saved["total_paid"], 8.0)
         self.assertEqual(saved["trust_limit"], 5.0)
 
+    def test_manual_payment_validation_rejects_overpayment(self):
+        valid, normalized, reason = self.reseller.validate_reseller_manual_payment_amount(20.0, 8.0)
+
+        self.assertFalse(valid)
+        self.assertEqual(normalized, 20.0)
+        self.assertEqual(reason, "over_debt")
+
+    def test_manual_payment_validation_rejects_non_positive_amounts(self):
+        for amount in (0.0, -1.0):
+            with self.subTest(amount=amount):
+                valid, normalized, reason = self.reseller.validate_reseller_manual_payment_amount(amount, 8.0)
+
+                self.assertFalse(valid)
+                self.assertEqual(normalized, amount)
+                self.assertEqual(reason, "invalid")
+
     def test_can_reseller_add_debt_uses_current_trust_limit(self):
         reseller_data = {
             "debt": 4.0,
@@ -234,6 +250,9 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(new_debt, 0.0)
         self.assertEqual(saved["status"], "approved")
+        self.assertEqual(saved["debt"], 0.0)
+        self.assertIsNone(saved["debt_since"])
+        self.assertIsNotNone(saved["last_payment_at"])
         self.assertIsNone(saved["suspended_reason"])
 
     def test_manual_suspension_is_not_auto_restored_when_debt_is_cleared(self):

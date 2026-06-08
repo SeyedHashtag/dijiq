@@ -103,6 +103,20 @@ def get_reseller_unlock_amount(debt):
     return max(0.0, _safe_float(debt, 0.0))
 
 
+def validate_reseller_manual_payment_amount(amount, current_debt):
+    try:
+        amount_value = round(float(amount), 2)
+    except (TypeError, ValueError):
+        return False, 0.0, 'invalid'
+
+    debt_value = round(max(0.0, _safe_float(current_debt, 0.0)), 2)
+    if amount_value <= 0:
+        return False, amount_value, 'invalid'
+    if amount_value > debt_value:
+        return False, amount_value, 'over_debt'
+    return True, amount_value, None
+
+
 def _ensure_reseller_defaults(record):
     data = dict(record or {})
     data['status'] = data.get('status', 'pending')

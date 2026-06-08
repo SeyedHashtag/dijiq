@@ -214,6 +214,21 @@ def install_common_stubs(bot, payment_records):
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.apply_reseller_payment = lambda user_id, amount: (True, max(0.0, 100.0 - float(amount or 0.0)))
+
+    def validate_reseller_manual_payment_amount(amount, current_debt):
+        try:
+            amount_value = round(float(amount), 2)
+        except (TypeError, ValueError):
+            return False, 0.0, "invalid"
+        debt_value = round(max(0.0, float(current_debt or 0.0)), 2)
+        if amount_value <= 0:
+            return False, amount_value, "invalid"
+        if amount_value > debt_value:
+            return False, amount_value, "over_debt"
+        return True, amount_value, None
+
+    reseller_stub.validate_reseller_manual_payment_amount = validate_reseller_manual_payment_amount
     reseller_stub.get_banned_reseller_cleanup_candidates = lambda reseller_data: []
     reseller_stub.cleanup_banned_reseller_users = lambda user_id, multi_api: (True, {})
     sys.modules["utils.reseller"] = reseller_stub

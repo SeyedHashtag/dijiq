@@ -132,6 +132,21 @@ def install_stubs():
         reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)),
         max(0.0, reseller_stub.get_reseller_trust_limit(reseller_stub.get_reseller_total_paid(data)) - float(data.get("debt", 0.0))),
     )
+    reseller_stub.apply_reseller_payment = lambda user_id, amount: (True, 0.0)
+
+    def validate_reseller_manual_payment_amount(amount, current_debt):
+        try:
+            amount_value = round(float(amount), 2)
+        except (TypeError, ValueError):
+            return False, 0.0, "invalid"
+        debt_value = round(max(0.0, float(current_debt or 0.0)), 2)
+        if amount_value <= 0:
+            return False, amount_value, "invalid"
+        if amount_value > debt_value:
+            return False, amount_value, "over_debt"
+        return True, amount_value, None
+
+    reseller_stub.validate_reseller_manual_payment_amount = validate_reseller_manual_payment_amount
     reseller_stub.DEBT_WARNING_THRESHOLD = 20.0
     reseller_stub.SUSPENDED_REASON_UNBAN_GRACE = "unban_grace"
     sys.modules["utils.reseller"] = reseller_stub
