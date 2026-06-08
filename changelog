@@ -1,36 +1,31 @@
-# 🔖 ** release(2.5.1): Telegram UX improvements, web panel access & outbound enhancements 🚀 **
+# 🔖 ** release(2.5.2): Packaging, security fixes & dependency upgrades 🔐 **
 
-*Released: 2026-01-02*
+*Released: 2026-06-08*
 
-## ✨ New Features
+## ✨ Changes
 
-* 🤖 **Telegram Bot**: Added settings menu 
-* 🌐 **Web Panel URL**:
+* 🧰 **CI / Packaging**: Exclude `.vscode` directory from GitHub Actions release packages to avoid bundling editor settings.
 
-  * Added service status check before retrieving web panel URL
-  * New handlers to retrieve and display web panel URL
-* 🖥️ **CLI**: Added option to display *only* the web panel URL
-* 🔀 **Outbounds**: Introduced new `select` outbound type(SingBox)
-* 👥 **Users**: Added option to display up to **1000 users** in selection dropdown
-* ⏳ **Expiration**: Added validation for expiration days and improved UI
+* 🔒 **Security / Restore**: Added path traversal and unauthorized file checks in restore functionality to prevent arbitrary file access.
+Special thanks to @HEXER365 for responsible disclosure 🙏
 
-### 🐛 Fixes
+* ♻️ **Refactor**: Omit `insecure` query parameter from generated URIs when its value is `True`.
 
-* 🛡️ Prevent enabling **Masquerade** when **OBFS** is active
-* ⚙️ Conditionally generate **sing-box OBFS** configuration(SingBox)
+## 🔧 Dependencies
 
-### ♻️ Refactors & Improvements
+Upgraded a set of dependencies via dependabot and maintenance PRs, including notable bumps:
 
-* 🧭 Introduced settings submenu structure in Telegram bot
-* 🔗 Removed username from URI fragments
-* 💾 Streamlined upgrade backup process and removed geo data download
+- FastAPI → 0.136.3
+- aiohttp → 3.14.0
+- pytelegrambotapi → 4.34.0
+- python-multipart → 0.0.32
+- requests → 2.34.2
+- pydantic-settings → 2.14.1
+- pymongo → 4.17.0
+- pillow → 12.2.0
+- psutil → 7.2.2
+- certbot → 5.6.0
 
-### 🔧 Dependencies
+## 🐛 Fixes & Chores
 
-* ⬆️ **FastAPI** bumped to `0.128.0`
-* ⬆️ **psutil** bumped to `7.2.1`
-* ⬆️ **pillow** bumped to `12.1.0`
-
-### ❤️ Credits
-
-Special thanks to **@MiliAxe** and **@SeyedHashtag** for their valuable contributions 🙌
+* Various dependency bumps and housekeeping merges from dependabot.
