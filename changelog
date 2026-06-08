@@ -1,3 +1,10 @@
+## v1.13.16
+✨ Add admin tools to record manual reseller debt payments with optional user notification
+✨ Add manual settlement audit records for payments received outside the bot
+🐛 Validate manual reseller payment amounts to reject invalid values and overpayments
+🌐 Add Telegram bot messages for manual reseller payment prompts, confirmations, and notifications
+✅ Add tests for manual payment validation and cleared-debt restoration details
+
 ## v1.13.15
 ✨ Add referral payout management with admin eligibility checks and status tracking
 ✨ Add referral withdrawal request review with admin confirmation messages
