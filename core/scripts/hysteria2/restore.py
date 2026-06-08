@@ -27,6 +27,23 @@ def run_command(command, check=False):
         print(f"Stderr: {e.stderr}", file=sys.stderr)
         raise
 
+def safe_extract(zf, dest_dir):
+    dest_dir = os.path.realpath(dest_dir)
+    allowed_flat_files = {"ca.key", "ca.crt", "config.json", ".configs.env"}
+    allowed_prefix = "blitz_panel/"
+
+    for member in zf.infolist():
+        filename = member.filename
+
+        if filename not in allowed_flat_files and not filename.startswith(allowed_prefix):
+            raise ValueError(f"Unauthorized extraneous file detected: {filename}")
+
+        member_path = os.path.realpath(os.path.join(dest_dir, filename))
+        if os.path.commonpath([dest_dir, member_path]) != dest_dir:
+            raise ValueError(f"Path traversal detected in archive member: {filename}")
+            
+        zf.extract(member, dest_dir)
+
 def main():
     if len(sys.argv) < 2:
         print("Error: Backup file path is required.", file=sys.stderr)
@@ -49,9 +66,12 @@ def main():
 
             try:
                 with zipfile.ZipFile(backup_zip_file) as zf:
-                    zf.extractall(temp_dir)
+                    safe_extract(zf, temp_dir)
             except zipfile.BadZipFile:
                 print("Error: Invalid or corrupt ZIP file.", file=sys.stderr)
+                return 1
+            except ValueError as e:
+                print(f"Security Error: {e}", file=sys.stderr)
                 return 1
 
             dump_dir = temp_dir / DB_NAME

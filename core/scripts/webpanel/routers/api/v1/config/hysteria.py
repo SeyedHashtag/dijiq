@@ -166,8 +166,21 @@ async def restore_api(file: UploadFile = File(...)):
 
         with zipfile.ZipFile(temp_path, 'r') as zip_ref:
             namelist = zip_ref.namelist()
-            
             required_flat_files = {"ca.key", "ca.crt", "config.json", ".configs.env"}
+            db_dump_prefix = "blitz_panel/"
+            
+            for name in namelist:
+                if name.startswith('/') or '..' in name:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Invalid archive: Path traversal detected."
+                    )
+                if name not in required_flat_files and not name.startswith(db_dump_prefix):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid archive: Contains unauthorized extraneous file '{name}'."
+                    )
+            
             missing_files = required_flat_files - set(namelist)
             if missing_files:
                 raise HTTPException(
@@ -175,7 +188,6 @@ async def restore_api(file: UploadFile = File(...)):
                     detail=f"Backup is missing required configuration files: {', '.join(missing_files)}"
                 )
 
-            db_dump_prefix = "blitz_panel/"
             if not any(name.startswith(db_dump_prefix) for name in namelist):
                 raise HTTPException(
                     status_code=400, 
