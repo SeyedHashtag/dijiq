@@ -1,3 +1,9 @@
+## v1.13.17
+✨ Add automatic expired-user cleanup with renewal prompts and admin notifications
+✨ Integrate cleanup scheduling with purchase-plan flows so expired accounts are handled consistently
+🌐 Add Telegram bot messages for expired-account cleanup and renewal guidance
+✅ Add tests for expired cleanup selection, notifications, deletion handling, and renewal behavior
+
 ## v1.13.16
 ✨ Add admin tools to record manual reseller debt payments with optional user notification
 ✨ Add manual settlement audit records for payments received outside the bot
