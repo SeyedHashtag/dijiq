@@ -1369,5 +1369,11 @@ def check_pending_payments():
                     except Exception:
                         pass
 
+        try:
+            from utils.expired_cleanup import run_expired_user_cleanup
+            run_expired_user_cleanup(grace_hours=24)
+        except Exception as e:
+            print(f"Error in expired user cleanup: {e}")
+
     except Exception as e:
         print(f"Error in check_pending_payments: {e}")
