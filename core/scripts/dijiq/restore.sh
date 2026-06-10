@@ -58,6 +58,7 @@ telegram_state_files=(
     "core/scripts/telegrambot/checker_settlements.json"
     "core/scripts/telegrambot/traffic_alerts.json"
     "core/scripts/telegrambot/broadcast_failed_users.json"
+    "core/scripts/telegrambot/expired_user_cleanup.json"
 )
 
 for file in "${required_files[@]}"; do

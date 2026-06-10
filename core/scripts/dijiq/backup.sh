@@ -22,9 +22,17 @@ FILES_TO_BACKUP=(
     "/etc/dijiq/core/scripts/telegrambot/checker_settlements.json"
     "/etc/dijiq/core/scripts/telegrambot/traffic_alerts.json"
     "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
+    "/etc/dijiq/core/scripts/telegrambot/expired_user_cleanup.json"
 )
 
-zip -j "$BACKUP_FILE" "${FILES_TO_BACKUP[@]}" >/dev/null
+EXISTING_FILES=()
+for FILE in "${FILES_TO_BACKUP[@]}"; do
+    if [ -f "$FILE" ]; then
+        EXISTING_FILES+=("$FILE")
+    fi
+done
+
+zip -j "$BACKUP_FILE" "${EXISTING_FILES[@]}" >/dev/null
 
 if [ $? -eq 0 ]; then
     echo "Backup successfully created"

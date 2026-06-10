@@ -18,6 +18,7 @@ FILES=(
     "/etc/dijiq/core/scripts/telegrambot/checker_settlements.json"
     "/etc/dijiq/core/scripts/telegrambot/traffic_alerts.json"
     "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
+    "/etc/dijiq/core/scripts/telegrambot/expired_user_cleanup.json"
 )
 
 echo "Backing up and stopping all cron jobs"
@@ -26,8 +27,10 @@ crontab -r
 
 echo "Backing up files to $TEMP_DIR"
 for FILE in "${FILES[@]}"; do
-    mkdir -p "$TEMP_DIR/$(dirname "$FILE")"
-    cp "$FILE" "$TEMP_DIR/$FILE"
+    if [ -f "$FILE" ]; then
+        mkdir -p "$TEMP_DIR/$(dirname "$FILE")"
+        cp "$FILE" "$TEMP_DIR/$FILE"
+    fi
 done
 
 echo "Checking and renaming old systemd service files"
@@ -58,7 +61,10 @@ git clone https://github.com/SeyedHashtag/dijiq /etc/dijiq
 
 echo "Restoring backup files"
 for FILE in "${FILES[@]}"; do
-    cp "$TEMP_DIR/$FILE" "$FILE"
+    if [ -f "$TEMP_DIR/$FILE" ]; then
+        mkdir -p "$(dirname "$FILE")"
+        cp "$TEMP_DIR/$FILE" "$FILE"
+    fi
 done
 
 
