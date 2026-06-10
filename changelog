@@ -1,3 +1,7 @@
+## v1.13.22
+✨ Reuse user data from server discovery in cleanup phase to avoid redundant API lookups
+✅ Add tests for optimized server-cleanup lookup paths and API call tracking
+
 ## v1.13.21
 ✨ Run expired cleanup dashboard refreshes in the background so admin views render without blocking
 ✨ Show running, completed, and failed scan status in the expired cleanup dashboard
