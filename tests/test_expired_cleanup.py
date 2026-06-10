@@ -265,6 +265,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
         self.assertEqual(client.deleted, [])
+        self.assertEqual(client.get_user_calls, [])
         self.assertEqual(len(self.cleanup._test_bot.sent_messages), 1)
         self.assertEqual(state["s1:t101"]["cleanup_status"], "notified")
         self.assertEqual(saved_test["cleanup_status"], "notified")
@@ -354,7 +355,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
         self.assertEqual(saved_config["cleanup_last_state"]["status"], "expired")
 
-    def test_missing_user_notification_includes_not_found_state(self):
+    def test_bot_record_missing_from_vpn_is_ignored_without_notification(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
             "101": {"telegram_id": 101, "username": "missing101", "server_id": "s1"}
         })
@@ -366,9 +367,37 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
-        self.assertIn("State: not found on server", self.cleanup._test_bot.sent_messages[0][1])
-        self.assertIsNone(state["s1:missing101"]["last_state"])
+        self.assertEqual(self.cleanup._test_bot.sent_messages, [])
+        self.assertEqual(state, {})
+        self.assertNotIn("cleanup_status", saved_test)
+        self.assertNotIn("cleanup_delete_result", saved_test)
+        self.assertNotIn("cleanup_deleted_at", saved_test)
+        self.assertNotIn("cleanup_notified_at", saved_test)
         self.assertNotIn("cleanup_last_state", saved_test)
+
+    def test_non_expired_bot_record_does_not_trigger_per_user_vpn_lookup(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "missing101", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {
+            "pay1": {"status": "completed", "user_id": 202, "username": "missing202", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        client = FakeClient("s1", {
+            "active": {
+                "blocked": False,
+                "expiration_days": 30,
+                "upload_bytes": 0,
+                "download_bytes": 0,
+                "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+            }
+        })
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(client.get_users_calls, 1)
+        self.assertEqual(client.get_user_calls, [])
+        self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
 
     def test_deletes_after_grace_and_saves_last_state(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
@@ -455,17 +484,24 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(saved_test["cleanup_status"], "notified")
 
     def test_already_missing_after_grace_is_reported_with_null_last_state(self):
-        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
-            "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:t101": {
+                "username": "t101",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": None,
+            }
         })
-        self.write_json(self.cleanup.PAYMENTS_FILE, {})
-        self.write_json(self.cleanup.RESELLERS_FILE, {})
         client = FakeClient("s1", {})
 
-        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
         exported = self.cleanup.get_deleted_users_for_json(now=self.now + timedelta(hours=25))
+        self.assertEqual(self.cleanup._test_bot.sent_messages, [])
         self.assertEqual(exported[0]["delete_result"], "already_missing")
         self.assertIsNone(exported[0]["last_state"])
 

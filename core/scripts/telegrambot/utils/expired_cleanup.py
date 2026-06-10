@@ -575,6 +575,66 @@ def discover_cleanup_candidates():
     return list(deduped.values())
 
 
+def _server_candidate_match_sets(candidates):
+    usernames = set()
+    exact_keys = set()
+    exact_candidates = {}
+    username_candidates = {}
+    for candidate in candidates or []:
+        username = str(candidate.get('username') or '').strip()
+        if not username:
+            continue
+        username_key = username.lower()
+        usernames.add(username_key)
+        username_candidates.setdefault(username_key, []).append(candidate)
+        server_id = candidate.get('server_id')
+        if server_id:
+            key = _state_key(server_id, username).lower()
+            exact_keys.add(key)
+            exact_candidates[key] = candidate
+    return usernames, exact_keys, exact_candidates, username_candidates
+
+
+def _candidate_matches_server_candidates(candidate, usernames, exact_keys):
+    username = str(candidate.get('username') or '').strip()
+    if not username or username.lower() not in usernames:
+        return False
+    server_id = candidate.get('server_id')
+    if not server_id:
+        return True
+    return _state_key(server_id, username).lower() in exact_keys
+
+
+def discover_matching_cleanup_candidates(server_candidates):
+    usernames, exact_keys, exact_candidates, username_candidates = _server_candidate_match_sets(server_candidates)
+    if not usernames:
+        return []
+    matched = []
+    for candidate in discover_cleanup_candidates():
+        if not _candidate_matches_server_candidates(candidate, usernames, exact_keys):
+            continue
+
+        username = str(candidate.get('username') or '').strip()
+        server_id = candidate.get('server_id')
+        server_candidate = None
+        if server_id:
+            server_candidate = exact_candidates.get(_state_key(server_id, username).lower())
+        else:
+            username_matches = username_candidates.get(username.lower(), [])
+            if len(username_matches) == 1:
+                server_candidate = username_matches[0]
+
+        if server_candidate:
+            candidate = {
+                **candidate,
+                '_user_data': server_candidate.get('_user_data'),
+                '_lookup_status': server_candidate.get('_lookup_status'),
+                '_api_client': server_candidate.get('_api_client'),
+            }
+        matched.append(candidate)
+    return matched
+
+
 def discover_state_cleanup_candidates(state):
     candidates = []
     if not isinstance(state, dict):
@@ -797,10 +857,12 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             state = {}
 
         multi_api = multi_api or MultiServerAPI()
+        server_candidates = discover_server_cleanup_candidates(multi_api)
+        state_candidates = discover_state_cleanup_candidates(state)
         candidates = _merge_cleanup_candidates(
-            discover_cleanup_candidates(),
-            discover_state_cleanup_candidates(state),
-            discover_server_cleanup_candidates(multi_api),
+            discover_matching_cleanup_candidates(_merge_cleanup_candidates(server_candidates, state_candidates)),
+            state_candidates,
+            server_candidates,
         )
 
         for candidate in candidates:
@@ -834,6 +896,18 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                     _update_candidate_record(candidate, {'cleanup_status': 'renewed', 'cleanup_error': None})
                 continue
 
+            if lookup_status == 'missing':
+                _mark_deleted(
+                    state,
+                    key,
+                    candidate,
+                    'already_missing',
+                    now_value,
+                    last_state=entry.get('last_state') if entry else None,
+                    delete_result='already_missing',
+                )
+                continue
+
             if not entry:
                 last_state = capture_last_state(user_data, now=now) if lookup_status == 'found' else None
                 notification_error = _notify_candidate(
@@ -864,10 +938,6 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             if delete_after is None or now < delete_after:
                 entry['cleanup_status'] = 'notified'
                 entry['last_checked_at'] = now_value
-                continue
-
-            if lookup_status == 'missing':
-                _mark_deleted(state, key, candidate, 'already_missing', now_value, last_state=entry.get('last_state'), delete_result='already_missing')
                 continue
 
             last_state = entry.get('last_state') or capture_last_state(user_data, now=now)
