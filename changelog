@@ -1,3 +1,10 @@
+## v1.13.18
+✨ Add an admin Expired Cleanup dashboard with queue/history filters, pagination, refresh, and JSON exports
+✨ Add account-type and last-state summaries to expired cleanup notices for test, paid, reseller, and missing-server accounts
+🐛 Treat only blocked accounts as expired cleanup candidates so renewed or unblocked users are not deleted after the grace period
+🌐 Update expired cleanup notice text and remove renewal wording from cleanup warnings
+✅ Add tests for admin cleanup UI/export, reason codes, notification details, and renewed-user handling
+
 ## v1.13.17
 ✨ Add automatic expired-user cleanup with renewal prompts and admin notifications
 ✨ Integrate cleanup scheduling with purchase-plan flows so expired accounts are handled consistently
