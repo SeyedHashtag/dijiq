@@ -273,6 +273,49 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertIn("GB used: 3.0/5.0", self.cleanup._test_bot.sent_messages[0][1])
         self.assertNotIn("GB remaining:", self.cleanup._test_bot.sent_messages[0][1])
 
+    def test_server_only_expired_user_is_queued_without_local_record(self):
+        self.write_default_files()
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(len(self.cleanup._test_bot.sent_messages), 0)
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "notified")
+        self.assertEqual(state["s1:orphan"]["source"], "server_user")
+        self.assertEqual(state["s1:orphan"]["notification_error"], "missing_recipient")
+        self.assertEqual(state["s1:orphan"]["last_state"]["status"], "expired")
+
+    def test_server_only_expired_user_deletes_after_grace(self):
+        self.write_default_files()
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, ["orphan"])
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "deleted")
+        self.assertEqual(state["s1:orphan"]["delete_result"], "deleted")
+
+    def test_server_only_pending_user_is_cleared_when_renewed(self):
+        self.write_default_files()
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+        client.users["orphan"] = {
+            "blocked": False,
+            "expiration_days": 30,
+            "upload_bytes": 0,
+            "download_bytes": 0,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
+        self.assertEqual(client.deleted, [])
+
     def test_paid_customer_notification_includes_account_type(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
         self.write_json(self.cleanup.PAYMENTS_FILE, {

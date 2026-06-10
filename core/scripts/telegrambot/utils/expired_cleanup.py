@@ -494,6 +494,17 @@ def _completed_payment(record):
     return str(record.get('status', '')).lower() in {'completed', 'paid', 'succeeded'}
 
 
+def _iter_named_user_records(users):
+    if isinstance(users, dict):
+        for username, data in users.items():
+            if isinstance(data, dict):
+                yield str(data.get('username') or username), data
+    elif isinstance(users, list):
+        for data in users:
+            if isinstance(data, dict) and data.get('username'):
+                yield str(data.get('username')), data
+
+
 def discover_cleanup_candidates():
     candidates = []
 
@@ -555,6 +566,91 @@ def discover_cleanup_candidates():
     for candidate in candidates:
         deduped.setdefault(_state_key(candidate.get('server_id'), candidate['username']), candidate)
     return list(deduped.values())
+
+
+def discover_state_cleanup_candidates(state):
+    candidates = []
+    if not isinstance(state, dict):
+        return candidates
+
+    for entry in state.values():
+        if not isinstance(entry, dict):
+            continue
+        cleanup_status = entry.get('cleanup_status')
+        if cleanup_status in DELETE_RESULTS or cleanup_status == 'renewed':
+            continue
+        username = str(entry.get('username') or '').strip()
+        if not username:
+            continue
+        candidates.append({
+            'source': entry.get('source') or 'server_user',
+            'username': username,
+            'server_id': entry.get('server_id'),
+            'telegram_user_id': entry.get('telegram_user_id'),
+            'reseller_id': entry.get('reseller_id'),
+        })
+
+    return candidates
+
+
+def discover_server_cleanup_candidates(multi_api):
+    candidates = []
+    if multi_api is None:
+        return candidates
+
+    try:
+        client_iter = multi_api.iter_clients(include_disabled=True)
+    except Exception:
+        return candidates
+
+    for index, (server, client) in enumerate(client_iter):
+        server_id = str(
+            (server or {}).get('id')
+            or getattr(client, 'server_id', None)
+            or f'server{index + 1}'
+        )
+        users = client.get_users()
+        if users is None:
+            continue
+
+        for username, user_data in _iter_named_user_records(users):
+            if not username or not is_user_expired(user_data):
+                continue
+            candidates.append({
+                'source': 'server_user',
+                'username': username,
+                'server_id': server_id,
+            })
+
+    return candidates
+
+
+def _merge_cleanup_candidates(*candidate_groups):
+    merged = []
+    seen_keys = set()
+    wildcard_usernames = set()
+
+    for candidates in candidate_groups:
+        for candidate in candidates or []:
+            username = str(candidate.get('username') or '').strip()
+            if not username:
+                continue
+
+            server_id = candidate.get('server_id')
+            username_key = username.lower()
+            key = _state_key(server_id, username)
+
+            if key in seen_keys:
+                continue
+            if server_id and username_key in wildcard_usernames:
+                continue
+
+            merged.append(candidate)
+            seen_keys.add(key)
+            if not server_id:
+                wildcard_usernames.add(username_key)
+
+    return merged
 
 
 def _update_candidate_record(candidate, fields):
@@ -691,7 +787,11 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             state = {}
 
         multi_api = multi_api or MultiServerAPI()
-        candidates = discover_cleanup_candidates()
+        candidates = _merge_cleanup_candidates(
+            discover_cleanup_candidates(),
+            discover_state_cleanup_candidates(state),
+            discover_server_cleanup_candidates(multi_api),
+        )
 
         for candidate in candidates:
             username = candidate.get('username')
@@ -889,8 +989,15 @@ def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
         types.InlineKeyboardButton("📤 Export Current Filter", callback_data=f"admin_expired_cleanup:export:{filter_key}"),
         types.InlineKeyboardButton("📦 Export All", callback_data="admin_expired_cleanup:export:all"),
     )
-    markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page}"))
+    markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data=f"admin_expired_cleanup:refresh:{filter_key}:{page}"))
     return markup
+
+
+def _run_cleanup_for_dashboard():
+    try:
+        run_expired_user_cleanup(grace_hours=24)
+    except Exception as e:
+        print(f"Error refreshing expired cleanup dashboard: {e}")
 
 
 def _render_admin_expired_cleanup(chat_id, message_id, admin_id, filter_key='queue', page=0):
@@ -920,6 +1027,7 @@ def _send_cleanup_export(chat_id, filter_key='all'):
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
 def admin_expired_cleanup_menu(message):
+    _run_cleanup_for_dashboard()
     language = get_user_language(message.from_user.id)
     bot.reply_to(
         message,
@@ -947,6 +1055,14 @@ def handle_admin_expired_cleanup(call):
         page = _safe_int(parts[3], 0) or 0
         _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
         bot.answer_callback_query(call.id)
+        return
+
+    if action == "refresh" and len(parts) == 4:
+        filter_key = _normalize_admin_cleanup_filter(parts[2])
+        page = _safe_int(parts[3], 0) or 0
+        _run_cleanup_for_dashboard()
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
+        bot.answer_callback_query(call.id, "Refreshed.")
         return
 
     if action == "export" and len(parts) == 3:
