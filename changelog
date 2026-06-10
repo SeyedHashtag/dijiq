@@ -1,3 +1,9 @@
+## v1.13.23
+✨ Add manual review handling for expired server-only users with admin Keep/Delete actions
+🐛 Prevent server-only expired users from being auto-deleted without manual review
+🐛 Ignore local bot cleanup records that are no longer present on VPN servers to avoid false notifications
+✅ Add tests for manual review actions, server-only migration, renewed handling, and matched-candidate lookup paths
+
 ## v1.13.22
 ✨ Reuse user data from server discovery in cleanup phase to avoid redundant API lookups
 ✅ Add tests for optimized server-cleanup lookup paths and API call tracking
