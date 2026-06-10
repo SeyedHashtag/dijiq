@@ -1,5 +1,5 @@
 ## v1.13.20
-✨ Add comprehensive API reference documentation for the dijiq web panel integration
+✨ Add comprehensive API reference documentation for the web panel integration
 ✨ Discover and queue expired server users even when no local Telegram record exists
 ✨ Refresh the expired cleanup dashboard by running cleanup discovery before rendering results
 ✅ Add tests for server-only expired-user cleanup, grace-period deletion, and renewal clearing
