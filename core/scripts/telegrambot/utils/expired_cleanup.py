@@ -85,8 +85,8 @@ def is_user_expired(user_data):
     if not isinstance(user_data, dict):
         return False
 
-    if bool(user_data.get('blocked', False)):
-        return True
+    if not bool(user_data.get('blocked', False)):
+        return False
 
     expiration_days = _safe_int(user_data.get('expiration_days'))
     if expiration_days is not None and expiration_days <= 0:

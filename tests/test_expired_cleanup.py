@@ -143,6 +143,55 @@ class ExpiredCleanupTests(unittest.TestCase):
             "status": "expired",
         }
 
+    def test_user_must_be_blocked_to_be_expired_by_days_or_traffic(self):
+        unblocked_expired_days = {
+            "blocked": False,
+            "expiration_days": 0,
+            "upload_bytes": 0,
+            "download_bytes": 0,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        unblocked_exhausted_traffic = {
+            "blocked": False,
+            "expiration_days": 30,
+            "upload_bytes": 2 * self.cleanup.GB_BYTES,
+            "download_bytes": 3 * self.cleanup.GB_BYTES,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        blocked_active_user = {
+            "blocked": True,
+            "expiration_days": 30,
+            "upload_bytes": self.cleanup.GB_BYTES,
+            "download_bytes": self.cleanup.GB_BYTES,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+
+        self.assertFalse(self.cleanup.is_user_expired(unblocked_expired_days))
+        self.assertFalse(self.cleanup.is_user_expired(unblocked_exhausted_traffic))
+        self.assertFalse(self.cleanup.is_user_expired(blocked_active_user))
+
+    def test_cleanup_renews_pending_user_when_unblocked_even_if_days_expired(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        client = FakeClient("s1", {"t101": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+        client.users["t101"] = {
+            "blocked": False,
+            "expiration_days": 0,
+            "upload_bytes": 0,
+            "download_bytes": 0,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]["cleanup_status"], "renewed")
+
     def test_candidate_discovery_includes_test_customer_and_reseller_configs(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
             "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}
