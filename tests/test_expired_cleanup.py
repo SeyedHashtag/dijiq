@@ -100,7 +100,9 @@ def load_module():
     sys.modules["utils.language"] = language_stub
 
     translations_stub = types.ModuleType("utils.translations")
-    translations_stub.get_message_text = lambda language, key: "{username}:{grace_hours}"
+    translations_stub.get_message_text = (
+        lambda language, key: "{account_type}|{username}|{grace_hours}|{state_summary}"
+    )
     sys.modules["utils.translations"] = translations_stub
 
     spec = importlib.util.spec_from_file_location("expired_cleanup_under_test", MODULE_PATH)
@@ -229,6 +231,60 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(state["s1:t101"]["cleanup_status"], "notified")
         self.assertEqual(saved_test["cleanup_status"], "notified")
         self.assertEqual(saved_test["cleanup_notified_at"], "2026-06-09 12:00:00")
+        self.assertEqual(saved_test["cleanup_last_state"]["status"], "expired")
+        self.assertIn("your test account", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertIn("Status: expired", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertNotIn("Blocked:", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertIn("Days remaining: 0", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertIn("GB used: 3.0/5.0", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertNotIn("GB remaining:", self.cleanup._test_bot.sent_messages[0][1])
+
+    def test_paid_customer_notification_includes_account_type(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {
+            "pay1": {"status": "completed", "user_id": 202, "username": "p202", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        client = FakeClient("s1", {"p202": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(len(self.cleanup._test_bot.sent_messages), 1)
+        self.assertIn("your paid account", self.cleanup._test_bot.sent_messages[0][1])
+        saved_payment = self.read_json(self.cleanup.PAYMENTS_FILE)["pay1"]
+        self.assertEqual(saved_payment["cleanup_last_state"]["status"], "expired")
+
+    def test_reseller_customer_notification_includes_account_type(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {
+            "303": {"configs": [{"username": "r303", "server_id": "s1"}]}
+        })
+        client = FakeClient("s1", {"r303": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(len(self.cleanup._test_bot.sent_messages), 1)
+        self.assertEqual(self.cleanup._test_bot.sent_messages[0][0], 303)
+        self.assertIn("your customer account", self.cleanup._test_bot.sent_messages[0][1])
+        saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
+        self.assertEqual(saved_config["cleanup_last_state"]["status"], "expired")
+
+    def test_missing_user_notification_includes_not_found_state(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "missing101", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        client = FakeClient("s1", {})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertIn("State: not found on server", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertIsNone(state["s1:missing101"]["last_state"])
+        self.assertNotIn("cleanup_last_state", saved_test)
 
     def test_deletes_after_grace_and_saves_last_state(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {

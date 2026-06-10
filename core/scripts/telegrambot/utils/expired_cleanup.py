@@ -21,6 +21,84 @@ DELETE_RESULTS = {'deleted', 'already_missing'}
 
 _cleanup_lock = threading.RLock()
 
+ACCOUNT_TYPE_LABELS = {
+    'en': {
+        'test': 'your test account',
+        'customer': 'your paid account',
+        'reseller_customer': 'your customer account',
+    },
+    'fa': {
+        'test': 'حساب آزمایشی شما',
+        'customer': 'حساب خریداری‌شده شما',
+        'reseller_customer': 'حساب مشتری شما',
+    },
+    'tk': {
+        'test': 'synag hasabyňyz',
+        'customer': 'tölegli hasabyňyz',
+        'reseller_customer': 'müşderiňiziň hasaby',
+    },
+    'ru': {
+        'test': 'ваш тестовый аккаунт',
+        'customer': 'ваш оплаченный аккаунт',
+        'reseller_customer': 'аккаунт вашего клиента',
+    },
+}
+
+STATE_LABELS = {
+    'en': {
+        'state': 'State',
+        'status': 'Status',
+        'blocked': 'Blocked',
+        'days_remaining': 'Days remaining',
+        'gb_used': 'GB used',
+        'gb_limit': 'GB limit',
+        'gb_remaining': 'GB remaining',
+        'yes': 'yes',
+        'no': 'no',
+        'unknown': 'unknown',
+        'not_found': 'not found on server',
+    },
+    'fa': {
+        'state': 'وضعیت',
+        'status': 'وضعیت پنل',
+        'blocked': 'مسدود',
+        'days_remaining': 'روز باقی‌مانده',
+        'gb_used': 'گیگابایت مصرف‌شده',
+        'gb_limit': 'سقف گیگابایت',
+        'gb_remaining': 'گیگابایت باقی‌مانده',
+        'yes': 'بله',
+        'no': 'خیر',
+        'unknown': 'نامشخص',
+        'not_found': 'روی سرور پیدا نشد',
+    },
+    'tk': {
+        'state': 'Ýagdaý',
+        'status': 'Status',
+        'blocked': 'Bloklanan',
+        'days_remaining': 'Galan gün',
+        'gb_used': 'Ulanylan GB',
+        'gb_limit': 'GB çägi',
+        'gb_remaining': 'Galan GB',
+        'yes': 'hawa',
+        'no': 'ýok',
+        'unknown': 'näbelli',
+        'not_found': 'serwerde tapylmady',
+    },
+    'ru': {
+        'state': 'Состояние',
+        'status': 'Статус',
+        'blocked': 'Заблокирован',
+        'days_remaining': 'Осталось дней',
+        'gb_used': 'Использовано ГБ',
+        'gb_limit': 'Лимит ГБ',
+        'gb_remaining': 'Осталось ГБ',
+        'yes': 'да',
+        'no': 'нет',
+        'unknown': 'неизвестно',
+        'not_found': 'не найден на сервере',
+    },
+}
+
 
 def _now_str(now=None):
     return (now or datetime.now()).strftime(TIMESTAMP_FORMAT)
@@ -125,6 +203,41 @@ def capture_last_state(user_data, now=None):
         'download_bytes': download_bytes,
         'max_download_bytes': max_download_bytes,
     }
+
+
+def _labels_for(language):
+    return STATE_LABELS.get(language, STATE_LABELS['en'])
+
+
+def _account_type_label(source, language):
+    labels = ACCOUNT_TYPE_LABELS.get(language, ACCOUNT_TYPE_LABELS['en'])
+    return labels.get(source, labels.get('customer'))
+
+
+def _format_state_value(value, unknown):
+    return unknown if value is None else value
+
+
+def _format_state_summary(last_state, language, missing=False):
+    labels = _labels_for(language)
+    if missing:
+        return f"{labels['state']}: {labels['not_found']}"
+
+    if not isinstance(last_state, dict):
+        return f"{labels['state']}: {labels['unknown']}"
+
+    status = _format_state_value(last_state.get('status'), labels['unknown'])
+    days_remaining = _format_state_value(last_state.get('days_remaining'), labels['unknown'])
+    gb_used = _format_state_value(last_state.get('gb_used'), labels['unknown'])
+    gb_limit = _format_state_value(last_state.get('gb_limit'), labels['unknown'])
+    gb_usage = f"{gb_used}/{gb_limit}"
+
+    return (
+        f"{labels['state']}:\n"
+        f"{labels['status']}: {status}\n"
+        f"{labels['days_remaining']}: {days_remaining}\n"
+        f"{labels['gb_used']}: {gb_usage}"
+    )
 
 
 def _metadata_fields(status, now_value, notification_error=None, cleanup_error=None, last_state=None, delete_result=None):
@@ -284,7 +397,7 @@ def _get_user_lookup(multi_api, username, preferred_server_id=None):
     return None, None, 'missing'
 
 
-def _notify_candidate(candidate, grace_hours):
+def _notify_candidate(candidate, grace_hours, last_state=None, missing=False):
     source = candidate.get('source')
     recipient_id = candidate.get('reseller_id') if source == 'reseller_customer' else candidate.get('telegram_user_id')
     if not recipient_id:
@@ -300,6 +413,8 @@ def _notify_candidate(candidate, grace_hours):
         message = get_message_text(language, key).format(
             username=candidate.get('username'),
             grace_hours=int(grace_hours),
+            account_type=_account_type_label(source, language),
+            state_summary=_format_state_summary(last_state, language, missing=missing),
         )
         bot.send_message(int(recipient_id), message, parse_mode='Markdown')
         return None
@@ -307,7 +422,7 @@ def _notify_candidate(candidate, grace_hours):
         return str(e)
 
 
-def _state_entry(candidate, now_value, grace_hours, notification_error=None):
+def _state_entry(candidate, now_value, grace_hours, notification_error=None, last_state=None):
     return {
         'username': candidate.get('username'),
         'server_id': candidate.get('server_id') or 'primary',
@@ -318,6 +433,7 @@ def _state_entry(candidate, now_value, grace_hours, notification_error=None):
         'delete_after': (datetime.strptime(now_value, TIMESTAMP_FORMAT) + timedelta(hours=grace_hours)).strftime(TIMESTAMP_FORMAT),
         'cleanup_status': 'notified',
         'notification_error': notification_error,
+        'last_state': last_state,
     }
 
 
@@ -383,11 +499,23 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 continue
 
             if not entry:
-                notification_error = _notify_candidate(candidate, grace_hours)
-                state[key] = _state_entry(candidate, now_value, grace_hours, notification_error=notification_error)
+                last_state = capture_last_state(user_data, now=now) if lookup_status == 'found' else None
+                notification_error = _notify_candidate(
+                    candidate,
+                    grace_hours,
+                    last_state=last_state,
+                    missing=lookup_status == 'missing',
+                )
+                state[key] = _state_entry(
+                    candidate,
+                    now_value,
+                    grace_hours,
+                    notification_error=notification_error,
+                    last_state=last_state,
+                )
                 _update_candidate_record(
                     candidate,
-                    _metadata_fields('notified', now_value, notification_error=notification_error),
+                    _metadata_fields('notified', now_value, notification_error=notification_error, last_state=last_state),
                 )
                 continue
 
@@ -406,7 +534,7 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 _mark_deleted(state, key, candidate, 'already_missing', now_value, last_state=entry.get('last_state'), delete_result='already_missing')
                 continue
 
-            last_state = capture_last_state(user_data, now=now)
+            last_state = entry.get('last_state') or capture_last_state(user_data, now=now)
             entry['last_state'] = last_state
             delete_result = api_client.delete_user(username) if api_client else None
             if delete_result is None:
