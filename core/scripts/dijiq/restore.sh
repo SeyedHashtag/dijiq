@@ -40,25 +40,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+backup_has_relative_paths=false
+if unzip -Z1 "$BACKUP_ZIP_FILE" 2>/dev/null | grep -q '^core/scripts/telegrambot/'; then
+    backup_has_relative_paths=true
+fi
+
 required_files=(
     ".configs.env"
-)
-
-telegram_state_files=(
-    "core/scripts/telegrambot/.env"
-    "core/scripts/telegrambot/plans.json"
-    "core/scripts/telegrambot/test_configs.json"
-    "core/scripts/telegrambot/test_settings.json"
-    "core/scripts/telegrambot/waiting_test_users.json"
-    "core/scripts/telegrambot/payments.json"
-    "core/scripts/telegrambot/support_info.json"
-    "core/scripts/telegrambot/user_languages.json"
-    "core/scripts/telegrambot/referrals.json"
-    "core/scripts/telegrambot/resellers.json"
-    "core/scripts/telegrambot/checker_settlements.json"
-    "core/scripts/telegrambot/traffic_alerts.json"
-    "core/scripts/telegrambot/broadcast_failed_users.json"
-    "core/scripts/telegrambot/expired_user_cleanup.json"
 )
 
 for file in "${required_files[@]}"; do
@@ -74,11 +62,99 @@ for file in "${required_files[@]}"; do
     fi
 done
 
+collect_current_state_files() {
+    shopt -s nullglob dotglob
+    local files=(
+        "$TARGET_DIR"/*.env
+        "$TARGET_DIR"/*.json
+        "$TARGET_DIR/core/scripts/telegrambot"/*.env
+        "$TARGET_DIR/core/scripts/telegrambot"/*.json
+    )
+    shopt -u nullglob dotglob
+
+    for file in "${files[@]}"; do
+        if [ -f "$file" ]; then
+            echo "${file#$TARGET_DIR/}"
+        fi
+    done
+}
+
+restore_root_file() {
+    local source_file="$1"
+    local target_file="$TARGET_DIR/$(basename "$source_file")"
+
+    mkdir -p "$TARGET_DIR"
+    cp -p "$source_file" "$target_file"
+    if [ $? -ne 0 ]; then
+        echo "Error: replace Configuration Files '$(basename "$source_file")'."
+        rm -rf "$existing_backup_dir"
+        rm -rf "$RESTORE_DIR"
+        exit 1
+    fi
+}
+
+restore_root_state_files() {
+    local source_dir="$1"
+
+    if [ ! -d "$source_dir" ]; then
+        return
+    fi
+
+    shopt -s nullglob dotglob
+    local files=(
+        "$source_dir"/*.env
+        "$source_dir"/*.json
+    )
+    shopt -u nullglob dotglob
+
+    for source_file in "${files[@]}"; do
+        if [ -f "$source_file" ]; then
+            restore_root_file "$source_file"
+        fi
+    done
+}
+
+restore_telegram_state_files() {
+    local source_dir="$1"
+
+    if [ ! -d "$source_dir" ]; then
+        return
+    fi
+
+    shopt -s nullglob dotglob
+    local files=(
+        "$source_dir"/*.env
+        "$source_dir"/*.json
+    )
+    shopt -u nullglob dotglob
+
+    for source_file in "${files[@]}"; do
+        if [ ! -f "$source_file" ]; then
+            continue
+        fi
+
+        local backup_name
+        backup_name="$(basename "$source_file")"
+        if [ "$backup_name" = ".configs.env" ]; then
+            continue
+        fi
+
+        local target_file="$TARGET_DIR/core/scripts/telegrambot/$backup_name"
+        mkdir -p "$(dirname "$target_file")"
+        cp -p "$source_file" "$target_file"
+        if [ $? -ne 0 ]; then
+            echo "Error: replace Telegram bot state file '$backup_name'."
+            rm -rf "$existing_backup_dir"
+            rm -rf "$RESTORE_DIR"
+            exit 1
+        fi
+    done
+}
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 existing_backup_dir="/opt/hysbackup/restore_pre_backup_$timestamp"
 mkdir -p "$existing_backup_dir"
-for file in "${required_files[@]}" "${telegram_state_files[@]}"; do
+while IFS= read -r file; do
   if [ -f "$TARGET_DIR/$file" ]; then
     mkdir -p "$existing_backup_dir/$(dirname "$file")"
     cp -p "$TARGET_DIR/$file" "$existing_backup_dir/$file"
@@ -87,31 +163,18 @@ for file in "${required_files[@]}" "${telegram_state_files[@]}"; do
       exit 1
     fi
   fi
-done
+done < <(collect_current_state_files)
 
 for file in "${required_files[@]}"; do
-    cp -p "$RESTORE_DIR/$file" "$TARGET_DIR/$file"
-     if [ $? -ne 0 ]; then
-      echo "Error: replace Configuration Files '$file'."
-      rm -rf "$existing_backup_dir"
-      rm -rf "$RESTORE_DIR"
-      exit 1
-    fi
+    restore_root_file "$RESTORE_DIR/$file"
 done
 
-for file in "${telegram_state_files[@]}"; do
-    backup_name="$(basename "$file")"
-    if [ -f "$RESTORE_DIR/$backup_name" ]; then
-        mkdir -p "$TARGET_DIR/$(dirname "$file")"
-        cp -p "$RESTORE_DIR/$backup_name" "$TARGET_DIR/$file"
-        if [ $? -ne 0 ]; then
-            echo "Error: replace Telegram bot state file '$file'."
-            rm -rf "$existing_backup_dir"
-            rm -rf "$RESTORE_DIR"
-            exit 1
-        fi
-    fi
-done
+if [ "$backup_has_relative_paths" = true ]; then
+    restore_root_state_files "$RESTORE_DIR"
+    restore_telegram_state_files "$RESTORE_DIR/core/scripts/telegrambot"
+else
+    restore_telegram_state_files "$RESTORE_DIR"
+fi
 
 rm -rf "$RESTORE_DIR"
 echo "dijiq configuration restored successfully."

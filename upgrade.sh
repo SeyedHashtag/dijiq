@@ -3,23 +3,14 @@
 cd /root/
 TEMP_DIR=$(mktemp -d)
 
+shopt -s nullglob dotglob
 FILES=(
-    "/etc/dijiq/.configs.env"
-    "/etc/dijiq/core/scripts/telegrambot/.env"
-    "/etc/dijiq/core/scripts/telegrambot/plans.json"
-    "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
-    "/etc/dijiq/core/scripts/telegrambot/test_settings.json"
-    "/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json"
-    "/etc/dijiq/core/scripts/telegrambot/payments.json"
-    "/etc/dijiq/core/scripts/telegrambot/support_info.json"
-    "/etc/dijiq/core/scripts/telegrambot/user_languages.json"
-    "/etc/dijiq/core/scripts/telegrambot/referrals.json"
-    "/etc/dijiq/core/scripts/telegrambot/resellers.json"
-    "/etc/dijiq/core/scripts/telegrambot/checker_settlements.json"
-    "/etc/dijiq/core/scripts/telegrambot/traffic_alerts.json"
-    "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
-    "/etc/dijiq/core/scripts/telegrambot/expired_user_cleanup.json"
+    /etc/dijiq/*.env
+    /etc/dijiq/*.json
+    /etc/dijiq/core/scripts/telegrambot/*.env
+    /etc/dijiq/core/scripts/telegrambot/*.json
 )
+shopt -u nullglob dotglob
 
 echo "Backing up and stopping all cron jobs"
 crontab -l > /tmp/crontab_backup
