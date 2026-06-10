@@ -1,3 +1,7 @@
+## v1.13.19
+✨ Update backup and restore scripts to collect matching files with wildcard patterns
+🐛 Include expired cleanup JSON data in backup and restore flows so cleanup history is preserved
+
 ## v1.13.18
 ✨ Add an admin Expired Cleanup dashboard with queue/history filters, pagination, refresh, and JSON exports
 ✨ Add account-type and last-state summaries to expired cleanup notices for test, paid, reseller, and missing-server accounts
