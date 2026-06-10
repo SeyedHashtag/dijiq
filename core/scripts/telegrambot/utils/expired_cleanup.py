@@ -627,6 +627,9 @@ def discover_server_cleanup_candidates(multi_api):
                 'source': 'server_user',
                 'username': username,
                 'server_id': server_id,
+                '_user_data': user_data,
+                '_lookup_status': 'found',
+                '_api_client': client,
             })
 
     return candidates
@@ -807,11 +810,16 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             if entry and entry.get('cleanup_status') in DELETE_RESULTS:
                 continue
 
-            api_client, user_data, lookup_status = _get_user_lookup(
-                multi_api,
-                username,
-                preferred_server_id=candidate.get('server_id'),
-            )
+            if not entry and candidate.get('_lookup_status') == 'found':
+                api_client = candidate.get('_api_client')
+                user_data = candidate.get('_user_data')
+                lookup_status = 'found'
+            else:
+                api_client, user_data, lookup_status = _get_user_lookup(
+                    multi_api,
+                    username,
+                    preferred_server_id=candidate.get('server_id'),
+                )
 
             if lookup_status == 'unavailable':
                 if entry:

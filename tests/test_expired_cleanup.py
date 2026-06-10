@@ -59,13 +59,17 @@ class FakeClient:
         self.delete_result = {"ok": True} if delete_result is _DEFAULT_DELETE_RESULT else delete_result
         self.unavailable = unavailable
         self.deleted = []
+        self.get_user_calls = []
+        self.get_users_calls = 0
 
     def get_user(self, username):
+        self.get_user_calls.append(username)
         if self.unavailable:
             return None
         return self.users.get(username)
 
     def get_users(self):
+        self.get_users_calls += 1
         if self.unavailable:
             return None
         return self.users
@@ -281,6 +285,8 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(client.deleted, [])
+        self.assertEqual(client.get_users_calls, 1)
+        self.assertEqual(client.get_user_calls, [])
         self.assertEqual(len(self.cleanup._test_bot.sent_messages), 0)
         self.assertEqual(state["s1:orphan"]["cleanup_status"], "notified")
         self.assertEqual(state["s1:orphan"]["source"], "server_user")
@@ -296,6 +302,7 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(client.deleted, ["orphan"])
+        self.assertEqual(client.get_user_calls, ["orphan"])
         self.assertEqual(state["s1:orphan"]["cleanup_status"], "deleted")
         self.assertEqual(state["s1:orphan"]["delete_result"], "deleted")
 
