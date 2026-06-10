@@ -23,8 +23,14 @@ class DummyBot:
     def __init__(self):
         self.sent_messages = []
         self.sent_documents = []
+        self.replies = []
+        self.edited_messages = []
+        self.answered_callbacks = []
 
     def message_handler(self, *args, **kwargs):
+        return lambda func: func
+
+    def callback_query_handler(self, *args, **kwargs):
         return lambda func: func
 
     def send_message(self, chat_id, text, **kwargs):
@@ -32,6 +38,15 @@ class DummyBot:
 
     def send_document(self, chat_id, document, **kwargs):
         self.sent_documents.append((chat_id, document, kwargs))
+
+    def reply_to(self, message, text, **kwargs):
+        self.replies.append((message, text, kwargs))
+
+    def edit_message_text(self, text, **kwargs):
+        self.edited_messages.append((text, kwargs))
+
+    def answer_callback_query(self, callback_query_id, text=None, **kwargs):
+        self.answered_callbacks.append((callback_query_id, text, kwargs))
 
 
 _DEFAULT_DELETE_RESULT = object()
@@ -135,6 +150,25 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
         self.write_json(self.cleanup.PAYMENTS_FILE, {})
         self.write_json(self.cleanup.RESELLERS_FILE, {})
+
+    def callback_data_from_markup(self, markup):
+        callbacks = []
+        for row in getattr(markup, "keyboard", []):
+            for button in row:
+                callback_data = getattr(button, "callback_data", None)
+                if callback_data is None and hasattr(button, "to_dict"):
+                    callback_data = button.to_dict().get("callback_data")
+                if callback_data is None:
+                    callback_data = getattr(button, "kwargs", {}).get("callback_data")
+                callbacks.append(callback_data)
+        for button in getattr(markup, "buttons", []):
+            callback_data = getattr(button, "callback_data", None)
+            if callback_data is None and hasattr(button, "to_dict"):
+                callback_data = button.to_dict().get("callback_data")
+            if callback_data is None:
+                callback_data = getattr(button, "kwargs", {}).get("callback_data")
+            callbacks.append(callback_data)
+        return callbacks
 
     def expired_user(self):
         return {
@@ -413,6 +447,217 @@ class ExpiredCleanupTests(unittest.TestCase):
         exported = self.cleanup.get_deleted_users_for_json(days=60, now=self.now)
 
         self.assertEqual([entry["username"] for entry in exported], ["new"])
+        self.assertEqual(exported[0]["reason_code"], "time_expired")
+        self.assertIn("reason", exported[0])
+
+    def test_admin_cleanup_counts_split_pending_due_and_history(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:pending": {
+                "username": "pending",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 10:00:00",
+                "delete_after": "2026-06-09 14:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:due": {
+                "username": "due",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:deleted": {
+                "username": "deleted",
+                "server_id": "s1",
+                "source": "test",
+                "cleanup_status": "deleted",
+                "delete_result": "deleted",
+                "deleted_at": "2026-06-09 09:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:failed": {
+                "username": "failed",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "delete_failed",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:unavailable": {
+                "username": "unavailable",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "server_unavailable",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:renewed": {
+                "username": "renewed",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "renewed",
+                "last_state": {"days_remaining": 10},
+            },
+        })
+
+        counts = self.cleanup.get_expired_cleanup_counts(now=self.now)
+
+        self.assertEqual(counts["pending"], 1)
+        self.assertEqual(counts["due"], 1)
+        self.assertEqual(counts["queue"], 2)
+        self.assertEqual(counts["deleted"], 1)
+        self.assertEqual(counts["delete_failed"], 1)
+        self.assertEqual(counts["server_unavailable"], 1)
+        self.assertEqual(counts["renewed"], 1)
+
+    def test_cleanup_export_includes_reason_codes(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:time": {
+                "username": "time",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "delete_after": "2026-06-09 14:00:00",
+                "last_state": {"days_remaining": 0, "upload_bytes": 0, "download_bytes": 0, "max_download_bytes": 10},
+            },
+            "s1:traffic": {
+                "username": "traffic",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "delete_after": "2026-06-09 14:00:00",
+                "last_state": {"days_remaining": 5, "upload_bytes": 6, "download_bytes": 4, "max_download_bytes": 10},
+            },
+            "s1:missing": {
+                "username": "missing",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "already_missing",
+                "delete_result": "already_missing",
+                "deleted_at": "2026-06-09 12:00:00",
+                "last_state": None,
+            },
+            "s1:unavailable": {
+                "username": "unavailable",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "server_unavailable",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:failed": {
+                "username": "failed",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "delete_failed",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+
+        exported = self.cleanup.get_expired_cleanup_export_records(filter_key="all", now=self.now)
+        reasons = {record["username"]: record["reason_code"] for record in exported}
+
+        self.assertEqual(reasons["time"], "time_expired")
+        self.assertEqual(reasons["traffic"], "traffic_exhausted")
+        self.assertEqual(reasons["missing"], "missing_on_server")
+        self.assertEqual(reasons["unavailable"], "server_unavailable")
+        self.assertEqual(reasons["failed"], "delete_failed")
+
+    def test_admin_cleanup_default_ui_shows_queue_not_history(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:pending": {
+                "username": "pending",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "delete_after": "2026-06-09 14:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:deleted": {
+                "username": "deleted",
+                "server_id": "s1",
+                "source": "test",
+                "cleanup_status": "deleted",
+                "delete_result": "deleted",
+                "deleted_at": "2026-06-09 12:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+
+        text = self.cleanup._build_admin_cleanup_text("en", filter_key="queue", page=0, now=self.now)
+        markup = self.cleanup._build_admin_cleanup_markup(filter_key="queue", page=0, now=self.now)
+        callbacks = self.callback_data_from_markup(markup)
+
+        self.assertIn("Queue: *1*", text)
+        self.assertIn("`pending`", text)
+        self.assertNotIn("`deleted`", text)
+        self.assertIn("admin_expired_cleanup:list:deleted:0", callbacks)
+        self.assertIn("admin_expired_cleanup:export:queue", callbacks)
+        self.assertIn("admin_expired_cleanup:export:all", callbacks)
+
+    def test_admin_cleanup_pagination_and_callback_route(self):
+        self.write_default_files()
+        state = {}
+        for index in range(9):
+            state[f"s1:user{index}"] = {
+                "username": f"user{index}",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "delete_after": "2026-06-09 10:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        self.write_json(self.cleanup.STATE_FILE, state)
+
+        markup = self.cleanup._build_admin_cleanup_markup(filter_key="due", page=0, now=self.now)
+        self.assertIn("admin_expired_cleanup:list:due:1", self.callback_data_from_markup(markup))
+
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data="admin_expired_cleanup:list:due:1",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+        self.cleanup.handle_admin_expired_cleanup(call)
+
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][0], "callback-1")
+        self.assertEqual(self.cleanup._test_bot.edited_messages[-1][1]["chat_id"], 10)
+        self.assertIn("Page *2/2*", self.cleanup._test_bot.edited_messages[-1][0])
+
+    def test_admin_cleanup_export_current_filter_and_all_records(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:pending": {
+                "username": "pending",
+                "server_id": "s1",
+                "source": "customer",
+                "cleanup_status": "notified",
+                "delete_after": "2026-06-09 14:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:deleted": {
+                "username": "deleted",
+                "server_id": "s1",
+                "source": "test",
+                "cleanup_status": "deleted",
+                "delete_result": "deleted",
+                "deleted_at": "2026-06-09 12:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+
+        self.cleanup._send_cleanup_export(10, filter_key="queue")
+        queue_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
+        self.cleanup._send_cleanup_export(10, filter_key="all")
+        all_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
+
+        self.assertEqual([record["username"] for record in queue_payload], ["pending"])
+        self.assertEqual({record["username"] for record in all_payload}, {"pending", "deleted"})
+        self.assertIn("reason_code", queue_payload[0])
 
     def test_expired_cleanup_notices_do_not_offer_renewal(self):
         spec = importlib.util.spec_from_file_location("translations_under_test", TRANSLATIONS_PATH)

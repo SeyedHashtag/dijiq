@@ -313,6 +313,8 @@ MESSAGE_TRANSLATIONS = {
         "reseller_auto_banned": "🚫 **Account Banned**\n\nYour reseller account has been permanently banned due to unpaid debt for 72 hours.\n\nFinal debt: ${debt:.2f}\n\nContact support to resolve this issue.",
         "expired_cleanup_customer_notice": "⚠️ {account_type} `{username}` is expired and scheduled for deletion in {grace_hours} hours.\n\n{state_summary}\n\nPurchase a new plan before then if you still need access.",
         "expired_cleanup_reseller_notice": "⚠️ {account_type} `{username}` is expired and scheduled for deletion in {grace_hours} hours.\n\n{state_summary}",
+        "admin_expired_cleanup_title": "🧹 *Expired Cleanup*",
+        "admin_expired_cleanup_empty": "No records in this view.",
         "admin_reseller_auto_suspended": "🚫 **Reseller Auto-Suspended**\n\nUser ID: {reseller_id}\nDebt: ${debt:.2f}\nDebt age: {debt_age_hours:.1f} hours\n\nThe reseller was automatically suspended after 48 hours of unpaid debt.",
         "admin_reseller_auto_banned": "🚫 **Reseller Auto-Banned**\n\nUser ID: {reseller_id}\nDebt: ${debt:.2f}\nDebt age: {debt_age_hours:.1f} hours\n\nThe reseller was automatically banned after 72 hours of unpaid debt.",
         "reseller_deadline_approaching": "⏰ **Deadline Approaching**\n\nYour debt of ${debt:.2f} has been unpaid for {debt_age_hours:.1f} hours.\n\n⏳ Suspension in: {hours_until_suspend:.1f} hours (at 48h)\n🚫 Ban in: {hours_until_ban:.1f} hours (at 72h)\n\nPay now to avoid restrictions!",

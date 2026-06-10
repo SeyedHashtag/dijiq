@@ -4,6 +4,48 @@ import os
 import threading
 from datetime import datetime, timedelta
 
+try:
+    from telebot import types
+except ImportError:
+    class _InlineKeyboardButton:
+        def __init__(self, text, callback_data=None, **kwargs):
+            self.text = text
+            self.callback_data = callback_data
+            self.kwargs = kwargs
+
+        def to_dict(self):
+            data = {"text": self.text}
+            if self.callback_data is not None:
+                data["callback_data"] = self.callback_data
+            data.update(self.kwargs)
+            return data
+
+    class _InlineKeyboardMarkup:
+        def __init__(self, row_width=1, **kwargs):
+            self.row_width = row_width
+            self.keyboard = []
+
+        def add(self, *buttons):
+            if not buttons:
+                return self
+            if self.row_width and self.row_width > 1:
+                for index in range(0, len(buttons), self.row_width):
+                    self.keyboard.append(list(buttons[index:index + self.row_width]))
+            else:
+                for button in buttons:
+                    self.keyboard.append([button])
+            return self
+
+        def row(self, *buttons):
+            self.keyboard.append(list(buttons))
+            return self
+
+    class _Types:
+        InlineKeyboardButton = _InlineKeyboardButton
+        InlineKeyboardMarkup = _InlineKeyboardMarkup
+
+    types = _Types()
+
 from utils.api_client import MultiServerAPI
 from utils.command import bot, is_admin
 from utils.language import get_user_language
@@ -18,6 +60,45 @@ STATE_FILE = '/etc/dijiq/core/scripts/telegrambot/expired_user_cleanup.json'
 GB_BYTES = 1024 ** 3
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
 DELETE_RESULTS = {'deleted', 'already_missing'}
+ADMIN_CLEANUP_PAGE_SIZE = 8
+ADMIN_CLEANUP_FILTERS = (
+    'queue',
+    'pending',
+    'due',
+    'deleted',
+    'already_missing',
+    'delete_failed',
+    'server_unavailable',
+    'renewed',
+)
+ADMIN_CLEANUP_STATUS_ORDER = (
+    'pending',
+    'due',
+    'deleted',
+    'already_missing',
+    'delete_failed',
+    'server_unavailable',
+    'renewed',
+)
+ADMIN_CLEANUP_STATUS_LABELS = {
+    'queue': 'Queue',
+    'pending': 'Pending',
+    'due': 'Due',
+    'deleted': 'Deleted',
+    'already_missing': 'Already Missing',
+    'delete_failed': 'Delete Failed',
+    'server_unavailable': 'Server Unavailable',
+    'renewed': 'Renewed',
+    'unknown': 'Unknown',
+}
+ADMIN_CLEANUP_REASON_LABELS = {
+    'time_expired': 'Time expired',
+    'traffic_exhausted': 'Traffic quota exhausted',
+    'missing_on_server': 'User was not found on the VPN server',
+    'server_unavailable': 'VPN server was unavailable',
+    'delete_failed': 'Deletion failed and will be retried',
+    'unknown': 'Reason unavailable',
+}
 
 _cleanup_lock = threading.RLock()
 
@@ -238,6 +319,146 @@ def _format_state_summary(last_state, language, missing=False):
         f"{labels['days_remaining']}: {days_remaining}\n"
         f"{labels['gb_used']}: {gb_usage}"
     )
+
+
+def _escape_markdown(value):
+    text = str(value if value is not None else 'N/A')
+    for char in ('\\', '`', '*', '_', '[', ']'):
+        text = text.replace(char, f"\\{char}")
+    return text
+
+
+def _get_admin_cleanup_text(language, key, fallback):
+    text = get_message_text(language, key)
+    return text or fallback
+
+
+def _normalize_admin_cleanup_filter(filter_key):
+    filter_key = str(filter_key or 'queue')
+    return filter_key if filter_key in ADMIN_CLEANUP_FILTERS else 'queue'
+
+
+def _effective_cleanup_status(entry, now=None):
+    if not isinstance(entry, dict):
+        return 'unknown'
+
+    status = str(entry.get('cleanup_status') or entry.get('delete_result') or 'unknown')
+    if status == 'notified':
+        delete_after = _parse_time(entry.get('delete_after'))
+        if delete_after and (now or datetime.now()) >= delete_after:
+            return 'due'
+        return 'pending'
+    if status in ADMIN_CLEANUP_STATUS_ORDER:
+        return status
+    if entry.get('delete_result') in DELETE_RESULTS:
+        return str(entry.get('delete_result'))
+    return status or 'unknown'
+
+
+def _cleanup_reason(entry):
+    if not isinstance(entry, dict):
+        return 'unknown', ADMIN_CLEANUP_REASON_LABELS['unknown']
+
+    status = str(entry.get('cleanup_status') or entry.get('delete_result') or '')
+    delete_result = str(entry.get('delete_result') or '')
+    if status == 'server_unavailable':
+        return 'server_unavailable', ADMIN_CLEANUP_REASON_LABELS['server_unavailable']
+    if status == 'delete_failed':
+        return 'delete_failed', ADMIN_CLEANUP_REASON_LABELS['delete_failed']
+    if status == 'already_missing' or delete_result == 'already_missing':
+        return 'missing_on_server', ADMIN_CLEANUP_REASON_LABELS['missing_on_server']
+
+    last_state = entry.get('last_state')
+    if not isinstance(last_state, dict):
+        return 'missing_on_server', ADMIN_CLEANUP_REASON_LABELS['missing_on_server']
+
+    expiration_days = _safe_int(last_state.get('days_remaining'))
+    if expiration_days is None:
+        expiration_days = _safe_int(last_state.get('expiration_days'))
+    if expiration_days is not None and expiration_days <= 0:
+        return 'time_expired', ADMIN_CLEANUP_REASON_LABELS['time_expired']
+
+    max_download_bytes = _safe_bytes(last_state.get('max_download_bytes'))
+    if max_download_bytes > 0:
+        used_bytes = _safe_bytes(last_state.get('upload_bytes')) + _safe_bytes(last_state.get('download_bytes'))
+        if used_bytes >= max_download_bytes:
+            return 'traffic_exhausted', ADMIN_CLEANUP_REASON_LABELS['traffic_exhausted']
+
+    return 'unknown', ADMIN_CLEANUP_REASON_LABELS['unknown']
+
+
+def _cleanup_record_from_state(state_key, entry, now=None):
+    reason_code, reason = _cleanup_reason(entry)
+    effective_status = _effective_cleanup_status(entry, now=now)
+    cleanup_status = entry.get('cleanup_status') or effective_status
+    return {
+        'state_key': state_key,
+        'username': entry.get('username'),
+        'server_id': entry.get('server_id'),
+        'source': entry.get('source'),
+        'telegram_user_id': entry.get('telegram_user_id'),
+        'reseller_id': entry.get('reseller_id'),
+        'notified_at': entry.get('notified_at'),
+        'delete_after': entry.get('delete_after'),
+        'deleted_at': entry.get('deleted_at'),
+        'cleanup_status': cleanup_status,
+        'effective_status': effective_status,
+        'delete_result': entry.get('delete_result'),
+        'reason_code': reason_code,
+        'reason': reason,
+        'last_state': entry.get('last_state'),
+    }
+
+
+def _record_matches_filter(record, filter_key):
+    filter_key = _normalize_admin_cleanup_filter(filter_key)
+    if filter_key == 'queue':
+        return record.get('effective_status') in {'pending', 'due'}
+    return record.get('effective_status') == filter_key
+
+
+def _record_sort_key(record):
+    status = record.get('effective_status')
+    if status in {'pending', 'due'}:
+        return (0, record.get('delete_after') or '', record.get('username') or '')
+    timestamp = _parse_time(record.get('deleted_at')) or _parse_time(record.get('notified_at')) or datetime.min
+    return (
+        1,
+        -timestamp.year,
+        -timestamp.month,
+        -timestamp.day,
+        -timestamp.hour,
+        -timestamp.minute,
+        -timestamp.second,
+        record.get('username') or '',
+    )
+
+
+def get_expired_cleanup_records(filter_key='queue', now=None):
+    now = now or datetime.now()
+    state = _load_json_file(STATE_FILE, {})
+    if not isinstance(state, dict):
+        return []
+
+    records = []
+    for state_key, entry in state.items():
+        if not isinstance(entry, dict):
+            continue
+        record = _cleanup_record_from_state(state_key, entry, now=now)
+        if filter_key == 'all' or _record_matches_filter(record, filter_key):
+            records.append(record)
+
+    return sorted(records, key=_record_sort_key)
+
+
+def get_expired_cleanup_counts(now=None):
+    counts = {status: 0 for status in ADMIN_CLEANUP_STATUS_ORDER}
+    for record in get_expired_cleanup_records(filter_key='all', now=now):
+        status = record.get('effective_status')
+        if status in counts:
+            counts[status] += 1
+    counts['queue'] = counts['pending'] + counts['due']
+    return counts
 
 
 def _metadata_fields(status, now_value, notification_error=None, cleanup_error=None, last_state=None, delete_result=None):
@@ -556,30 +777,185 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
 def get_deleted_users_for_json(days=60, now=None):
     now = now or datetime.now()
     cutoff = now - timedelta(days=days)
-    state = _load_json_file(STATE_FILE, {})
-    if not isinstance(state, dict):
-        return []
-
     deleted_users = []
-    for entry in state.values():
-        if not isinstance(entry, dict) or entry.get('delete_result') not in DELETE_RESULTS:
+    for record in get_expired_cleanup_records(filter_key='all', now=now):
+        if record.get('delete_result') not in DELETE_RESULTS:
             continue
-        deleted_at = _parse_time(entry.get('deleted_at'))
+        deleted_at = _parse_time(record.get('deleted_at'))
         if not deleted_at or deleted_at < cutoff:
             continue
-        deleted_users.append({
-            'username': entry.get('username'),
-            'server_id': entry.get('server_id'),
-            'source': entry.get('source'),
-            'telegram_user_id': entry.get('telegram_user_id'),
-            'reseller_id': entry.get('reseller_id'),
-            'notified_at': entry.get('notified_at'),
-            'deleted_at': entry.get('deleted_at'),
-            'delete_result': entry.get('delete_result'),
-            'last_state': entry.get('last_state'),
-        })
+        deleted_users.append(record)
 
     return sorted(deleted_users, key=lambda item: item.get('deleted_at') or '', reverse=True)
+
+
+def get_expired_cleanup_export_records(filter_key='all', now=None):
+    filter_key = 'all' if filter_key == 'all' else _normalize_admin_cleanup_filter(filter_key)
+    return get_expired_cleanup_records(filter_key=filter_key, now=now)
+
+
+def _status_label(status):
+    return ADMIN_CLEANUP_STATUS_LABELS.get(status, status.replace('_', ' ').title())
+
+
+def _build_admin_cleanup_row(index, record):
+    status = _status_label(record.get('effective_status'))
+    username = _escape_markdown(record.get('username') or 'N/A')
+    server_id = _escape_markdown(record.get('server_id') or 'primary')
+    source = _escape_markdown(record.get('source') or 'unknown')
+    delete_time = record.get('delete_after') or record.get('deleted_at') or 'N/A'
+    reason = _escape_markdown(record.get('reason') or ADMIN_CLEANUP_REASON_LABELS['unknown'])
+    return (
+        f"{index}. `{username}` | `{server_id}` | {source}\n"
+        f"   Status: *{_escape_markdown(status)}* | Time: `{_escape_markdown(delete_time)}`\n"
+        f"   Reason: {reason}"
+    )
+
+
+def _paginate_records(records, page):
+    total_pages = max(1, (len(records) + ADMIN_CLEANUP_PAGE_SIZE - 1) // ADMIN_CLEANUP_PAGE_SIZE)
+    page = max(0, min(_safe_int(page, 0) or 0, total_pages - 1))
+    start = page * ADMIN_CLEANUP_PAGE_SIZE
+    return records[start:start + ADMIN_CLEANUP_PAGE_SIZE], total_pages, page
+
+
+def _build_admin_cleanup_text(language, filter_key='queue', page=0, now=None):
+    filter_key = _normalize_admin_cleanup_filter(filter_key)
+    counts = get_expired_cleanup_counts(now=now)
+    records = get_expired_cleanup_records(filter_key=filter_key, now=now)
+    page_records, total_pages, page = _paginate_records(records, page)
+    title = _get_admin_cleanup_text(language, "admin_expired_cleanup_title", "🧹 *Expired Cleanup*")
+    label = _status_label(filter_key)
+    count_lines = [
+        f"Queue: *{counts.get('queue', 0)}* (Pending {counts.get('pending', 0)} / Due {counts.get('due', 0)})",
+        f"Deleted: *{counts.get('deleted', 0)}* | Missing: *{counts.get('already_missing', 0)}*",
+        f"Failed: *{counts.get('delete_failed', 0)}* | Unavailable: *{counts.get('server_unavailable', 0)}* | Renewed: *{counts.get('renewed', 0)}*",
+    ]
+
+    if page_records:
+        start = page * ADMIN_CLEANUP_PAGE_SIZE
+        rows = "\n\n".join(_build_admin_cleanup_row(start + idx + 1, record) for idx, record in enumerate(page_records))
+    else:
+        rows = _get_admin_cleanup_text(language, "admin_expired_cleanup_empty", "No records in this view.")
+
+    return (
+        f"{title}\n\n"
+        f"{chr(10).join(count_lines)}\n\n"
+        f"View: *{_escape_markdown(label)}* | Page *{page + 1}/{total_pages}*\n\n"
+        f"{rows}"
+    )
+
+
+def _filter_button_label(filter_key, counts):
+    if filter_key == 'queue':
+        return f"Queue ({counts.get('queue', 0)})"
+    return f"{_status_label(filter_key)} ({counts.get(filter_key, 0)})"
+
+
+def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
+    filter_key = _normalize_admin_cleanup_filter(filter_key)
+    records = get_expired_cleanup_records(filter_key=filter_key, now=now)
+    _, total_pages, page = _paginate_records(records, page)
+    counts = get_expired_cleanup_counts(now=now)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    markup.add(
+        types.InlineKeyboardButton(_filter_button_label('queue', counts), callback_data="admin_expired_cleanup:list:queue:0"),
+        types.InlineKeyboardButton(_filter_button_label('pending', counts), callback_data="admin_expired_cleanup:list:pending:0"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(_filter_button_label('due', counts), callback_data="admin_expired_cleanup:list:due:0"),
+        types.InlineKeyboardButton(_filter_button_label('deleted', counts), callback_data="admin_expired_cleanup:list:deleted:0"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(_filter_button_label('already_missing', counts), callback_data="admin_expired_cleanup:list:already_missing:0"),
+        types.InlineKeyboardButton(_filter_button_label('delete_failed', counts), callback_data="admin_expired_cleanup:list:delete_failed:0"),
+    )
+    markup.add(
+        types.InlineKeyboardButton(_filter_button_label('server_unavailable', counts), callback_data="admin_expired_cleanup:list:server_unavailable:0"),
+        types.InlineKeyboardButton(_filter_button_label('renewed', counts), callback_data="admin_expired_cleanup:list:renewed:0"),
+    )
+
+    if total_pages > 1:
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page - 1}"))
+        nav_buttons.append(types.InlineKeyboardButton(f"Page {page + 1}/{total_pages}", callback_data="admin_expired_cleanup:noop"))
+        if page < total_pages - 1:
+            nav_buttons.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page + 1}"))
+        markup.add(*nav_buttons)
+
+    markup.add(
+        types.InlineKeyboardButton("📤 Export Current Filter", callback_data=f"admin_expired_cleanup:export:{filter_key}"),
+        types.InlineKeyboardButton("📦 Export All", callback_data="admin_expired_cleanup:export:all"),
+    )
+    markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page}"))
+    return markup
+
+
+def _render_admin_expired_cleanup(chat_id, message_id, admin_id, filter_key='queue', page=0):
+    language = get_user_language(admin_id)
+    filter_key = _normalize_admin_cleanup_filter(filter_key)
+    bot.edit_message_text(
+        _build_admin_cleanup_text(language, filter_key=filter_key, page=page),
+        chat_id=chat_id,
+        message_id=message_id,
+        reply_markup=_build_admin_cleanup_markup(filter_key=filter_key, page=page),
+        parse_mode="Markdown",
+    )
+
+
+def _send_cleanup_export(chat_id, filter_key='all'):
+    filter_key = 'all' if filter_key == 'all' else _normalize_admin_cleanup_filter(filter_key)
+    records = get_expired_cleanup_export_records(filter_key=filter_key)
+    payload = json.dumps(records, indent=2).encode('utf-8')
+    document = io.BytesIO(payload)
+    document.name = f"expired_cleanup_{filter_key}.json"
+    bot.send_document(
+        chat_id,
+        document,
+        caption=f"Expired cleanup export ({filter_key}): {len(records)} records",
+    )
+
+
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
+def admin_expired_cleanup_menu(message):
+    language = get_user_language(message.from_user.id)
+    bot.reply_to(
+        message,
+        _build_admin_cleanup_text(language, filter_key='queue', page=0),
+        reply_markup=_build_admin_cleanup_markup(filter_key='queue', page=0),
+        parse_mode="Markdown",
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_expired_cleanup:"))
+def handle_admin_expired_cleanup(call):
+    if not is_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, "⛔ Unauthorized", show_alert=True)
+        return
+
+    parts = call.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+
+    if action == "noop":
+        bot.answer_callback_query(call.id)
+        return
+
+    if action == "list" and len(parts) == 4:
+        filter_key = _normalize_admin_cleanup_filter(parts[2])
+        page = _safe_int(parts[3], 0) or 0
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
+        bot.answer_callback_query(call.id)
+        return
+
+    if action == "export" and len(parts) == 3:
+        filter_key = parts[2]
+        _send_cleanup_export(call.message.chat.id, filter_key=filter_key)
+        bot.answer_callback_query(call.id, "Export sent.")
+        return
+
+    bot.answer_callback_query(call.id, "Invalid action.", show_alert=True)
 
 
 @bot.message_handler(commands=['deleted_expired_users', 'deleted_expired_users_json'])

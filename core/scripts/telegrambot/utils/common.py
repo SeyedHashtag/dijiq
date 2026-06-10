@@ -15,7 +15,7 @@ def create_main_markup_with_language(language_translations, is_admin=False, user
         markup.row('📞 Edit Support', '🔄 Update Keyboards')
         markup.row('💼 Manage Resellers', '🧪 Manage Test Accounts')
         markup.row('💰 Referral Payouts', '⚖️ VPN Servers')
-        markup.row('✅ Confirmations')
+        markup.row('✅ Confirmations', '🧹 Expired Cleanup')
     else:
         # Non-admin menu with translations
         markup.row(
