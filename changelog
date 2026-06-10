@@ -1,3 +1,8 @@
+## v1.13.21
+✨ Run expired cleanup dashboard refreshes in the background so admin views render without blocking
+✨ Show running, completed, and failed scan status in the expired cleanup dashboard
+✅ Add tests for non-blocking dashboard refresh callbacks and running-scan status text
+
 ## v1.13.20
 ✨ Add comprehensive API reference documentation for the web panel integration
 ✨ Discover and queue expired server users even when no local Telegram record exists
