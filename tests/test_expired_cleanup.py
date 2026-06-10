@@ -16,6 +16,7 @@ MODULE_PATH = (
     / "utils"
     / "expired_cleanup.py"
 )
+TRANSLATIONS_PATH = MODULE_PATH.with_name("translations.py")
 
 
 class DummyBot:
@@ -356,6 +357,19 @@ class ExpiredCleanupTests(unittest.TestCase):
         exported = self.cleanup.get_deleted_users_for_json(days=60, now=self.now)
 
         self.assertEqual([entry["username"] for entry in exported], ["new"])
+
+    def test_expired_cleanup_notices_do_not_offer_renewal(self):
+        spec = importlib.util.spec_from_file_location("translations_under_test", TRANSLATIONS_PATH)
+        translations = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(translations)
+
+        renewal_terms = ("renew", "продл", "تمدید", "uzald")
+        notice_keys = ("expired_cleanup_customer_notice", "expired_cleanup_reseller_notice")
+        for language, messages in translations.MESSAGE_TRANSLATIONS.items():
+            for key in notice_keys:
+                notice = messages[key].lower()
+                for term in renewal_terms:
+                    self.assertNotIn(term, notice, f"{language}.{key} mentions renewal")
 
 
 if __name__ == "__main__":
