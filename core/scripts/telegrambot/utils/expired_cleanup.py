@@ -101,6 +101,13 @@ ADMIN_CLEANUP_REASON_LABELS = {
 }
 
 _cleanup_lock = threading.RLock()
+_cleanup_refresh_lock = threading.Lock()
+_cleanup_refresh_state = {
+    'running': False,
+    'started_at': None,
+    'finished_at': None,
+    'error': None,
+}
 
 ACCOUNT_TYPE_LABELS = {
     'en': {
@@ -938,9 +945,18 @@ def _build_admin_cleanup_text(language, filter_key='queue', page=0, now=None):
     else:
         rows = _get_admin_cleanup_text(language, "admin_expired_cleanup_empty", "No records in this view.")
 
+    refresh_state = _get_cleanup_refresh_state()
+    scan_line = ""
+    if refresh_state.get('running'):
+        scan_line = f"\nScan: *running* since `{_escape_markdown(refresh_state.get('started_at') or 'N/A')}`\n"
+    elif refresh_state.get('finished_at'):
+        scan_status = 'failed' if refresh_state.get('error') else 'completed'
+        scan_line = f"\nScan: *{scan_status}* at `{_escape_markdown(refresh_state.get('finished_at'))}`\n"
+
     return (
         f"{title}\n\n"
         f"{chr(10).join(count_lines)}\n\n"
+        f"{scan_line}"
         f"View: *{_escape_markdown(label)}* | Page *{page + 1}/{total_pages}*\n\n"
         f"{rows}"
     )
@@ -993,11 +1009,45 @@ def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
     return markup
 
 
-def _run_cleanup_for_dashboard():
+def _get_cleanup_refresh_state():
+    with _cleanup_refresh_lock:
+        return dict(_cleanup_refresh_state)
+
+
+def _cleanup_refresh_worker(grace_hours=24):
+    error = None
     try:
-        run_expired_user_cleanup(grace_hours=24)
+        run_expired_user_cleanup(grace_hours=grace_hours)
     except Exception as e:
+        error = str(e)
         print(f"Error refreshing expired cleanup dashboard: {e}")
+    finally:
+        with _cleanup_refresh_lock:
+            _cleanup_refresh_state.update({
+                'running': False,
+                'finished_at': _now_str(),
+                'error': error,
+            })
+
+
+def _start_cleanup_refresh_for_dashboard(grace_hours=24):
+    with _cleanup_refresh_lock:
+        if _cleanup_refresh_state.get('running'):
+            return False
+        _cleanup_refresh_state.update({
+            'running': True,
+            'started_at': _now_str(),
+            'finished_at': None,
+            'error': None,
+        })
+
+    thread = threading.Thread(
+        target=_cleanup_refresh_worker,
+        kwargs={'grace_hours': grace_hours},
+        daemon=True,
+    )
+    thread.start()
+    return True
 
 
 def _render_admin_expired_cleanup(chat_id, message_id, admin_id, filter_key='queue', page=0):
@@ -1027,7 +1077,7 @@ def _send_cleanup_export(chat_id, filter_key='all'):
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
 def admin_expired_cleanup_menu(message):
-    _run_cleanup_for_dashboard()
+    _start_cleanup_refresh_for_dashboard()
     language = get_user_language(message.from_user.id)
     bot.reply_to(
         message,
@@ -1060,9 +1110,9 @@ def handle_admin_expired_cleanup(call):
     if action == "refresh" and len(parts) == 4:
         filter_key = _normalize_admin_cleanup_filter(parts[2])
         page = _safe_int(parts[3], 0) or 0
-        _run_cleanup_for_dashboard()
+        started = _start_cleanup_refresh_for_dashboard()
         _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
-        bot.answer_callback_query(call.id, "Refreshed.")
+        bot.answer_callback_query(call.id, "Scan started." if started else "Scan already running.")
         return
 
     if action == "export" and len(parts) == 3:

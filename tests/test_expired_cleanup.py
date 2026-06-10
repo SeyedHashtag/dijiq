@@ -671,6 +671,41 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(self.cleanup._test_bot.edited_messages[-1][1]["chat_id"], 10)
         self.assertIn("Page *2/2*", self.cleanup._test_bot.edited_messages[-1][0])
 
+    def test_admin_cleanup_refresh_starts_scan_without_blocking_render(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {})
+        started = []
+        original_start = self.cleanup._start_cleanup_refresh_for_dashboard
+        self.cleanup._start_cleanup_refresh_for_dashboard = lambda: started.append(True) or True
+        self.addCleanup(setattr, self.cleanup, "_start_cleanup_refresh_for_dashboard", original_start)
+
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data="admin_expired_cleanup:refresh:queue:0",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+        self.cleanup.handle_admin_expired_cleanup(call)
+
+        self.assertEqual(started, [True])
+        self.assertEqual(self.cleanup._test_bot.edited_messages[-1][1]["chat_id"], 10)
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Scan started.")
+
+    def test_admin_cleanup_text_shows_running_scan_state(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {})
+        with self.cleanup._cleanup_refresh_lock:
+            self.cleanup._cleanup_refresh_state.update({
+                "running": True,
+                "started_at": "2026-06-09 12:00:00",
+                "finished_at": None,
+                "error": None,
+            })
+
+        text = self.cleanup._build_admin_cleanup_text("en", filter_key="queue", page=0, now=self.now)
+
+        self.assertIn("Scan: *running*", text)
+
     def test_admin_cleanup_export_current_filter_and_all_records(self):
         self.write_default_files()
         self.write_json(self.cleanup.STATE_FILE, {
