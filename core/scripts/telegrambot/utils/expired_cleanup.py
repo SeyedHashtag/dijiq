@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import os
 import threading
@@ -63,6 +64,7 @@ DELETE_RESULTS = {'deleted', 'already_missing'}
 ADMIN_CLEANUP_PAGE_SIZE = 8
 ADMIN_CLEANUP_FILTERS = (
     'queue',
+    'manual_review',
     'pending',
     'due',
     'deleted',
@@ -72,6 +74,7 @@ ADMIN_CLEANUP_FILTERS = (
     'renewed',
 )
 ADMIN_CLEANUP_STATUS_ORDER = (
+    'manual_review',
     'pending',
     'due',
     'deleted',
@@ -82,6 +85,7 @@ ADMIN_CLEANUP_STATUS_ORDER = (
 )
 ADMIN_CLEANUP_STATUS_LABELS = {
     'queue': 'Queue',
+    'manual_review': 'Manual Review',
     'pending': 'Pending',
     'due': 'Due',
     'deleted': 'Deleted',
@@ -238,6 +242,30 @@ def _safe_gb(byte_count):
 
 def _state_key(server_id, username):
     return f"{server_id or 'primary'}:{username}"
+
+
+def _state_record_id(state_key):
+    return hashlib.sha1(str(state_key).encode('utf-8')).hexdigest()[:16]
+
+
+def _find_state_key_by_record_id(record_id):
+    state = _load_json_file(STATE_FILE, {})
+    if not isinstance(state, dict):
+        return None, None, {}
+    for state_key, entry in state.items():
+        if _state_record_id(state_key) == record_id and isinstance(entry, dict):
+            return state_key, entry, state
+    return None, None, state
+
+
+def _candidate_from_state_entry(entry):
+    return {
+        'source': entry.get('source'),
+        'username': entry.get('username'),
+        'server_id': entry.get('server_id'),
+        'telegram_user_id': entry.get('telegram_user_id'),
+        'reseller_id': entry.get('reseller_id'),
+    }
 
 
 def _is_deleted_record(record):
@@ -405,6 +433,9 @@ def _cleanup_record_from_state(state_key, entry, now=None):
         'source': entry.get('source'),
         'telegram_user_id': entry.get('telegram_user_id'),
         'reseller_id': entry.get('reseller_id'),
+        'review_status': entry.get('review_status'),
+        'reviewed_at': entry.get('reviewed_at'),
+        'reviewed_by': entry.get('reviewed_by'),
         'notified_at': entry.get('notified_at'),
         'delete_after': entry.get('delete_after'),
         'deleted_at': entry.get('deleted_at'),
@@ -426,11 +457,13 @@ def _record_matches_filter(record, filter_key):
 
 def _record_sort_key(record):
     status = record.get('effective_status')
+    if status == 'manual_review':
+        return (0, record.get('reviewed_at') or '', record.get('username') or '')
     if status in {'pending', 'due'}:
-        return (0, record.get('delete_after') or '', record.get('username') or '')
+        return (1, record.get('delete_after') or '', record.get('username') or '')
     timestamp = _parse_time(record.get('deleted_at')) or _parse_time(record.get('notified_at')) or datetime.min
     return (
-        1,
+        2,
         -timestamp.year,
         -timestamp.month,
         -timestamp.day,
@@ -824,6 +857,42 @@ def _state_entry(candidate, now_value, grace_hours, notification_error=None, las
     }
 
 
+def _manual_review_entry(candidate, now_value, last_state=None):
+    return {
+        'username': candidate.get('username'),
+        'server_id': candidate.get('server_id') or 'primary',
+        'source': 'server_user',
+        'first_seen_at': now_value,
+        'last_checked_at': now_value,
+        'cleanup_status': 'manual_review',
+        'last_state': last_state,
+    }
+
+
+def _convert_server_user_to_manual_review(entry, now_value):
+    entry['cleanup_status'] = 'manual_review'
+    entry.setdefault('first_seen_at', entry.get('notified_at') or now_value)
+    entry['last_checked_at'] = now_value
+    entry.pop('delete_after', None)
+    entry.pop('notification_error', None)
+    entry.pop('notified_at', None)
+
+
+def _mark_renewed(state, key, candidate, now_value, last_state=None):
+    entry = state.setdefault(key, {})
+    entry.update({
+        'username': candidate.get('username'),
+        'server_id': candidate.get('server_id') or entry.get('server_id') or 'primary',
+        'source': candidate.get('source') or entry.get('source'),
+        'telegram_user_id': candidate.get('telegram_user_id') or entry.get('telegram_user_id'),
+        'reseller_id': candidate.get('reseller_id') or entry.get('reseller_id'),
+        'cleanup_status': 'renewed',
+        'reviewed_at': now_value,
+        'last_checked_at': now_value,
+        'last_state': last_state,
+    })
+
+
 def _mark_deleted(state, key, candidate, status, now_value, last_state=None, delete_result=None):
     entry = state.setdefault(key, {})
     entry.update({
@@ -869,6 +938,8 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             username = candidate.get('username')
             key = _state_key(candidate.get('server_id'), username)
             entry = state.get(key) if isinstance(state.get(key), dict) else None
+            if entry and entry.get('source') == 'server_user' and entry.get('cleanup_status') == 'notified':
+                _convert_server_user_to_manual_review(entry, now_value)
             if entry and entry.get('cleanup_status') in DELETE_RESULTS:
                 continue
 
@@ -885,15 +956,19 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
 
             if lookup_status == 'unavailable':
                 if entry:
-                    entry['cleanup_status'] = 'server_unavailable'
+                    if entry.get('cleanup_status') != 'manual_review':
+                        entry['cleanup_status'] = 'server_unavailable'
                     entry['cleanup_error'] = 'server_unavailable'
                     entry['last_checked_at'] = now_value
                 continue
 
             if lookup_status == 'found' and not is_user_expired(user_data):
                 if entry:
-                    state.pop(key, None)
-                    _update_candidate_record(candidate, {'cleanup_status': 'renewed', 'cleanup_error': None})
+                    if entry.get('cleanup_status') == 'manual_review':
+                        _mark_renewed(state, key, candidate, now_value, last_state=capture_last_state(user_data, now=now))
+                    else:
+                        state.pop(key, None)
+                        _update_candidate_record(candidate, {'cleanup_status': 'renewed', 'cleanup_error': None})
                 continue
 
             if lookup_status == 'missing':
@@ -910,6 +985,9 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
 
             if not entry:
                 last_state = capture_last_state(user_data, now=now) if lookup_status == 'found' else None
+                if candidate.get('source') == 'server_user':
+                    state[key] = _manual_review_entry(candidate, now_value, last_state=last_state)
+                    continue
                 notification_error = _notify_candidate(
                     candidate,
                     grace_hours,
@@ -927,6 +1005,20 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                     candidate,
                     _metadata_fields('notified', now_value, notification_error=notification_error, last_state=last_state),
                 )
+                continue
+
+            if entry.get('cleanup_status') == 'manual_review':
+                entry['last_state'] = capture_last_state(user_data, now=now) if lookup_status == 'found' else entry.get('last_state')
+                entry['last_checked_at'] = now_value
+                entry.pop('cleanup_error', None)
+                continue
+
+            if entry.get('source') == 'server_user' and candidate.get('source') == 'server_user':
+                entry.update(_manual_review_entry(
+                    candidate,
+                    now_value,
+                    last_state=capture_last_state(user_data, now=now) if lookup_status == 'found' else entry.get('last_state'),
+                ))
                 continue
 
             notified_at = _parse_time(entry.get('notified_at'))
@@ -990,10 +1082,13 @@ def _build_admin_cleanup_row(index, record):
     source = _escape_markdown(record.get('source') or 'unknown')
     delete_time = record.get('delete_after') or record.get('deleted_at') or 'N/A'
     reason = _escape_markdown(record.get('reason') or ADMIN_CLEANUP_REASON_LABELS['unknown'])
+    review_status = record.get('review_status')
+    review_line = f"\n   Review: `{_escape_markdown(review_status)}`" if review_status else ""
     return (
         f"{index}. `{username}` | `{server_id}` | {source}\n"
         f"   Status: *{_escape_markdown(status)}* | Time: `{_escape_markdown(delete_time)}`\n"
         f"   Reason: {reason}"
+        f"{review_line}"
     )
 
 
@@ -1012,7 +1107,7 @@ def _build_admin_cleanup_text(language, filter_key='queue', page=0, now=None):
     title = _get_admin_cleanup_text(language, "admin_expired_cleanup_title", "🧹 *Expired Cleanup*")
     label = _status_label(filter_key)
     count_lines = [
-        f"Queue: *{counts.get('queue', 0)}* (Pending {counts.get('pending', 0)} / Due {counts.get('due', 0)})",
+        f"Manual Review: *{counts.get('manual_review', 0)}* | Queue: *{counts.get('queue', 0)}* (Pending {counts.get('pending', 0)} / Due {counts.get('due', 0)})",
         f"Deleted: *{counts.get('deleted', 0)}* | Missing: *{counts.get('already_missing', 0)}*",
         f"Failed: *{counts.get('delete_failed', 0)}* | Unavailable: *{counts.get('server_unavailable', 0)}* | Renewed: *{counts.get('renewed', 0)}*",
     ]
@@ -1049,24 +1144,27 @@ def _filter_button_label(filter_key, counts):
 def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
     filter_key = _normalize_admin_cleanup_filter(filter_key)
     records = get_expired_cleanup_records(filter_key=filter_key, now=now)
-    _, total_pages, page = _paginate_records(records, page)
+    page_records, total_pages, page = _paginate_records(records, page)
     counts = get_expired_cleanup_counts(now=now)
     markup = types.InlineKeyboardMarkup(row_width=2)
 
     markup.add(
+        types.InlineKeyboardButton(_filter_button_label('manual_review', counts), callback_data="admin_expired_cleanup:list:manual_review:0"),
         types.InlineKeyboardButton(_filter_button_label('queue', counts), callback_data="admin_expired_cleanup:list:queue:0"),
+    )
+    markup.add(
         types.InlineKeyboardButton(_filter_button_label('pending', counts), callback_data="admin_expired_cleanup:list:pending:0"),
-    )
-    markup.add(
         types.InlineKeyboardButton(_filter_button_label('due', counts), callback_data="admin_expired_cleanup:list:due:0"),
+    )
+    markup.add(
         types.InlineKeyboardButton(_filter_button_label('deleted', counts), callback_data="admin_expired_cleanup:list:deleted:0"),
-    )
-    markup.add(
         types.InlineKeyboardButton(_filter_button_label('already_missing', counts), callback_data="admin_expired_cleanup:list:already_missing:0"),
-        types.InlineKeyboardButton(_filter_button_label('delete_failed', counts), callback_data="admin_expired_cleanup:list:delete_failed:0"),
     )
     markup.add(
+        types.InlineKeyboardButton(_filter_button_label('delete_failed', counts), callback_data="admin_expired_cleanup:list:delete_failed:0"),
         types.InlineKeyboardButton(_filter_button_label('server_unavailable', counts), callback_data="admin_expired_cleanup:list:server_unavailable:0"),
+    )
+    markup.add(
         types.InlineKeyboardButton(_filter_button_label('renewed', counts), callback_data="admin_expired_cleanup:list:renewed:0"),
     )
 
@@ -1078,6 +1176,16 @@ def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
         if page < total_pages - 1:
             nav_buttons.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page + 1}"))
         markup.add(*nav_buttons)
+
+    if filter_key == 'manual_review':
+        for index, record in enumerate(page_records, start=1):
+            record_id = _state_record_id(record.get('state_key'))
+            username = str(record.get('username') or 'N/A')
+            label = username if len(username) <= 18 else username[:15] + "..."
+            markup.add(
+                types.InlineKeyboardButton(f"Delete {index}", callback_data=f"admin_expired_cleanup:review_delete:{record_id}"),
+                types.InlineKeyboardButton(f"Keep {index}: {label}", callback_data=f"admin_expired_cleanup:review_keep:{record_id}"),
+            )
 
     markup.add(
         types.InlineKeyboardButton("📤 Export Current Filter", callback_data=f"admin_expired_cleanup:export:{filter_key}"),
@@ -1153,6 +1261,79 @@ def _send_cleanup_export(chat_id, filter_key='all'):
     )
 
 
+def _handle_manual_review_keep(record_id, admin_id):
+    now_value = _now_str()
+    with _cleanup_lock:
+        state_key, entry, state = _find_state_key_by_record_id(record_id)
+        if not state_key or not entry:
+            return "Review record not found."
+        if entry.get('cleanup_status') != 'manual_review':
+            return "Record is no longer in manual review."
+
+        entry['review_status'] = 'kept'
+        entry['reviewed_at'] = now_value
+        entry['reviewed_by'] = str(admin_id)
+        entry['last_checked_at'] = now_value
+        _save_json_file(STATE_FILE, state)
+        return "Kept for later review."
+
+
+def _handle_manual_review_delete(record_id):
+    now_value = _now_str()
+    with _cleanup_lock:
+        state_key, entry, state = _find_state_key_by_record_id(record_id)
+        if not state_key or not entry:
+            return "Review record not found."
+        if entry.get('cleanup_status') != 'manual_review':
+            return "Record is no longer in manual review."
+
+        candidate = _candidate_from_state_entry(entry)
+        multi_api = MultiServerAPI()
+        api_client, user_data, lookup_status = _get_user_lookup(
+            multi_api,
+            candidate.get('username'),
+            preferred_server_id=candidate.get('server_id'),
+        )
+
+        if lookup_status == 'unavailable':
+            entry['cleanup_error'] = 'server_unavailable'
+            entry['last_checked_at'] = now_value
+            _save_json_file(STATE_FILE, state)
+            return "Server unavailable. Try again later."
+
+        if lookup_status == 'missing':
+            _mark_deleted(
+                state,
+                state_key,
+                candidate,
+                'already_missing',
+                now_value,
+                last_state=entry.get('last_state'),
+                delete_result='already_missing',
+            )
+            _save_json_file(STATE_FILE, state)
+            return "User is already missing."
+
+        last_state = capture_last_state(user_data, now=datetime.now())
+        if not is_user_expired(user_data):
+            _mark_renewed(state, state_key, candidate, now_value, last_state=last_state)
+            _save_json_file(STATE_FILE, state)
+            return "User is no longer expired."
+
+        delete_result = api_client.delete_user(candidate.get('username')) if api_client else None
+        if delete_result is None:
+            entry['cleanup_status'] = 'delete_failed'
+            entry['cleanup_error'] = 'delete_failed'
+            entry['last_checked_at'] = now_value
+            entry['last_state'] = last_state
+            _save_json_file(STATE_FILE, state)
+            return "Delete failed."
+
+        _mark_deleted(state, state_key, candidate, 'deleted', now_value, last_state=last_state, delete_result='deleted')
+        _save_json_file(STATE_FILE, state)
+        return "User deleted."
+
+
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
 def admin_expired_cleanup_menu(message):
     _start_cleanup_refresh_for_dashboard()
@@ -1191,6 +1372,18 @@ def handle_admin_expired_cleanup(call):
         started = _start_cleanup_refresh_for_dashboard()
         _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
         bot.answer_callback_query(call.id, "Scan started." if started else "Scan already running.")
+        return
+
+    if action == "review_keep" and len(parts) == 3:
+        message = _handle_manual_review_keep(parts[2], call.from_user.id)
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, "manual_review", 0)
+        bot.answer_callback_query(call.id, message)
+        return
+
+    if action == "review_delete" and len(parts) == 3:
+        message = _handle_manual_review_delete(parts[2])
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, "manual_review", 0)
+        bot.answer_callback_query(call.id, message)
         return
 
     if action == "export" and len(parts) == 3:

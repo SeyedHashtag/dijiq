@@ -278,7 +278,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertIn("GB used: 3.0/5.0", self.cleanup._test_bot.sent_messages[0][1])
         self.assertNotIn("GB remaining:", self.cleanup._test_bot.sent_messages[0][1])
 
-    def test_server_only_expired_user_is_queued_without_local_record(self):
+    def test_server_only_expired_user_goes_to_manual_review_without_local_record(self):
         self.write_default_files()
         client = FakeClient("s1", {"orphan": self.expired_user()})
 
@@ -289,12 +289,13 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(client.get_users_calls, 1)
         self.assertEqual(client.get_user_calls, [])
         self.assertEqual(len(self.cleanup._test_bot.sent_messages), 0)
-        self.assertEqual(state["s1:orphan"]["cleanup_status"], "notified")
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "manual_review")
         self.assertEqual(state["s1:orphan"]["source"], "server_user")
-        self.assertEqual(state["s1:orphan"]["notification_error"], "missing_recipient")
+        self.assertNotIn("delete_after", state["s1:orphan"])
+        self.assertNotIn("notification_error", state["s1:orphan"])
         self.assertEqual(state["s1:orphan"]["last_state"]["status"], "expired")
 
-    def test_server_only_expired_user_deletes_after_grace(self):
+    def test_server_only_manual_review_user_does_not_auto_delete_after_grace(self):
         self.write_default_files()
         client = FakeClient("s1", {"orphan": self.expired_user()})
 
@@ -302,12 +303,11 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
-        self.assertEqual(client.deleted, ["orphan"])
-        self.assertEqual(client.get_user_calls, ["orphan"])
-        self.assertEqual(state["s1:orphan"]["cleanup_status"], "deleted")
-        self.assertEqual(state["s1:orphan"]["delete_result"], "deleted")
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "manual_review")
+        self.assertEqual(state["s1:orphan"]["last_state"]["status"], "expired")
 
-    def test_server_only_pending_user_is_cleared_when_renewed(self):
+    def test_server_only_manual_review_user_is_marked_renewed_when_renewed(self):
         self.write_default_files()
         client = FakeClient("s1", {"orphan": self.expired_user()})
 
@@ -321,8 +321,54 @@ class ExpiredCleanupTests(unittest.TestCase):
         }
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
-        self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "renewed")
         self.assertEqual(client.deleted, [])
+
+    def test_legacy_server_only_notified_record_is_migrated_to_manual_review(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:orphan": {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "notification_error": "missing_recipient",
+                "last_state": {"status": "expired", "days_remaining": 0},
+            }
+        })
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "manual_review")
+        self.assertNotIn("delete_after", state["s1:orphan"])
+        self.assertNotIn("notification_error", state["s1:orphan"])
+        self.assertNotIn("notified_at", state["s1:orphan"])
+
+    def test_renewed_server_only_user_reexpiring_returns_to_manual_review(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:orphan": {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "renewed",
+                "last_state": {"status": "active", "days_remaining": 30},
+            }
+        })
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(state["s1:orphan"]["cleanup_status"], "manual_review")
+        self.assertEqual(state["s1:orphan"]["last_state"]["status"], "expired")
 
     def test_paid_customer_notification_includes_account_type(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
@@ -587,10 +633,18 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "cleanup_status": "renewed",
                 "last_state": {"days_remaining": 10},
             },
+            "s1:review": {
+                "username": "review",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
         })
 
         counts = self.cleanup.get_expired_cleanup_counts(now=self.now)
 
+        self.assertEqual(counts["manual_review"], 1)
         self.assertEqual(counts["pending"], 1)
         self.assertEqual(counts["due"], 1)
         self.assertEqual(counts["queue"], 2)
@@ -684,6 +738,90 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertIn("admin_expired_cleanup:list:deleted:0", callbacks)
         self.assertIn("admin_expired_cleanup:export:queue", callbacks)
         self.assertIn("admin_expired_cleanup:export:all", callbacks)
+
+    def test_manual_review_ui_shows_records_and_review_actions(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:orphan": {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+
+        text = self.cleanup._build_admin_cleanup_text("en", filter_key="manual_review", page=0, now=self.now)
+        markup = self.cleanup._build_admin_cleanup_markup(filter_key="manual_review", page=0, now=self.now)
+        callbacks = self.callback_data_from_markup(markup)
+
+        self.assertIn("Manual Review: *1*", text)
+        self.assertIn("`orphan`", text)
+        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_delete:") for callback in callbacks))
+        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_keep:") for callback in callbacks))
+
+    def test_manual_review_keep_updates_metadata_but_keeps_record_visible(self):
+        self.write_default_files()
+        state_key = "s1:orphan"
+        self.write_json(self.cleanup.STATE_FILE, {
+            state_key: {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+        record_id = self.cleanup._state_record_id(state_key)
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data=f"admin_expired_cleanup:review_keep:{record_id}",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+
+        self.cleanup.handle_admin_expired_cleanup(call)
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(state[state_key]["cleanup_status"], "manual_review")
+        self.assertEqual(state[state_key]["review_status"], "kept")
+        self.assertEqual(state[state_key]["reviewed_by"], "1")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
+        text = self.cleanup._test_bot.edited_messages[-1][0]
+        self.assertIn("`orphan`", text)
+        self.assertIn("Review: `kept`", text)
+
+    def test_manual_review_delete_rechecks_and_deletes_expired_user(self):
+        self.write_default_files()
+        state_key = "s1:orphan"
+        self.write_json(self.cleanup.STATE_FILE, {
+            state_key: {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+        client = FakeClient("s1", {"orphan": self.expired_user()})
+        original_multi_api = self.cleanup.MultiServerAPI
+        self.cleanup.MultiServerAPI = lambda: FakeMultiAPI({"s1": client})
+        self.addCleanup(setattr, self.cleanup, "MultiServerAPI", original_multi_api)
+        record_id = self.cleanup._state_record_id(state_key)
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data=f"admin_expired_cleanup:review_delete:{record_id}",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+
+        self.cleanup.handle_admin_expired_cleanup(call)
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, ["orphan"])
+        self.assertEqual(state[state_key]["cleanup_status"], "deleted")
+        self.assertEqual(state[state_key]["delete_result"], "deleted")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "User deleted.")
 
     def test_admin_cleanup_pagination_and_callback_route(self):
         self.write_default_files()
