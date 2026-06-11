@@ -168,6 +168,25 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertEqual(clients["s1"].get_users_calls, 2)
         self.assertEqual(clients["s2"].get_users_calls, 2)
 
+    def test_iter_all_users_can_exclude_disabled_servers_and_default_includes_them(self):
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"disabled": {"blocked": False}}),
+        }
+        servers = [
+            {"id": "s1", "name": "s1", "url": "https://s1.test", "token": "token", "enabled": True, "weight": 1},
+            {"id": "s2", "name": "s2", "url": "https://s2.test", "token": "token", "enabled": False, "weight": 1},
+        ]
+        api_client.get_server_configs = lambda: servers
+        api_client.APIClient = lambda server: clients[server["id"]]
+        multi_api = api_client.MultiServerAPI()
+
+        default_usernames = [username for _, username, _ in multi_api.iter_all_users()]
+        enabled_usernames = [username for _, username, _ in multi_api.iter_all_users(include_disabled=False)]
+
+        self.assertEqual(default_usernames, ["active", "disabled"])
+        self.assertEqual(enabled_usernames, ["active"])
+
 
 class ServerConfigPersistenceTests(unittest.TestCase):
     def setUp(self):

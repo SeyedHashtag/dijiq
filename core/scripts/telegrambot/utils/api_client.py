@@ -500,8 +500,8 @@ class MultiServerAPI:
                 return client, user
         return None, None
 
-    def iter_all_users(self):
-        for _, client in self.iter_clients(include_disabled=True):
+    def iter_all_users(self, include_disabled: bool = True):
+        for _, client in self.iter_clients(include_disabled=include_disabled):
             users = client.get_users()
             if users is None:
                 continue

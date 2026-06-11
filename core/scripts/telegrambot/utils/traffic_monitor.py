@@ -72,6 +72,17 @@ def _should_reset_alerts(state, max_download_bytes, total_usage_bytes):
     return False
 
 
+def _select_threshold_alert(usage_percent, notified):
+    crossed = sorted(threshold for threshold in ALERT_THRESHOLDS if usage_percent >= threshold)
+    newly_crossed = [threshold for threshold in crossed if threshold not in notified]
+    if not newly_crossed:
+        return None, []
+
+    alert_threshold = newly_crossed[-1]
+    handled_thresholds = [threshold for threshold in newly_crossed if threshold <= alert_threshold]
+    return alert_threshold, handled_thresholds
+
+
 def _extract_reseller_id(username):
     """Extract the reseller's Telegram ID from a reseller-created config username.
 
@@ -134,7 +145,7 @@ def monitor_user_traffic():
     alerts = _load_alerts()
     changed = False
 
-    for api_client, username, user_data in multi_api.iter_all_users():
+    for api_client, username, user_data in multi_api.iter_all_users(include_disabled=False):
         if not username or not user_data:
             continue
 
@@ -157,22 +168,21 @@ def monitor_user_traffic():
 
                     notified = set(state.get('notified', []))
 
-                    for threshold in ALERT_THRESHOLDS:
-                        if usage_percent >= threshold and threshold not in notified:
-                            language = get_user_language(telegram_id)
-                            message = get_message_text(language, "traffic_quota_alert").format(
-                                percent=int(usage_percent),
-                                username=username,
-                                used_gb=total_usage_bytes / (1024 ** 3),
-                                limit_gb=max_download_bytes / (1024 ** 3),
-                            )
-                            try:
-                                bot.send_message(telegram_id, message, parse_mode="Markdown")
-                            except Exception as e:
-                                print(f"Failed to notify user {telegram_id} for {username}: {e}")
-                                continue
-
-                            notified.add(threshold)
+                    alert_threshold, handled_thresholds = _select_threshold_alert(usage_percent, notified)
+                    if alert_threshold is not None:
+                        language = get_user_language(telegram_id)
+                        message = get_message_text(language, "traffic_quota_alert").format(
+                            percent=int(usage_percent),
+                            username=username,
+                            used_gb=total_usage_bytes / (1024 ** 3),
+                            limit_gb=max_download_bytes / (1024 ** 3),
+                        )
+                        try:
+                            bot.send_message(telegram_id, message, parse_mode="Markdown")
+                        except Exception as e:
+                            print(f"Failed to notify user {telegram_id} for {username}: {e}")
+                        else:
+                            notified.update(handled_thresholds)
                             changed = True
 
                     if notified:
@@ -212,21 +222,20 @@ def monitor_user_traffic():
 
                 gb_notified = set(state.get('gb_notified', []))
 
-                for threshold in ALERT_THRESHOLDS:
-                    if usage_percent >= threshold and threshold not in gb_notified:
-                        message = get_message_text(language, "reseller_client_traffic_alert").format(
-                            percent=int(usage_percent),
-                            username=username,
-                            used_gb=total_usage_bytes / (1024 ** 3),
-                            limit_gb=max_download_bytes / (1024 ** 3),
-                        )
-                        try:
-                            bot.send_message(reseller_id, message, parse_mode="Markdown")
-                        except Exception as e:
-                            print(f"Failed to notify reseller {reseller_id} for client {username} (GB): {e}")
-                            continue
-
-                        gb_notified.add(threshold)
+                alert_threshold, handled_thresholds = _select_threshold_alert(usage_percent, gb_notified)
+                if alert_threshold is not None:
+                    message = get_message_text(language, "reseller_client_traffic_alert").format(
+                        percent=int(usage_percent),
+                        username=username,
+                        used_gb=total_usage_bytes / (1024 ** 3),
+                        limit_gb=max_download_bytes / (1024 ** 3),
+                    )
+                    try:
+                        bot.send_message(reseller_id, message, parse_mode="Markdown")
+                    except Exception as e:
+                        print(f"Failed to notify reseller {reseller_id} for client {username} (GB): {e}")
+                    else:
+                        gb_notified.update(handled_thresholds)
                         changed = True
 
                 state['gb_notified'] = sorted(gb_notified)
@@ -254,22 +263,21 @@ def monitor_user_traffic():
 
                 days_notified = set(state.get('days_notified', []))
 
-                for threshold in ALERT_THRESHOLDS:
-                    if days_percent >= threshold and threshold not in days_notified:
-                        message = get_message_text(language, "reseller_client_days_alert").format(
-                            percent=int(days_percent),
-                            username=username,
-                            days_used=max(0, days_used),
-                            total_days=total_days,
-                            days_remaining=expiration_days,
-                        )
-                        try:
-                            bot.send_message(reseller_id, message, parse_mode="Markdown")
-                        except Exception as e:
-                            print(f"Failed to notify reseller {reseller_id} for client {username} (days): {e}")
-                            continue
-
-                        days_notified.add(threshold)
+                alert_threshold, handled_thresholds = _select_threshold_alert(days_percent, days_notified)
+                if alert_threshold is not None:
+                    message = get_message_text(language, "reseller_client_days_alert").format(
+                        percent=int(days_percent),
+                        username=username,
+                        days_used=max(0, days_used),
+                        total_days=total_days,
+                        days_remaining=expiration_days,
+                    )
+                    try:
+                        bot.send_message(reseller_id, message, parse_mode="Markdown")
+                    except Exception as e:
+                        print(f"Failed to notify reseller {reseller_id} for client {username} (days): {e}")
+                    else:
+                        days_notified.update(handled_thresholds)
                         changed = True
 
                 state['days_notified'] = sorted(days_notified)
