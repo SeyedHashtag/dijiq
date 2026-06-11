@@ -1,3 +1,8 @@
+## v1.13.24
+🐛 Find expired users from bulk server scans when single-user API lookup misses an existing account
+🐛 Recheck records marked already missing and repair them when the user still exists on the VPN server
+✅ Add tests for bulk-scan fallback deletion and already-missing repair paths
+
 ## v1.13.23
 ✨ Add manual review handling for expired server-only users with admin Keep/Delete actions
 🐛 Prevent server-only expired users from being auto-deleted without manual review
