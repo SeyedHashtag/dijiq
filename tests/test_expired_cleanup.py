@@ -81,6 +81,12 @@ class FakeClient:
         return self.delete_result
 
 
+class BulkOnlyFakeClient(FakeClient):
+    def get_user(self, username):
+        self.get_user_calls.append(username)
+        return None
+
+
 class FakeMultiAPI:
     def __init__(self, clients):
         self.clients = clients
@@ -550,6 +556,73 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(self.cleanup._test_bot.sent_messages, [])
         self.assertEqual(exported[0]["delete_result"], "already_missing")
         self.assertIsNone(exported[0]["last_state"])
+
+    def test_due_cleanup_uses_bulk_scan_when_single_user_lookup_misses_existing_user(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {
+            "303": {"configs": [{"username": "r303", "server_id": "s1"}]}
+        })
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:r303": {
+                "username": "r303",
+                "server_id": "s1",
+                "source": "reseller_customer",
+                "reseller_id": "303",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = BulkOnlyFakeClient("s1", {"r303": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
+        self.assertEqual(client.deleted, ["r303"])
+        self.assertEqual(state["s1:r303"]["cleanup_status"], "deleted")
+        self.assertEqual(state["s1:r303"]["delete_result"], "deleted")
+        self.assertEqual(saved_config["cleanup_status"], "deleted")
+
+    def test_refresh_repairs_already_missing_when_bulk_scan_finds_existing_user(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {
+            "303": {"configs": [{
+                "username": "r303",
+                "server_id": "s1",
+                "cleanup_status": "already_missing",
+                "cleanup_deleted_at": "2026-06-09 12:00:00",
+                "cleanup_delete_result": "already_missing",
+            }]}
+        })
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:r303": {
+                "username": "r303",
+                "server_id": "s1",
+                "source": "reseller_customer",
+                "reseller_id": "303",
+                "cleanup_status": "already_missing",
+                "delete_result": "already_missing",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "deleted_at": "2026-06-09 12:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = BulkOnlyFakeClient("s1", {"r303": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
+        self.assertEqual(client.deleted, ["r303"])
+        self.assertEqual(state["s1:r303"]["cleanup_status"], "deleted")
+        self.assertEqual(state["s1:r303"]["delete_result"], "deleted")
+        self.assertEqual(saved_config["cleanup_status"], "deleted")
+        self.assertEqual(saved_config["cleanup_delete_result"], "deleted")
 
     def test_deleted_users_json_filters_to_past_sixty_days(self):
         self.write_default_files()

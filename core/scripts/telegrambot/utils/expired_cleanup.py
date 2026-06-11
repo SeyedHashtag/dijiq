@@ -275,6 +275,13 @@ def _is_deleted_record(record):
     )
 
 
+def _is_already_missing_record(record):
+    return (
+        record.get('cleanup_status') == 'already_missing'
+        or record.get('cleanup_delete_result') == 'already_missing'
+    )
+
+
 def is_user_expired(user_data):
     if not isinstance(user_data, dict):
         return False
@@ -545,13 +552,25 @@ def _iter_named_user_records(users):
                 yield str(data.get('username')), data
 
 
-def discover_cleanup_candidates():
+def _find_user_in_records(users, username):
+    target = str(username or '').strip().lower()
+    if not target:
+        return None
+    for record_username, user_data in _iter_named_user_records(users):
+        if str(record_username or '').strip().lower() == target:
+            return user_data
+    return None
+
+
+def discover_cleanup_candidates(include_already_missing=False):
     candidates = []
 
     test_configs = _load_json_file(TEST_CONFIGS_FILE, {})
     if isinstance(test_configs, dict):
         for telegram_id, entry in test_configs.items():
-            if not isinstance(entry, dict) or _is_deleted_record(entry):
+            if not isinstance(entry, dict):
+                continue
+            if _is_deleted_record(entry) and not (include_already_missing and _is_already_missing_record(entry)):
                 continue
             username = str(entry.get('username') or '').strip()
             if not username:
@@ -567,7 +586,9 @@ def discover_cleanup_candidates():
     payments = _load_json_file(PAYMENTS_FILE, {})
     if isinstance(payments, dict):
         for payment_id, record in payments.items():
-            if not _completed_payment(record) or _is_deleted_record(record):
+            if not _completed_payment(record):
+                continue
+            if _is_deleted_record(record) and not (include_already_missing and _is_already_missing_record(record)):
                 continue
             username = str(record.get('username') or '').strip()
             if not username:
@@ -589,7 +610,9 @@ def discover_cleanup_candidates():
             if not isinstance(configs, list):
                 continue
             for index, config in enumerate(configs):
-                if not isinstance(config, dict) or _is_deleted_record(config):
+                if not isinstance(config, dict):
+                    continue
+                if _is_deleted_record(config) and not (include_already_missing and _is_already_missing_record(config)):
                     continue
                 username = str(config.get('username') or '').strip()
                 if not username:
@@ -638,12 +661,12 @@ def _candidate_matches_server_candidates(candidate, usernames, exact_keys):
     return _state_key(server_id, username).lower() in exact_keys
 
 
-def discover_matching_cleanup_candidates(server_candidates):
+def discover_matching_cleanup_candidates(server_candidates, include_already_missing=False):
     usernames, exact_keys, exact_candidates, username_candidates = _server_candidate_match_sets(server_candidates)
     if not usernames:
         return []
     matched = []
-    for candidate in discover_cleanup_candidates():
+    for candidate in discover_cleanup_candidates(include_already_missing=include_already_missing):
         if not _candidate_matches_server_candidates(candidate, usernames, exact_keys):
             continue
 
@@ -688,6 +711,29 @@ def discover_state_cleanup_candidates(state):
             'server_id': entry.get('server_id'),
             'telegram_user_id': entry.get('telegram_user_id'),
             'reseller_id': entry.get('reseller_id'),
+        })
+
+    return candidates
+
+
+def discover_already_missing_cleanup_candidates(state):
+    candidates = []
+    if not isinstance(state, dict):
+        return candidates
+
+    for entry in state.values():
+        if not isinstance(entry, dict) or entry.get('cleanup_status') != 'already_missing':
+            continue
+        username = str(entry.get('username') or '').strip()
+        if not username:
+            continue
+        candidates.append({
+            'source': entry.get('source') or 'server_user',
+            'username': username,
+            'server_id': entry.get('server_id'),
+            'telegram_user_id': entry.get('telegram_user_id'),
+            'reseller_id': entry.get('reseller_id'),
+            '_repair_already_missing': True,
         })
 
     return candidates
@@ -801,6 +847,9 @@ def _get_user_lookup(multi_api, username, preferred_server_id=None):
         users = client.get_users()
         if users is None:
             return client, None, 'unavailable'
+        user_data = _find_user_in_records(users, username)
+        if user_data is not None:
+            return client, user_data, 'found'
         return client, None, 'missing'
 
     for _, client in multi_api.iter_clients(include_disabled=True):
@@ -811,6 +860,10 @@ def _get_user_lookup(multi_api, username, preferred_server_id=None):
         users = client.get_users()
         if users is None:
             unavailable = True
+            continue
+        user_data = _find_user_in_records(users, username)
+        if user_data is not None:
+            return client, user_data, 'found'
 
     if unavailable or not checked_any:
         return None, None, 'unavailable'
@@ -928,9 +981,14 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
         multi_api = multi_api or MultiServerAPI()
         server_candidates = discover_server_cleanup_candidates(multi_api)
         state_candidates = discover_state_cleanup_candidates(state)
+        already_missing_candidates = discover_already_missing_cleanup_candidates(state)
         candidates = _merge_cleanup_candidates(
-            discover_matching_cleanup_candidates(_merge_cleanup_candidates(server_candidates, state_candidates)),
+            discover_matching_cleanup_candidates(
+                _merge_cleanup_candidates(server_candidates, state_candidates, already_missing_candidates),
+                include_already_missing=True,
+            ),
             state_candidates,
+            already_missing_candidates,
             server_candidates,
         )
 
@@ -940,10 +998,10 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             entry = state.get(key) if isinstance(state.get(key), dict) else None
             if entry and entry.get('source') == 'server_user' and entry.get('cleanup_status') == 'notified':
                 _convert_server_user_to_manual_review(entry, now_value)
-            if entry and entry.get('cleanup_status') in DELETE_RESULTS:
+            if entry and entry.get('cleanup_status') == 'deleted':
                 continue
 
-            if not entry and candidate.get('_lookup_status') == 'found':
+            if candidate.get('_lookup_status') == 'found':
                 api_client = candidate.get('_api_client')
                 user_data = candidate.get('_user_data')
                 lookup_status = 'found'
@@ -956,6 +1014,10 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
 
             if lookup_status == 'unavailable':
                 if entry:
+                    if entry.get('cleanup_status') == 'already_missing':
+                        entry['cleanup_error'] = 'server_unavailable'
+                        entry['last_checked_at'] = now_value
+                        continue
                     if entry.get('cleanup_status') != 'manual_review':
                         entry['cleanup_status'] = 'server_unavailable'
                     entry['cleanup_error'] = 'server_unavailable'
@@ -972,6 +1034,9 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 continue
 
             if lookup_status == 'missing':
+                if entry and entry.get('cleanup_status') == 'already_missing':
+                    entry['last_checked_at'] = now_value
+                    continue
                 _mark_deleted(
                     state,
                     key,
