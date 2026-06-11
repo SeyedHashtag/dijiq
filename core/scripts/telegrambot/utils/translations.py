@@ -638,7 +638,7 @@ MESSAGE_TRANSLATIONS = {
         "reseller_request_notification": "💼 **درخواست نمایندگی جدید**\n\nکاربر: {user_id} (@{username})\nدرخواست دسترسی نمایندگی داده است.",
         "reseller_approved_notification": "✅ درخواست نمایندگی شما تأیید شد! اکنون می‌توانید به پنل نمایندگی دسترسی داشته باشید.",
         "reseller_rejected_notification": "❌ درخواست نمایندگی شما رد شد.",
-        "reseller_config_created": "✅ کانفیگ با موفقیت ایجاد شد!\n\nنام کاربری: `{username}`\nطرح: {plan_gb} گیگابایت\nمدت زمان: {days} روز\nقیمت: ${price}\n\n{ipv4_info}URL اشتراک: {sub_url}",
+        "reseller_config_created": "✅ کانفیگ با موفقیت ایجاد شد!\n\nنام کاربری: `{username}`\nطرح: {plan_gb} گیگابایت\nمدت زمان: {days} روز\nقیمت: ${price}\n\n{ipv4_info}URL اشتراک:\n{sub_url}",
         "reseller_purchase_details": "📋 جزئیات خرید\n\n📊 طرح: {plan_gb} گیگابایت\n📅 مدت زمان: {days} روز\n💵 قیمت: ${price}\n💱 نرخ تبدیل: هر ۱ دلار = {exchange_rate} تومان\n💱 قیمت به تومان: {toman_price} تومان\n💰 بدهی فعلی: ${current_debt}\n💳 سقف اعتبار: ${trust_limit}\n💸 بدهی پس از خرید: ${projected_debt}\n\nاین خرید را تأیید می‌کنید؟",
         "reseller_trust_limit_exceeded": "🚫 سقف اعتبار رد شد\n\nبدهی فعلی: ${current_debt:.2f}\nاین خرید اضافه می‌کند: ${purchase_adds:.2f}\nبدهی پس از خرید: ${projected_debt:.2f}\nسقف اعتبار: ${trust_limit:.2f}\nاعتبار در دسترس: ${available_credit:.2f}\n\nلطفاً قبل از ایجاد کانفیگ‌های بیشتر بدهی را تسویه کنید.",
         "reseller_trust_limit_exceeded_short": "سقف اعتبار ${trust_limit:.2f} است. اعتبار در دسترس: ${available_credit:.2f}.",
