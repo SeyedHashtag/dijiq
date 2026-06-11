@@ -1,3 +1,11 @@
+## v1.14.0
+✨ Add Toman currency formatting across payment setup, purchase, and receipt checker flows
+✨ Expand checker stats with last-30-days paid totals, open account totals, and legacy USD details
+✨ Improve reseller settlement payments, customer-name handling, and admin confirmation notifications
+🐛 Skip disabled VPN servers during user iteration and improve traffic-monitoring alerts for reseller configurations
+🌐 Clarify card payment, receipt upload, wallet, and reseller configuration creation messages
+✅ Add tests for currency formatting, checker stats, receipt sharing, reseller notifications, server filtering, and traffic alerts
+
 ## v1.13.25
 🐛 Clear stale deletion metadata when a previously missing expired-cleanup candidate is found on the VPN server again
 🐛 Keep repaired traffic-exhausted users in the pending cleanup queue instead of showing them as already missing
