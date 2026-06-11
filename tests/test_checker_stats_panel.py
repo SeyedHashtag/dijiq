@@ -132,10 +132,10 @@ class CheckerStatsPanelTests(unittest.TestCase):
             "owed_total": 200000.0,
             "paid_total": 50000.0,
             "unpaid_total": 150000.0,
-            "approved_total_usd": 0.0,
-            "owed_total_usd": 0.0,
-            "paid_total_usd": 0.0,
-            "legacy_estimated_count": 0,
+            "approved_total_usd": 50.0,
+            "owed_total_usd": 5.0,
+            "paid_total_usd": 2.0,
+            "legacy_estimated_count": 1,
             "latest_review": None,
         }
 
@@ -152,6 +152,8 @@ class CheckerStatsPanelTests(unittest.TestCase):
         self.assertNotIn("Paid to Checker:", checker_text)
         self.assertNotIn("Regular Customer\nPending:", checker_text)
         self.assertNotIn("Reseller Settlement\nPending:", checker_text)
+        self.assertNotIn("Legacy USD Approved:", checker_text)
+        self.assertNotIn("Legacy Estimated Receipts:", checker_text)
         self.assertIn("Approved Total: 2,000,000 Tomans", checker_text)
         self.assertIn("Your Share: 200,000 Tomans", checker_text)
         self.assertIn("Paid to You: 50,000 Tomans", checker_text)
@@ -159,6 +161,8 @@ class CheckerStatsPanelTests(unittest.TestCase):
 
         self.assertIn("Checker User ID: 42", admin_text)
         self.assertIn("Checker Owed: 200,000 Tomans", admin_text)
+        self.assertIn("Legacy USD Approved: $50.00", admin_text)
+        self.assertIn("Legacy Estimated Receipts: 1", admin_text)
         self.assertIn("Regular Customer\nPending: 0", admin_text)
         self.assertIn("Reseller Settlement\nPending: 0", admin_text)
 
