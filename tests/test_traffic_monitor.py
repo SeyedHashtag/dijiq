@@ -64,8 +64,8 @@ def install_stubs():
     translations_stub = types.ModuleType("utils.translations")
     translations_stub.get_message_text = lambda language, key: {
         "traffic_quota_alert": "regular {username} {percent}",
-        "reseller_client_traffic_alert": "reseller-gb {username} {percent}",
-        "reseller_client_days_alert": "reseller-days {username} {percent} {days_used} {total_days} {days_remaining}",
+        "reseller_client_traffic_alert": "reseller-gb {customer_name} {username} {percent}",
+        "reseller_client_days_alert": "reseller-days {customer_name} {username} {percent} {days_used} {total_days} {days_remaining}",
     }[key]
     sys.modules["utils.translations"] = translations_stub
 
@@ -107,9 +107,12 @@ class TrafficMonitorTests(unittest.TestCase):
         with open(self.monitor.ALERTS_FILE, "w") as f:
             json.dump(alerts, f)
 
-    def write_reseller_days(self, reseller_id, username, days):
+    def write_reseller_config(self, reseller_id, username, days=100, customer_name="ali123"):
+        config = {"username": username, "days": days}
+        if customer_name is not None:
+            config["customer_name"] = customer_name
         with open(self.monitor.RESELLERS_FILE, "w") as f:
-            json.dump({str(reseller_id): {"configs": [{"username": username, "days": days}]}}, f)
+            json.dump({str(reseller_id): {"configs": [config]}}, f)
 
     def test_regular_user_at_95_percent_gets_one_alert_and_marks_all_crossed_thresholds(self):
         self.run_monitor([
@@ -122,17 +125,19 @@ class TrafficMonitorTests(unittest.TestCase):
         self.assertEqual(self.read_alerts()["s123"]["notified"], [80, 90])
 
     def test_reseller_client_at_95_percent_gb_gets_one_alert_and_marks_all_crossed_thresholds(self):
+        self.write_reseller_config(456, "r456", customer_name="ali123")
+
         self.run_monitor([
             (True, "r456", {"upload_bytes": 95 * GB, "download_bytes": 0, "max_download_bytes": 100 * GB}),
         ])
 
         self.assertEqual(len(self.bot.sent_messages), 1)
         self.assertEqual(self.bot.sent_messages[0][0], 456)
-        self.assertIn("reseller-gb r456 95", self.bot.sent_messages[0][1])
+        self.assertIn("reseller-gb ali123 r456 95", self.bot.sent_messages[0][1])
         self.assertEqual(self.read_alerts()["r456"]["gb_notified"], [80, 90])
 
     def test_reseller_client_at_95_percent_days_gets_one_alert_and_marks_all_crossed_thresholds(self):
-        self.write_reseller_days(456, "r456", 100)
+        self.write_reseller_config(456, "r456", days=100, customer_name="sara88")
 
         self.run_monitor([
             (True, "r456", {"expiration_days": 5, "max_download_bytes": 0}),
@@ -140,8 +145,37 @@ class TrafficMonitorTests(unittest.TestCase):
 
         self.assertEqual(len(self.bot.sent_messages), 1)
         self.assertEqual(self.bot.sent_messages[0][0], 456)
-        self.assertIn("reseller-days r456 95", self.bot.sent_messages[0][1])
+        self.assertIn("reseller-days sara88 r456 95", self.bot.sent_messages[0][1])
         self.assertEqual(self.read_alerts()["r456"]["days_notified"], [80, 90])
+
+    def test_reseller_customer_name_falls_back_to_legacy_note(self):
+        self.write_reseller_config(456, "r456", customer_name=None)
+
+        self.run_monitor([
+            (
+                True,
+                "r456",
+                {
+                    "upload_bytes": 95 * GB,
+                    "download_bytes": 0,
+                    "max_download_bytes": 100 * GB,
+                    "note": "📅 2026-05-30 07:01 | 📝 sara88 | ✏️ ",
+                },
+            ),
+        ])
+
+        self.assertEqual(len(self.bot.sent_messages), 1)
+        self.assertIn("reseller-gb sara88 r456 95", self.bot.sent_messages[0][1])
+
+    def test_reseller_customer_name_falls_back_to_na_when_missing_or_invalid(self):
+        self.write_reseller_config(456, "r456", customer_name="too-long-name")
+
+        self.run_monitor([
+            (True, "r456", {"upload_bytes": 95 * GB, "download_bytes": 0, "max_download_bytes": 100 * GB}),
+        ])
+
+        self.assertEqual(len(self.bot.sent_messages), 1)
+        self.assertIn("reseller-gb N/A r456 95", self.bot.sent_messages[0][1])
 
     def test_regular_user_already_notified_at_80_only_gets_90_alert(self):
         self.write_alerts({"s123": {"notified": [80], "max_download_bytes": 100 * GB}})

@@ -102,29 +102,57 @@ def _extract_reseller_id(username):
     return None
 
 
-def _get_reseller_total_days(reseller_id, username):
-    """Look up the total plan days for a reseller client config.
+def _get_reseller_config(reseller_id, username):
+    """Look up the reseller record for a client config.
 
     Searches the reseller's configs list in resellers.json by username.
-    Returns the integer total days, or None if not found.
+    Returns the matching config dict, or an empty dict if not found.
     """
     try:
         if not os.path.exists(RESELLERS_FILE):
-            return None
+            return {}
         with open(RESELLERS_FILE, 'r') as f:
             resellers = json.load(f)
         record = resellers.get(str(reseller_id))
         if not record:
-            return None
+            return {}
         for cfg in record.get('configs', []):
             if cfg.get('username') == username:
-                try:
-                    return int(cfg['days'])
-                except (KeyError, TypeError, ValueError):
-                    return None
+                return cfg
     except Exception:
         pass
-    return None
+    return {}
+
+
+def _valid_reseller_customer_name(value):
+    name = str(value or "").strip()
+    if re.match(r"^[a-zA-Z0-9]{1,8}$", name):
+        return name
+    return ""
+
+
+def _extract_customer_name_from_note(note):
+    if not isinstance(note, str):
+        return ""
+    match = re.search(r"📝\s*([^|]+?)\s*\|", note)
+    if not match:
+        return ""
+    return _valid_reseller_customer_name(match.group(1))
+
+
+def _resolve_reseller_customer_name(config, user_data):
+    stored_name = _valid_reseller_customer_name((config or {}).get('customer_name'))
+    if stored_name:
+        return stored_name
+    note_name = _extract_customer_name_from_note((user_data or {}).get('note'))
+    return note_name or "N/A"
+
+
+def _get_reseller_total_days(config):
+    try:
+        return int((config or {})['days'])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _should_reset_days_alerts(state, total_days, expiration_days):
@@ -202,6 +230,8 @@ def monitor_user_traffic():
 
         language = get_user_language(reseller_id)
         state = alerts.get(username, {})
+        reseller_config = _get_reseller_config(reseller_id, username)
+        customer_name = _resolve_reseller_customer_name(reseller_config, user_data)
 
         # — GB alert for reseller client —
         max_download_bytes = user_data.get('max_download_bytes', 0) or 0
@@ -226,6 +256,7 @@ def monitor_user_traffic():
                 if alert_threshold is not None:
                     message = get_message_text(language, "reseller_client_traffic_alert").format(
                         percent=int(usage_percent),
+                        customer_name=customer_name,
                         username=username,
                         used_gb=total_usage_bytes / (1024 ** 3),
                         limit_gb=max_download_bytes / (1024 ** 3),
@@ -251,7 +282,7 @@ def monitor_user_traffic():
                 expiration_days = None
 
         if expiration_days is not None and expiration_days >= 0:
-            total_days = _get_reseller_total_days(reseller_id, username)
+            total_days = _get_reseller_total_days(reseller_config)
             if total_days and total_days > 0:
                 days_used = total_days - expiration_days
                 days_percent = (days_used / total_days) * 100
@@ -267,6 +298,7 @@ def monitor_user_traffic():
                 if alert_threshold is not None:
                     message = get_message_text(language, "reseller_client_days_alert").format(
                         percent=int(days_percent),
+                        customer_name=customer_name,
                         username=username,
                         days_used=max(0, days_used),
                         total_days=total_days,
