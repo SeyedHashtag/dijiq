@@ -1,3 +1,8 @@
+## v1.13.25
+🐛 Clear stale deletion metadata when a previously missing expired-cleanup candidate is found on the VPN server again
+🐛 Keep repaired traffic-exhausted users in the pending cleanup queue instead of showing them as already missing
+✅ Add tests for stale missing-state repair and traffic-exhausted reseller cleanup paths
+
 ## v1.13.24
 🐛 Find expired users from bulk server scans when single-user API lookup misses an existing account
 🐛 Recheck records marked already missing and repair them when the user still exists on the VPN server
