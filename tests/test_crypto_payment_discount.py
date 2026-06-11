@@ -242,6 +242,7 @@ def install_common_stubs(bot, payment_records):
     receipt_checker_stub.RECEIPT_TYPE_REGULAR = "regular"
     receipt_checker_stub.RECEIPT_TYPE_SETTLEMENT = "settlement"
     receipt_checker_stub.calculate_checker_share_amount = lambda amount, percent=None: round(float(amount) * float(percent or 10) / 100, 2)
+    receipt_checker_stub.calculate_checker_share_amount_toman = lambda amount, percent=None: round(float(amount) * float(percent or 10) / 100)
     receipt_checker_stub.can_review_receipt = lambda *args, **kwargs: True
     receipt_checker_stub.get_card_number_for_receipt_type = lambda _receipt_type: "1234"
     receipt_checker_stub.get_receipt_checker_user_id = lambda: None

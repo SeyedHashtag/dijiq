@@ -84,6 +84,25 @@ def calculate_checker_share_amount(amount, percent=None):
     return float(share.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
 
 
+def calculate_checker_share_amount_toman(amount, percent=None):
+    if percent is None:
+        percent = get_receipt_checker_share_percent()
+    try:
+        amount_decimal = Decimal(str(amount or 0))
+        percent_decimal = Decimal(str(percent))
+    except Exception:
+        return 0.0
+    share = amount_decimal * percent_decimal / Decimal('100')
+    return float(share.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+
+def normalize_toman_amount(amount):
+    try:
+        return float(Decimal(str(amount or 0)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    except Exception:
+        return 0.0
+
+
 def _safe_float(value, default=0.0):
     try:
         return float(value)
@@ -147,20 +166,21 @@ def save_checker_settlements(settlements):
 
 
 def add_checker_settlement(amount, admin_user_id, stats_snapshot, checker_id=None):
-    amount_value = calculate_checker_share_amount(amount, 100)
+    amount_value = normalize_toman_amount(amount)
     checker_id = checker_id if checker_id is not None else get_receipt_checker_user_id()
     checkpoint = {
         'id': str(uuid.uuid4()),
-        'amount': amount_value,
+        'amount_toman': amount_value,
+        'currency': 'Tomans',
         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'admin_user_id': admin_user_id,
         'checker_user_id': checker_id,
         'checker_share_percent_snapshot': stats_snapshot.get('share_percent', get_receipt_checker_share_percent()),
-        'approved_total_snapshot': stats_snapshot.get('approved_total', 0.0),
-        'owed_total_snapshot': stats_snapshot.get('owed_total', 0.0),
-        'paid_before': stats_snapshot.get('paid_total', 0.0),
-        'unpaid_before': stats_snapshot.get('unpaid_total', 0.0),
-        'unpaid_after': max(0.0, _safe_float(stats_snapshot.get('unpaid_total', 0.0)) - amount_value),
+        'approved_total_snapshot_toman': normalize_toman_amount(stats_snapshot.get('approved_total', 0.0)),
+        'owed_total_snapshot_toman': normalize_toman_amount(stats_snapshot.get('owed_total', 0.0)),
+        'paid_before_toman': normalize_toman_amount(stats_snapshot.get('paid_total', 0.0)),
+        'unpaid_before_toman': normalize_toman_amount(stats_snapshot.get('unpaid_total', 0.0)),
+        'unpaid_after_toman': max(0.0, normalize_toman_amount(stats_snapshot.get('unpaid_total', 0.0)) - amount_value),
     }
     with checker_settlement_lock:
         settlements = load_checker_settlements()
@@ -184,8 +204,17 @@ def get_checker_settlements(checker_id=None):
 def get_checker_paid_total(checker_id=None):
     total = 0.0
     for item in get_checker_settlements(checker_id):
-        total += _safe_float(item.get('amount', 0.0))
-    return float(Decimal(str(total)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+        if item.get('amount_toman') is not None:
+            total += _safe_float(item.get('amount_toman', 0.0))
+    return normalize_toman_amount(total)
+
+
+def get_checker_paid_total_usd_legacy(checker_id=None):
+    total = 0.0
+    for item in get_checker_settlements(checker_id):
+        if item.get('amount_toman') is None:
+            total += _safe_float(item.get('amount', 0.0))
+    return calculate_checker_share_amount(total, 100)
 
 
 def _receipt_type_from_record(payment_record):
@@ -223,12 +252,16 @@ def build_receipt_checker_stats(payments, checker_id=None):
             },
         },
         'approved_total': 0.0,
+        'approved_total_usd': 0.0,
         'converted_approved_total': 0.0,
         'converted_currency': None,
         'converted_currency_mixed': False,
         'owed_total': 0.0,
+        'owed_total_usd': 0.0,
         'paid_total': get_checker_paid_total(checker_id),
+        'paid_total_usd': get_checker_paid_total_usd_legacy(checker_id),
         'unpaid_total': 0.0,
+        'unpaid_total_usd': 0.0,
         'legacy_estimated_count': 0,
         'latest_review': None,
     }
@@ -254,22 +287,35 @@ def build_receipt_checker_stats(payments, checker_id=None):
         if status == 'pending_approval':
             item['pending'] += 1
         elif status == 'completed':
-            approved_amount = _safe_float(record.get('price', 0.0))
+            approved_amount_usd = _safe_float(record.get('price', 0.0))
+            approved_amount_toman = record.get('checker_accounting_amount_toman')
+            if approved_amount_toman is None:
+                approved_amount_toman = record.get('converted_amount')
             item['approved'] += 1
-            item['approved_total'] += approved_amount
-            stats['approved_total'] += approved_amount
+            if approved_amount_toman is not None:
+                approved_amount_toman = normalize_toman_amount(approved_amount_toman)
+                item['approved_total'] += approved_amount_toman
+                stats['approved_total'] += approved_amount_toman
 
-            if record.get('checker_share_amount') is not None:
-                owed_amount = _safe_float(record.get('checker_share_amount', 0.0))
+                if record.get('checker_share_amount_toman') is not None:
+                    owed_amount_toman = normalize_toman_amount(record.get('checker_share_amount_toman', 0.0))
+                else:
+                    owed_amount_toman = calculate_checker_share_amount_toman(approved_amount_toman, share_percent)
+                    stats['legacy_estimated_count'] += 1
+                item['checker_owed_total'] += owed_amount_toman
+                stats['owed_total'] += owed_amount_toman
             else:
-                owed_amount = calculate_checker_share_amount(approved_amount, share_percent)
+                stats['approved_total_usd'] += approved_amount_usd
+                if record.get('checker_share_amount') is not None:
+                    owed_amount_usd = _safe_float(record.get('checker_share_amount', 0.0))
+                else:
+                    owed_amount_usd = calculate_checker_share_amount(approved_amount_usd, share_percent)
+                stats['owed_total_usd'] += owed_amount_usd
                 stats['legacy_estimated_count'] += 1
-            item['checker_owed_total'] += owed_amount
-            stats['owed_total'] += owed_amount
 
             converted_amount = record.get('converted_amount')
             if converted_amount is not None:
-                stats['converted_approved_total'] += _safe_float(converted_amount)
+                stats['converted_approved_total'] += normalize_toman_amount(converted_amount)
                 currency = record.get('converted_currency') or 'Tomans'
                 if stats['converted_currency'] is None:
                     stats['converted_currency'] = currency
@@ -283,13 +329,16 @@ def build_receipt_checker_stats(payments, checker_id=None):
             latest_review = (reviewed_at, payment_id, record)
 
     for item in stats['types'].values():
-        item['approved_total'] = calculate_checker_share_amount(item['approved_total'], 100)
-        item['checker_owed_total'] = calculate_checker_share_amount(item['checker_owed_total'], 100)
+        item['approved_total'] = normalize_toman_amount(item['approved_total'])
+        item['checker_owed_total'] = normalize_toman_amount(item['checker_owed_total'])
 
-    stats['approved_total'] = calculate_checker_share_amount(stats['approved_total'], 100)
-    stats['converted_approved_total'] = calculate_checker_share_amount(stats['converted_approved_total'], 100)
-    stats['owed_total'] = calculate_checker_share_amount(stats['owed_total'], 100)
-    stats['unpaid_total'] = max(0.0, calculate_checker_share_amount(stats['owed_total'] - stats['paid_total'], 100))
+    stats['approved_total'] = normalize_toman_amount(stats['approved_total'])
+    stats['approved_total_usd'] = calculate_checker_share_amount(stats['approved_total_usd'], 100)
+    stats['converted_approved_total'] = normalize_toman_amount(stats['converted_approved_total'])
+    stats['owed_total'] = normalize_toman_amount(stats['owed_total'])
+    stats['owed_total_usd'] = calculate_checker_share_amount(stats['owed_total_usd'], 100)
+    stats['unpaid_total'] = max(0.0, normalize_toman_amount(stats['owed_total'] - stats['paid_total']))
+    stats['unpaid_total_usd'] = max(0.0, calculate_checker_share_amount(stats['owed_total_usd'] - stats['paid_total_usd'], 100))
 
     if latest_review:
         reviewed_at, payment_id, record = latest_review

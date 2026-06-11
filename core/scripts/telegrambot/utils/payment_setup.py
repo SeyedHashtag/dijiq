@@ -15,6 +15,7 @@ from utils.receipt_checker import (
     normalize_receipt_types,
     parse_receipt_checker_share_percent,
 )
+from utils.currency_format import format_toman_amount
 import os
 import datetime
 from dotenv import load_dotenv, set_key
@@ -367,6 +368,20 @@ def _format_usd(value):
         return "0.00"
 
 
+def _format_toman(value):
+    try:
+        return format_toman_amount(value)
+    except Exception:
+        return "0"
+
+
+def _parse_toman_amount(value):
+    try:
+        return float(str(value).strip().replace(',', ''))
+    except (TypeError, ValueError):
+        return None
+
+
 def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", include_checker_details=True):
     checker_id = stats.get('checker_id')
     checker_types = stats.get('checker_types') or []
@@ -386,31 +401,34 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
             text += (
                 f"{get_receipt_type_label(receipt_type)}\n"
                 f"Pending: {item['pending']}\n"
-                f"Approved: {item['approved']} (${_format_usd(item['approved_total'])})\n"
+                f"Approved: {item['approved']} ({_format_toman(item['approved_total'])} Tomans)\n"
                 f"Rejected: {item['rejected']}\n"
-                f"Checker Share: ${_format_usd(item['checker_owed_total'])}\n\n"
+                f"Checker Share: {_format_toman(item['checker_owed_total'])} Tomans\n\n"
             )
     else:
         text += f"Share: {stats.get('share_percent', 0):.2f}%\n\n"
 
     text += (
         "Settlement\n"
-        f"Approved Total: ${_format_usd(stats.get('approved_total'))}\n"
+        f"Approved Total: {_format_toman(stats.get('approved_total'))} Tomans\n"
     )
-    if stats.get('converted_approved_total'):
-        currency = "Mixed" if stats.get('converted_currency_mixed') else (stats.get('converted_currency') or "Converted")
-        text += f"Converted Approved Total: {_format_usd(stats.get('converted_approved_total'))} {currency}\n"
     if include_checker_details:
         text += (
-            f"Checker Owed: ${_format_usd(stats.get('owed_total'))}\n"
-            f"Paid to Checker: ${_format_usd(stats.get('paid_total'))}\n"
-            f"Unpaid Balance: ${_format_usd(stats.get('unpaid_total'))}\n"
+            f"Checker Owed: {_format_toman(stats.get('owed_total'))} Tomans\n"
+            f"Paid to Checker: {_format_toman(stats.get('paid_total'))} Tomans\n"
+            f"Unpaid Balance: {_format_toman(stats.get('unpaid_total'))} Tomans\n"
         )
     else:
         text += (
-            f"Your Share: ${_format_usd(stats.get('owed_total'))}\n"
-            f"Paid to You: ${_format_usd(stats.get('paid_total'))}\n"
-            f"Remaining Balance: ${_format_usd(stats.get('unpaid_total'))}\n"
+            f"Your Share: {_format_toman(stats.get('owed_total'))} Tomans\n"
+            f"Paid to You: {_format_toman(stats.get('paid_total'))} Tomans\n"
+            f"Remaining Balance: {_format_toman(stats.get('unpaid_total'))} Tomans\n"
+        )
+    if stats.get('approved_total_usd') or stats.get('owed_total_usd') or stats.get('paid_total_usd'):
+        text += (
+            f"Legacy USD Approved: ${_format_usd(stats.get('approved_total_usd'))}\n"
+            f"Legacy USD Owed: ${_format_usd(stats.get('owed_total_usd'))}\n"
+            f"Legacy USD Paid: ${_format_usd(stats.get('paid_total_usd'))}\n"
         )
     if stats.get('legacy_estimated_count'):
         text += f"Legacy Estimated Receipts: {stats.get('legacy_estimated_count')}\n"
@@ -495,12 +513,22 @@ def handle_checker_settlement_callback(call):
             return
         text = "📜 Checker Settlement History\n\n"
         for item in settlements[-10:][::-1]:
+            amount_toman = item.get('amount_toman')
+            unpaid_after_toman = item.get('unpaid_after_toman')
+            if amount_toman is not None:
+                amount_line = f"Amount: {_format_toman(amount_toman)} Tomans\n"
+            else:
+                amount_line = f"Amount: ${_format_usd(item.get('amount'))} (legacy USD)\n"
+            if unpaid_after_toman is not None:
+                unpaid_after_line = f"Unpaid After: {_format_toman(unpaid_after_toman)} Tomans\n\n"
+            else:
+                unpaid_after_line = f"Unpaid After: ${_format_usd(item.get('unpaid_after'))} (legacy USD)\n\n"
             text += (
                 f"ID: {item.get('id')}\n"
-                f"Amount: ${_format_usd(item.get('amount'))}\n"
+                f"{amount_line}"
                 f"Admin: {item.get('admin_user_id')}\n"
                 f"Time: {item.get('created_at')}\n"
-                f"Unpaid After: ${_format_usd(item.get('unpaid_after'))}\n\n"
+                f"{unpaid_after_line}"
             )
         bot.send_message(call.message.chat.id, text)
         return
@@ -517,16 +545,15 @@ def handle_checker_settlement_callback(call):
         }
         bot.send_message(
             call.message.chat.id,
-            f"Enter checker payout amount up to ${_format_usd(unpaid_total)}:",
+            f"Enter checker payout amount up to {_format_toman(unpaid_total)} Tomans:",
             reply_markup=create_cancel_markup()
         )
         return
 
     if action.startswith('confirm:'):
         raw_amount = action.split(':', 1)[1]
-        try:
-            amount = float(raw_amount)
-        except (TypeError, ValueError):
+        amount = _parse_toman_amount(raw_amount)
+        if amount is None:
             bot.answer_callback_query(call.id, text="Invalid amount.")
             return
         unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
@@ -538,9 +565,9 @@ def handle_checker_settlement_callback(call):
         bot.edit_message_text(
             (
                 "✅ Checker settlement checkpoint saved.\n\n"
-                f"Amount: ${_format_usd(checkpoint.get('amount'))}\n"
-                f"Unpaid Before: ${_format_usd(checkpoint.get('unpaid_before'))}\n"
-                f"Unpaid After: ${_format_usd(checkpoint.get('unpaid_after'))}\n"
+                f"Amount: {_format_toman(checkpoint.get('amount_toman'))} Tomans\n"
+                f"Unpaid Before: {_format_toman(checkpoint.get('unpaid_before_toman'))} Tomans\n"
+                f"Unpaid After: {_format_toman(checkpoint.get('unpaid_after_toman'))} Tomans\n"
                 f"Checkpoint ID: {checkpoint.get('id')}"
             ),
             chat_id=call.message.chat.id,
@@ -555,9 +582,8 @@ def process_checker_settlement_amount(message):
         bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
         return
 
-    try:
-        amount = float(message.text.strip())
-    except (TypeError, ValueError):
+    amount = _parse_toman_amount(message.text)
+    if amount is None:
         bot.reply_to(message, "Invalid amount. Please enter a numeric payout amount:", reply_markup=create_cancel_markup())
         return
 
@@ -566,7 +592,7 @@ def process_checker_settlement_amount(message):
     if amount <= 0 or amount > unpaid_total:
         bot.reply_to(
             message,
-            f"Amount must be greater than 0 and no more than ${_format_usd(unpaid_total)}.",
+            f"Amount must be greater than 0 and no more than {_format_toman(unpaid_total)} Tomans.",
             reply_markup=create_cancel_markup()
         )
         return
@@ -574,17 +600,17 @@ def process_checker_settlement_amount(message):
     unpaid_after = max(0.0, unpaid_total - amount)
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("✅ Confirm", callback_data=f"checker_settlement:confirm:{amount:.2f}"),
+        types.InlineKeyboardButton("✅ Confirm", callback_data=f"checker_settlement:confirm:{amount:.0f}"),
         types.InlineKeyboardButton("❌ Cancel", callback_data="checker_settlement:cancel"),
     )
     bot.reply_to(
         message,
         (
             "Confirm checker settlement checkpoint:\n\n"
-            f"Amount: ${_format_usd(amount)}\n"
-            f"Approved Total Snapshot: ${_format_usd(stats.get('approved_total'))}\n"
-            f"Unpaid Before: ${_format_usd(unpaid_total)}\n"
-            f"Unpaid After: ${_format_usd(unpaid_after)}"
+            f"Amount: {_format_toman(amount)} Tomans\n"
+            f"Approved Total Snapshot: {_format_toman(stats.get('approved_total'))} Tomans\n"
+            f"Unpaid Before: {_format_toman(unpaid_total)} Tomans\n"
+            f"Unpaid After: {_format_toman(unpaid_after)} Tomans"
         ),
         reply_markup=markup
     )

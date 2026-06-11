@@ -24,6 +24,7 @@ from utils.receipt_checker import (
     RECEIPT_TYPE_REGULAR,
     RECEIPT_TYPE_SETTLEMENT,
     calculate_checker_share_amount,
+    calculate_checker_share_amount_toman,
     can_review_receipt,
     get_card_number_for_receipt_type,
     get_receipt_checker_user_id,
@@ -275,10 +276,16 @@ def _record_checker_share_audit(payment_id, payment_record):
     if not payment_record.get('routed_to_checker'):
         return
     share_percent = get_receipt_checker_share_percent()
-    update_payment_record_fields(payment_id, {
+    fields = {
         "checker_share_percent": share_percent,
         "checker_share_amount": calculate_checker_share_amount(payment_record.get('price', 0), share_percent),
-    })
+    }
+    if payment_record.get('converted_amount') is not None:
+        fields.update({
+            "checker_accounting_amount_toman": payment_record.get('converted_amount'),
+            "checker_share_amount_toman": calculate_checker_share_amount_toman(payment_record.get('converted_amount'), share_percent),
+        })
+    update_payment_record_fields(payment_id, fields)
 
 
 def create_sale_username(api_client, user_id):

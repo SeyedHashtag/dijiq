@@ -56,6 +56,8 @@ class ReceiptCheckerShareTests(unittest.TestCase):
                 "status": "completed",
                 "price": 100,
                 "checker_share_amount": 12.5,
+                "checker_share_amount_toman": 580000,
+                "checker_accounting_amount_toman": 5800000,
                 "converted_amount": 5800000,
                 "converted_currency": "Tomans",
                 "reviewed_at": "2026-06-04 10:00:00",
@@ -100,8 +102,9 @@ class ReceiptCheckerShareTests(unittest.TestCase):
             },
         }
         self.module.save_checker_settlements([
+            {"checker_user_id": 42, "amount_toman": 200000},
             {"checker_user_id": 42, "amount": 7.0},
-            {"checker_user_id": 77, "amount": 100.0},
+            {"checker_user_id": 77, "amount_toman": 1000000},
         ])
 
         with patch.dict(os.environ, {
@@ -111,10 +114,14 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         }, clear=False):
             stats = self.module.build_receipt_checker_stats(payments)
 
-        self.assertEqual(stats["approved_total"], 150.0)
-        self.assertEqual(stats["owed_total"], 17.5)
-        self.assertEqual(stats["paid_total"], 7.0)
-        self.assertEqual(stats["unpaid_total"], 10.5)
+        self.assertEqual(stats["approved_total"], 5800000.0)
+        self.assertEqual(stats["owed_total"], 580000.0)
+        self.assertEqual(stats["paid_total"], 200000.0)
+        self.assertEqual(stats["unpaid_total"], 380000.0)
+        self.assertEqual(stats["approved_total_usd"], 50.0)
+        self.assertEqual(stats["owed_total_usd"], 5.0)
+        self.assertEqual(stats["paid_total_usd"], 7.0)
+        self.assertEqual(stats["unpaid_total_usd"], 0.0)
         self.assertEqual(stats["legacy_estimated_count"], 1)
         self.assertEqual(stats["types"]["regular"]["pending"], 1)
         self.assertEqual(stats["types"]["regular"]["rejected"], 1)
@@ -125,21 +132,24 @@ class ReceiptCheckerShareTests(unittest.TestCase):
     def test_add_checker_settlement_checkpoint_audit(self):
         snapshot = {
             "share_percent": 10.0,
-            "approved_total": 200.0,
-            "owed_total": 20.0,
-            "paid_total": 5.0,
-            "unpaid_total": 15.0,
+            "approved_total": 2000000.0,
+            "owed_total": 200000.0,
+            "paid_total": 50000.0,
+            "unpaid_total": 150000.0,
         }
 
-        checkpoint = self.module.add_checker_settlement(8, 123, snapshot, checker_id=42)
+        checkpoint = self.module.add_checker_settlement(80000, 123, snapshot, checker_id=42)
         settlements = self.module.get_checker_settlements(42)
 
-        self.assertEqual(checkpoint["amount"], 8.0)
+        self.assertEqual(checkpoint["amount_toman"], 80000.0)
+        self.assertEqual(checkpoint["currency"], "Tomans")
         self.assertEqual(checkpoint["admin_user_id"], 123)
         self.assertEqual(checkpoint["checker_user_id"], 42)
-        self.assertEqual(checkpoint["paid_before"], 5.0)
-        self.assertEqual(checkpoint["unpaid_before"], 15.0)
-        self.assertEqual(checkpoint["unpaid_after"], 7.0)
+        self.assertEqual(checkpoint["approved_total_snapshot_toman"], 2000000.0)
+        self.assertEqual(checkpoint["owed_total_snapshot_toman"], 200000.0)
+        self.assertEqual(checkpoint["paid_before_toman"], 50000.0)
+        self.assertEqual(checkpoint["unpaid_before_toman"], 150000.0)
+        self.assertEqual(checkpoint["unpaid_after_toman"], 70000.0)
         self.assertEqual(len(settlements), 1)
 
 

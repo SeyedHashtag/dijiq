@@ -77,6 +77,10 @@ def load_payment_setup():
     payment_records_stub.load_payments = lambda: {}
     sys.modules["utils.payment_records"] = payment_records_stub
 
+    currency_stub = types.ModuleType("utils.currency_format")
+    currency_stub.format_toman_amount = lambda value: f"{int(round(float(value))):,}"
+    sys.modules["utils.currency_format"] = currency_stub
+
     receipt_checker_stub = types.ModuleType("utils.receipt_checker")
     receipt_checker_stub.RECEIPT_TYPE_REGULAR = "regular"
     receipt_checker_stub.RECEIPT_TYPE_SETTLEMENT = "settlement"
@@ -113,21 +117,24 @@ class CheckerStatsPanelTests(unittest.TestCase):
                     "pending": 0,
                     "approved": 4,
                     "rejected": 1,
-                    "approved_total": 120.0,
-                    "checker_owed_total": 12.0,
+                    "approved_total": 1200000.0,
+                    "checker_owed_total": 120000.0,
                 },
                 "settlement": {
                     "pending": 0,
                     "approved": 2,
                     "rejected": 0,
-                    "approved_total": 80.0,
-                    "checker_owed_total": 8.0,
+                    "approved_total": 800000.0,
+                    "checker_owed_total": 80000.0,
                 },
             },
-            "approved_total": 200.0,
-            "owed_total": 20.0,
-            "paid_total": 5.0,
-            "unpaid_total": 15.0,
+            "approved_total": 2000000.0,
+            "owed_total": 200000.0,
+            "paid_total": 50000.0,
+            "unpaid_total": 150000.0,
+            "approved_total_usd": 0.0,
+            "owed_total_usd": 0.0,
+            "paid_total_usd": 0.0,
             "legacy_estimated_count": 0,
             "latest_review": None,
         }
@@ -145,13 +152,13 @@ class CheckerStatsPanelTests(unittest.TestCase):
         self.assertNotIn("Paid to Checker:", checker_text)
         self.assertNotIn("Regular Customer\nPending:", checker_text)
         self.assertNotIn("Reseller Settlement\nPending:", checker_text)
-        self.assertIn("Approved Total: $200.00", checker_text)
-        self.assertIn("Your Share: $20.00", checker_text)
-        self.assertIn("Paid to You: $5.00", checker_text)
-        self.assertIn("Remaining Balance: $15.00", checker_text)
+        self.assertIn("Approved Total: 2,000,000 Tomans", checker_text)
+        self.assertIn("Your Share: 200,000 Tomans", checker_text)
+        self.assertIn("Paid to You: 50,000 Tomans", checker_text)
+        self.assertIn("Remaining Balance: 150,000 Tomans", checker_text)
 
         self.assertIn("Checker User ID: 42", admin_text)
-        self.assertIn("Checker Owed: $20.00", admin_text)
+        self.assertIn("Checker Owed: 200,000 Tomans", admin_text)
         self.assertIn("Regular Customer\nPending: 0", admin_text)
         self.assertIn("Reseller Settlement\nPending: 0", admin_text)
 
