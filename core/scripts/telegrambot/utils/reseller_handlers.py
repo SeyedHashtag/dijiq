@@ -1667,6 +1667,89 @@ def _build_admin_reseller_detail_markup(language, reseller_id, reseller_data, re
     return markup
 
 
+def _admin_reseller_action_label_key(action):
+    return {
+        "suspend": "admin_action_suspend",
+        "ban": "admin_action_ban",
+        "unban": "admin_action_unban",
+    }.get(action)
+
+
+def _reseller_status_notification_key(action):
+    return {
+        "suspend": "reseller_suspended_notification",
+        "ban": "reseller_banned_notification",
+        "unban": "reseller_unbanned_notification",
+    }.get(action)
+
+
+def _render_admin_reseller_action_confirm(call, reseller_id, target_action):
+    language = get_user_language(call.from_user.id)
+    reseller_data = get_reseller_data(reseller_id)
+    label_key = _admin_reseller_action_label_key(target_action)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+        return
+    if not label_key:
+        bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+        return
+
+    action_label = get_message_text(language, label_key)
+    msg = get_message_text(language, "admin_reseller_action_confirm").format(
+        user_id=reseller_id,
+        action=action_label,
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_reseller_action_confirm_notify"),
+            callback_data=f"admin_reseller_ui:actionconfirm:{reseller_id}:{target_action}:notify",
+        ),
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_reseller_action_confirm_silent"),
+            callback_data=f"admin_reseller_ui:actionconfirm:{reseller_id}:{target_action}:silent",
+        ),
+    )
+    context = _admin_view_context(call.from_user.id)
+    markup.add(
+        types.InlineKeyboardButton(
+            get_message_text(language, "admin_debt_cancel"),
+            callback_data=f"admin_reseller_ui:detail:{reseller_id}:{context['return_status']}:{context['return_page']}",
+        )
+    )
+    bot.edit_message_text(
+        msg,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id)
+
+
+def _send_reseller_status_notification(reseller_id, action, fallback_language):
+    if not str(reseller_id).isdigit():
+        return
+    key = _reseller_status_notification_key(action)
+    if not key:
+        return
+    target_language = get_user_language(int(reseller_id)) if str(reseller_id).isdigit() else fallback_language
+    try:
+        bot.send_message(int(reseller_id), get_message_text(target_language, key))
+    except Exception:
+        pass
+
+
+def _apply_admin_reseller_status_action(reseller_id, target_action):
+    if target_action == "ban":
+        return update_reseller_status(reseller_id, "banned")
+    if target_action == "unban":
+        return update_reseller_status(reseller_id, "suspended", suspended_reason=SUSPENDED_REASON_UNBAN_GRACE)
+    if target_action == "suspend":
+        return update_reseller_status(reseller_id, "suspended")
+    return False
+
+
 def _render_admin_reseller_detail(call, reseller_id, return_status, return_page):
     language = get_user_language(call.from_user.id)
     reseller_data = get_reseller_data(reseller_id)
@@ -2224,15 +2307,43 @@ def handle_admin_reseller_ui(call):
                 bot.send_message(int(reseller_id), get_message_text(target_language, "reseller_rejected_notification"))
             except:
                 pass
-        elif target_action == "ban":
-            update_reseller_status(reseller_id, "banned")
-        elif target_action == "unban":
-            update_reseller_status(reseller_id, "suspended", suspended_reason=SUSPENDED_REASON_UNBAN_GRACE)
-        elif target_action == "suspend":
-            update_reseller_status(reseller_id, "suspended")
+        elif target_action in {"ban", "unban", "suspend"}:
+            _render_admin_reseller_action_confirm(call, reseller_id, target_action)
+            return
         else:
             bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
             return
+
+        context = _admin_view_context(call.from_user.id)
+        _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])
+        return
+
+    if action == "actionconfirm":
+        if len(parts) != 5:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        reseller_id = parts[2]
+        target_action = parts[3]
+        delivery = parts[4]
+        if target_action not in {"ban", "unban", "suspend"} or delivery not in {"notify", "silent"}:
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        if not get_reseller_data(reseller_id):
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_reseller_not_found"), show_alert=True)
+            context = _admin_view_context(call.from_user.id)
+            _render_admin_reseller_list(
+                call.message.chat.id,
+                call.message.message_id,
+                call.from_user.id,
+                context["return_status"],
+                context["return_page"],
+            )
+            return
+        if not _apply_admin_reseller_status_action(reseller_id, target_action):
+            bot.answer_callback_query(call.id, get_message_text(language, "admin_invalid_action"), show_alert=True)
+            return
+        if delivery == "notify":
+            _send_reseller_status_notification(reseller_id, target_action, language)
 
         context = _admin_view_context(call.from_user.id)
         _render_admin_reseller_detail(call, reseller_id, context["return_status"], context["return_page"])

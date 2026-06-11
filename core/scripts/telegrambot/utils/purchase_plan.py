@@ -128,6 +128,37 @@ def _settlement_credit_amount(payment_record):
     )
 
 
+def _apply_reseller_settlement_payment(user_id, payment_record):
+    from utils.reseller import apply_reseller_payment
+
+    credited_amount = _settlement_credit_amount(payment_record)
+    result = apply_reseller_payment(user_id, credited_amount)
+    if isinstance(result, tuple) and len(result) >= 2:
+        return bool(result[0]), credited_amount, result[1]
+    return True, credited_amount, None
+
+
+def _remaining_reseller_debt(user_id, fallback=None):
+    if fallback is not None:
+        try:
+            return float(fallback)
+        except (TypeError, ValueError):
+            pass
+    try:
+        from utils.reseller import get_reseller_data
+        reseller_data = get_reseller_data(user_id) or {}
+        return float(reseller_data.get('debt', 0.0))
+    except Exception:
+        return 0.0
+
+
+def _settlement_approved_message(language, user_id, credited_amount, remaining_debt):
+    return get_message_text(language, "settlement_payment_approved").format(
+        amount=format_usd_amount(credited_amount),
+        remaining_debt=format_usd_amount(_remaining_reseller_debt(user_id, remaining_debt)),
+    )
+
+
 def _build_receipt_approval_markup(payment_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -870,8 +901,13 @@ def handle_admin_approval(call):
             _record_review_audit(payment_id, call, action, reviewer_role)
             _record_checker_share_audit(payment_id, payment_record)
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
-                 from utils.reseller import apply_reseller_payment
-                 apply_reseller_payment(payment_record['user_id'], _settlement_credit_amount(payment_record))
+                 success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(
+                    payment_record['user_id'],
+                    payment_record,
+                 )
+                 if not success:
+                     bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
+                     return
                  update_payment_status(payment_id, 'completed')
                  
                  user_to_notify = payment_record['user_id']
@@ -897,7 +933,10 @@ def handle_admin_approval(call):
                     exchange_rate=payment_record.get('exchange_rate')
                  )
 
-                 bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_approved"))
+                 bot.send_message(
+                    user_to_notify,
+                    _settlement_approved_message(user_language, user_to_notify, credited_amount, remaining_debt),
+                 )
                  _update_receipt_message_refs(
                     payment_id,
                     payment_record,
@@ -1032,12 +1071,14 @@ def handle_check_payment(call):
         plan_gb = payment_record.get('plan_gb')
         
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-             from utils.reseller import apply_reseller_payment
-             apply_reseller_payment(user_id, _settlement_credit_amount(payment_record))
+             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
+             if not success:
+                 bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
+                 return
              update_payment_status(payment_id, 'completed')
              bot.send_message(
                 call.message.chat.id,
-                get_message_text(language, "debt_cleared"),
+                _settlement_approved_message(language, user_id, credited_amount, remaining_debt),
                 parse_mode="Markdown"
             )
              return
@@ -1128,12 +1169,13 @@ def process_payment_webhook(request_data):
                 plan_gb = payment_record.get('plan_gb')
                 
                 if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                     from utils.reseller import apply_reseller_payment
-                     apply_reseller_payment(user_id, _settlement_credit_amount(payment_record))
+                     success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
+                     if not success:
+                         return False
                      update_payment_status(record_key, 'completed')
                      bot.send_message(
                         user_id,
-                        get_message_text(user_language, "debt_cleared"),
+                        _settlement_approved_message(user_language, user_id, credited_amount, remaining_debt),
                         parse_mode="Markdown"
                      )
                      return True
@@ -1238,14 +1280,15 @@ def check_pending_payments():
                         plan_gb = record.get('plan_gb')
                         
                         if record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                             from utils.reseller import apply_reseller_payment
-                             apply_reseller_payment(user_id, _settlement_credit_amount(record))
+                             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, record)
+                             if not success:
+                                 continue
                              update_payment_status(payment_id, 'completed')
                              try:
                                 user_language = get_user_language(user_id)
                                 bot.send_message(
                                     user_id,
-                                    get_message_text(user_language, "debt_cleared"),
+                                    _settlement_approved_message(user_language, user_id, credited_amount, remaining_debt),
                                     parse_mode="Markdown"
                                 )
                              except:
@@ -1330,12 +1373,23 @@ def check_pending_payments():
             debt = float(event.get('debt', 0.0))
             debt_state = str(event.get('debt_state', 'active'))
             debt_age_days = int(event.get('debt_age_days', 0))
+            debt_age_hours = float(event.get('debt_age_hours', 0.0))
             unlock_amount = float(event.get('unlock_amount', 0.0))
+            hours_until_ban = float(event.get('hours_until_ban', 0.0))
 
-            if event.get('notify_user'):
+            if event.get('auto_banned') or event.get('auto_suspended') or event.get('notify_user'):
                 try:
                     user_language = get_user_language(reseller_id)
-                    if debt_state == 'suspended':
+                    if event.get('auto_banned'):
+                        user_message = get_message_text(user_language, "reseller_auto_banned").format(
+                            debt=debt,
+                        )
+                    elif event.get('auto_suspended'):
+                        user_message = get_message_text(user_language, "reseller_auto_suspended").format(
+                            debt=debt,
+                            hours_until_ban=hours_until_ban,
+                        )
+                    elif debt_state == 'suspended':
                         user_message = get_message_text(user_language, "reseller_debt_reminder_suspended").format(
                             debt=debt,
                             debt_age_days=debt_age_days,
@@ -1348,14 +1402,16 @@ def check_pending_payments():
                             suspend_threshold=DEBT_SUSPEND_THRESHOLD
                         )
 
-                    markup = types.InlineKeyboardMarkup()
-                    markup.add(
-                        types.InlineKeyboardButton(
-                            get_button_text(user_language, "settle_debt"),
-                            callback_data=f"reseller:settle:{debt:.2f}"
+                    markup = None
+                    if debt > 0 and not event.get('auto_banned'):
+                        markup = types.InlineKeyboardMarkup()
+                        markup.add(
+                            types.InlineKeyboardButton(
+                                get_button_text(user_language, "settle_debt"),
+                                callback_data=f"reseller:settle:{debt:.2f}"
+                            )
                         )
-                    )
-                    bot.send_message(reseller_id, user_message, reply_markup=markup)
+                    bot.send_message(reseller_id, user_message, reply_markup=markup, parse_mode="Markdown")
                 except Exception:
                     pass
 
@@ -1363,16 +1419,29 @@ def check_pending_payments():
                 for admin_id in ADMIN_USER_IDS:
                     try:
                         admin_language = get_user_language(admin_id)
-                        state_text = get_message_text(admin_language, _debt_state_label_key(debt_state))
-                        admin_message = get_message_text(admin_language, "reseller_debt_threshold_crossed_admin").format(
-                            reseller_id=reseller_id,
-                            debt_state=state_text,
-                            debt=debt,
-                            debt_age_days=debt_age_days,
-                            warning_threshold=DEBT_WARNING_THRESHOLD,
-                            suspend_threshold=DEBT_SUSPEND_THRESHOLD
-                        )
-                        bot.send_message(admin_id, admin_message)
+                        if event.get('auto_banned'):
+                            admin_message = get_message_text(admin_language, "admin_reseller_auto_banned").format(
+                                reseller_id=reseller_id,
+                                debt=debt,
+                                debt_age_hours=debt_age_hours,
+                            )
+                        elif event.get('auto_suspended'):
+                            admin_message = get_message_text(admin_language, "admin_reseller_auto_suspended").format(
+                                reseller_id=reseller_id,
+                                debt=debt,
+                                debt_age_hours=debt_age_hours,
+                            )
+                        else:
+                            state_text = get_message_text(admin_language, _debt_state_label_key(debt_state))
+                            admin_message = get_message_text(admin_language, "reseller_debt_threshold_crossed_admin").format(
+                                reseller_id=reseller_id,
+                                debt_state=state_text,
+                                debt=debt,
+                                debt_age_days=debt_age_days,
+                                warning_threshold=DEBT_WARNING_THRESHOLD,
+                                suspend_threshold=DEBT_SUSPEND_THRESHOLD
+                            )
+                        bot.send_message(admin_id, admin_message, parse_mode="Markdown")
                     except Exception:
                         pass
 

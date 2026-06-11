@@ -19,6 +19,7 @@ class DummyBot:
     def __init__(self):
         self.edits = []
         self.answers = []
+        self.sent_messages = []
 
     def message_handler(self, *args, **kwargs):
         return lambda func: func
@@ -31,6 +32,9 @@ class DummyBot:
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
+
+    def send_message(self, *args, **kwargs):
+        self.sent_messages.append((args, kwargs))
 
 
 class DummyMarkup:
@@ -96,7 +100,24 @@ def install_stubs():
         "admin_action_back_to_list": "Back to List",
         "admin_action_back_to_detail": "Back",
         "admin_action_cleanup_unpaid": "Remove Unpaid Users",
+        "admin_reseller_details_extended": (
+            "User ID: `{user_id}`\nStatus: {status}\nDebt: ${debt}\n"
+            "Debt State: {debt_state}\nTrust Limit: ${trust_limit}\nConfigs: {configs_count}\n"
+            "Total Turnover: ${total_turnover}\nTotal Paid: ${total_paid}\n"
+            "Average Config Value: ${average_config_value}\nLast Config: {last_config_at}\n"
+            "Joined: {created_at}\nLast Payment: {last_payment_at}\nOldest Unpaid: {debt_since}"
+        ),
+        "admin_username_unknown": "N/A",
         "admin_debt_cancel": "Cancel",
+        "admin_reseller_action_confirm": "Confirm {action} for {user_id}",
+        "admin_reseller_action_confirm_notify": "Apply + Notify User",
+        "admin_reseller_action_confirm_silent": "Apply Silently",
+        "reseller_suspended_notification": "Suspended notice",
+        "reseller_banned_notification": "Banned notice",
+        "reseller_unbanned_notification": "Unbanned notice",
+        "reseller_approved_notification": "Approved notice",
+        "reseller_rejected_notification": "Rejected notice",
+        "debt_state_active": "Active",
         "admin_cleanup_preview_title": "Remove Unpaid Users",
         "admin_cleanup_no_payment": "No successful payment",
         "admin_cleanup_no_candidates": "No unpaid reseller-created users were found for this banned reseller.",
@@ -315,6 +336,136 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         actions = {button.callback_data: button.text for button in markup.buttons}
         self.assertEqual(actions["admin_reseller_ui:action:1988:suspend"], "Suspend")
         self.assertIn("admin_reseller_ui:action:1988:ban", actions)
+
+    def test_status_action_opens_notify_or_silent_confirmation(self):
+        original_is_admin = reseller_handlers.is_admin
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        try:
+            reseller_handlers.bot.edits.clear()
+            reseller_handlers.is_admin = lambda user_id: True
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "telegram_username": "buyer",
+                "debt": 0.0,
+                "configs": [],
+            }
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="admin_reseller_ui:action:1988:suspend",
+                from_user=types.SimpleNamespace(id=1),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_admin_reseller_ui(call)
+
+            edit_args, edit_kwargs = reseller_handlers.bot.edits[-1]
+            self.assertIn("Confirm Suspend for 1988", edit_args[0])
+            callbacks = [button.callback_data for button in edit_kwargs["reply_markup"].buttons]
+            self.assertIn("admin_reseller_ui:actionconfirm:1988:suspend:notify", callbacks)
+            self.assertIn("admin_reseller_ui:actionconfirm:1988:suspend:silent", callbacks)
+        finally:
+            reseller_handlers.is_admin = original_is_admin
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+
+    def test_status_action_notify_updates_status_and_messages_reseller(self):
+        original_is_admin = reseller_handlers.is_admin
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_update_status = reseller_handlers.update_reseller_status
+        try:
+            reseller_handlers.bot.sent_messages.clear()
+            updates = []
+            reseller_handlers.is_admin = lambda user_id: True
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "telegram_username": "buyer",
+                "debt": 0.0,
+                "configs": [],
+            }
+            reseller_handlers.update_reseller_status = lambda *args, **kwargs: updates.append((args, kwargs)) or True
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="admin_reseller_ui:actionconfirm:1988:ban:notify",
+                from_user=types.SimpleNamespace(id=1),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_admin_reseller_ui(call)
+
+            self.assertEqual(updates[0], (("1988", "banned"), {}))
+            self.assertEqual(reseller_handlers.bot.sent_messages[-1][0], (1988, "Banned notice"))
+        finally:
+            reseller_handlers.is_admin = original_is_admin
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.update_reseller_status = original_update_status
+
+    def test_status_action_silent_updates_status_without_reseller_message(self):
+        original_is_admin = reseller_handlers.is_admin
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_update_status = reseller_handlers.update_reseller_status
+        try:
+            reseller_handlers.bot.sent_messages.clear()
+            updates = []
+            reseller_handlers.is_admin = lambda user_id: True
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "banned",
+                "telegram_username": "buyer",
+                "debt": 0.0,
+                "configs": [],
+            }
+            reseller_handlers.update_reseller_status = lambda *args, **kwargs: updates.append((args, kwargs)) or True
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="admin_reseller_ui:actionconfirm:1988:unban:silent",
+                from_user=types.SimpleNamespace(id=1),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_admin_reseller_ui(call)
+
+            self.assertEqual(updates[0], (("1988", "suspended"), {"suspended_reason": "unban_grace"}))
+            self.assertEqual(reseller_handlers.bot.sent_messages, [])
+        finally:
+            reseller_handlers.is_admin = original_is_admin
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.update_reseller_status = original_update_status
+
+    def test_approve_remains_immediate_and_notifies_reseller(self):
+        original_is_admin = reseller_handlers.is_admin
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_update_status = reseller_handlers.update_reseller_status
+        try:
+            reseller_handlers.bot.sent_messages.clear()
+            updates = []
+            reseller_handlers.is_admin = lambda user_id: True
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "pending",
+                "telegram_username": "buyer",
+                "debt": 0.0,
+                "configs": [],
+            }
+            reseller_handlers.update_reseller_status = lambda *args, **kwargs: updates.append((args, kwargs)) or True
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="admin_reseller_ui:action:1988:approve",
+                from_user=types.SimpleNamespace(id=1),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_admin_reseller_ui(call)
+
+            self.assertEqual(updates[0], (("1988", "approved"), {}))
+            self.assertEqual(reseller_handlers.bot.sent_messages[-1][0], (1988, "Approved notice"))
+            self.assertFalse(
+                any(
+                    "actionconfirm" in str(button.callback_data)
+                    for _args, kwargs in reseller_handlers.bot.edits
+                    for button in getattr(kwargs.get("reply_markup"), "buttons", [])
+                )
+            )
+        finally:
+            reseller_handlers.is_admin = original_is_admin
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.update_reseller_status = original_update_status
 
     def test_banned_reseller_detail_has_cleanup_action(self):
         markup = reseller_handlers._build_admin_reseller_detail_markup(

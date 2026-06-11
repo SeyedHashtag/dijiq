@@ -178,6 +178,17 @@ def install_common_stubs(bot, payment_records):
         "invalid_payment_response": "invalid",
         "plan_not_found": "plan not found",
         "debt_cleared": "debt cleared",
+        "settlement_payment_approved": "Settlement approved amount ${amount}; remaining ${remaining_debt}",
+        "settlement_payment_rejected": "Settlement rejected; contact support",
+        "reseller_auto_suspended": "AUTO SUSPENDED ${debt:.2f} ban in {hours_until_ban:.1f}",
+        "reseller_auto_banned": "AUTO BANNED ${debt:.2f}",
+        "reseller_debt_reminder_suspended": "REMINDER SUSPENDED ${debt:.2f}",
+        "reseller_debt_reminder_warning": "REMINDER WARNING ${debt:.2f}",
+        "admin_reseller_auto_suspended": "ADMIN AUTO SUSPENDED {reseller_id} ${debt:.2f} {debt_age_hours:.1f}",
+        "admin_reseller_auto_banned": "ADMIN AUTO BANNED {reseller_id} ${debt:.2f} {debt_age_hours:.1f}",
+        "reseller_debt_threshold_crossed_admin": "ADMIN THRESHOLD {reseller_id} {debt_state}",
+        "debt_state_warning": "Warning",
+        "debt_state_suspended": "Suspended",
         "card_to_card_payment": "Transfer {price} at {exchange_rate} to {card_number}",
         "reseller_suspended_due_debt": "Account suspended due to debt (${debt:.2f}); unlock ${unlock_amount:.2f}",
         "cancel": "cancel",
@@ -352,7 +363,7 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         purchase_plan = load_purchase_plan(bot, payment_records)
         reseller_handlers = load_reseller_handlers(purchase_plan)
         apply_calls = []
-        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount))
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
 
         reseller_handlers.handle_reseller_payment(make_call("reseller:pay:crypto:100.00"))
 
@@ -388,7 +399,7 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         }
         apply_calls = []
         statuses = []
-        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount))
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
         purchase_plan.is_admin = lambda _user_id: True
         purchase_plan.get_payment_record = lambda _payment_id: payment_record
         purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
@@ -398,6 +409,7 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         self.assertEqual(apply_calls, [(1988, 100.0)])
         self.assertEqual(statuses, [("settlement-payment", "completed")])
+        self.assertEqual(bot.sent_messages[-1][0], (1988, "Settlement approved amount $100.00; remaining $0.00"))
 
     def test_rejected_settlement_payment_does_not_apply_reseller_credit(self):
         bot = DummyBot()
@@ -422,6 +434,57 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         self.assertEqual(apply_calls, [])
         self.assertEqual(statuses, [("settlement-payment", "rejected")])
+        self.assertEqual(bot.sent_messages[-1][0], (1988, "Settlement rejected; contact support"))
+
+    def test_auto_suspended_debt_event_uses_lifecycle_notification_once(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.ADMIN_USER_IDS = [1]
+        purchase_plan.evaluate_reseller_debt_policies = lambda: [{
+            "user_id": "1988",
+            "debt": 75.0,
+            "debt_state": "suspended",
+            "debt_age_days": 2,
+            "debt_age_hours": 49.0,
+            "unlock_amount": 75.0,
+            "hours_until_ban": 23.0,
+            "notify_user": True,
+            "notify_admin": True,
+            "auto_suspended": True,
+            "auto_banned": False,
+        }]
+
+        purchase_plan.check_pending_payments()
+
+        reseller_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1988]
+        admin_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1]
+        self.assertEqual(reseller_messages, ["AUTO SUSPENDED $75.00 ban in 23.0"])
+        self.assertEqual(admin_messages, ["ADMIN AUTO SUSPENDED 1988 $75.00 49.0"])
+
+    def test_auto_banned_debt_event_uses_lifecycle_notification_once(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.ADMIN_USER_IDS = [1]
+        purchase_plan.evaluate_reseller_debt_policies = lambda: [{
+            "user_id": "1988",
+            "debt": 75.0,
+            "debt_state": "suspended",
+            "debt_age_days": 3,
+            "debt_age_hours": 73.0,
+            "unlock_amount": 75.0,
+            "hours_until_ban": 0.0,
+            "notify_user": True,
+            "notify_admin": True,
+            "auto_suspended": False,
+            "auto_banned": True,
+        }]
+
+        purchase_plan.check_pending_payments()
+
+        reseller_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1988]
+        admin_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1]
+        self.assertEqual(reseller_messages, ["AUTO BANNED $75.00"])
+        self.assertEqual(admin_messages, ["ADMIN AUTO BANNED 1988 $75.00 73.0"])
 
     def test_reseller_settlement_screen_advertises_crypto_discount(self):
         bot = DummyBot()
