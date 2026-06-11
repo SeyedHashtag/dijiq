@@ -131,7 +131,9 @@ class CheckerStatsPanelTests(unittest.TestCase):
             "approved_total": 2000000.0,
             "owed_total": 200000.0,
             "paid_total": 50000.0,
+            "paid_last_30_days": 30000.0,
             "unpaid_total": 150000.0,
+            "open_account_total": 1500000.0,
             "approved_total_usd": 50.0,
             "owed_total_usd": 5.0,
             "paid_total_usd": 2.0,
@@ -150,17 +152,21 @@ class CheckerStatsPanelTests(unittest.TestCase):
         self.assertNotIn("Enabled Types:", checker_text)
         self.assertNotIn("Checker Owed:", checker_text)
         self.assertNotIn("Paid to Checker:", checker_text)
+        self.assertNotIn("Settlement\nApproved Total:", checker_text)
+        self.assertNotIn("Your Share:", checker_text)
+        self.assertNotIn("Paid to You:", checker_text)
+        self.assertNotIn("Remaining Balance:", checker_text)
         self.assertNotIn("Regular Customer\nPending:", checker_text)
         self.assertNotIn("Reseller Settlement\nPending:", checker_text)
         self.assertNotIn("Legacy USD Approved:", checker_text)
         self.assertNotIn("Legacy Estimated Receipts:", checker_text)
-        self.assertIn("Approved Total: 2,000,000 Tomans", checker_text)
-        self.assertIn("Your Share: 200,000 Tomans", checker_text)
-        self.assertIn("Paid to You: 50,000 Tomans", checker_text)
-        self.assertIn("Remaining Balance: 150,000 Tomans", checker_text)
+        self.assertIn("Paid (30 days): 30,000 T", checker_text)
+        self.assertIn("Open Account: 1,500,000 T", checker_text)
+        self.assertIn("Balance (10%): 150,000 T", checker_text)
 
         self.assertIn("Checker User ID: 42", admin_text)
         self.assertIn("Checker Owed: 200,000 Tomans", admin_text)
+        self.assertIn("Paid to Checker: 50,000 Tomans", admin_text)
         self.assertIn("Legacy USD Approved: $50.00", admin_text)
         self.assertIn("Legacy Estimated Receipts: 1", admin_text)
         self.assertIn("Regular Customer\nPending: 0", admin_text)

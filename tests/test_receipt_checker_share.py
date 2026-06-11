@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -118,6 +119,7 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         self.assertEqual(stats["owed_total"], 580000.0)
         self.assertEqual(stats["paid_total"], 200000.0)
         self.assertEqual(stats["unpaid_total"], 380000.0)
+        self.assertEqual(stats["open_account_total"], 3800000.0)
         self.assertEqual(stats["approved_total_usd"], 50.0)
         self.assertEqual(stats["owed_total_usd"], 5.0)
         self.assertEqual(stats["paid_total_usd"], 7.0)
@@ -128,6 +130,27 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         self.assertEqual(stats["types"]["settlement"]["approved"], 1)
         self.assertEqual(stats["converted_approved_total"], 5800000.0)
         self.assertEqual(stats["latest_review"]["payment_id"], "approved-legacy")
+
+    def test_checker_stats_include_paid_last_30_days(self):
+        recent = (datetime.now() - timedelta(days=5)).strftime('%Y-%m-%d %H:%M:%S')
+        old = (datetime.now() - timedelta(days=31)).strftime('%Y-%m-%d %H:%M:%S')
+        self.module.save_checker_settlements([
+            {"checker_user_id": 42, "amount_toman": 200000, "created_at": recent},
+            {"checker_user_id": 42, "amount_toman": 300000, "created_at": old},
+            {"checker_user_id": 42, "amount": 7.0, "created_at": recent},
+            {"checker_user_id": 77, "amount_toman": 1000000, "created_at": recent},
+        ])
+
+        with patch.dict(os.environ, {
+            "RECEIPT_CHECKER_USER_ID": "42",
+            "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "RECEIPT_CHECKER_SHARE_PERCENT": "10",
+        }, clear=False):
+            stats = self.module.build_receipt_checker_stats({})
+
+        self.assertEqual(stats["paid_total"], 500000.0)
+        self.assertEqual(stats["paid_last_30_days"], 200000.0)
+        self.assertEqual(stats["paid_total_usd"], 7.0)
 
     def test_add_checker_settlement_checkpoint_audit(self):
         snapshot = {

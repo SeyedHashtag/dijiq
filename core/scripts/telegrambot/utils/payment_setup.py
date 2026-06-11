@@ -382,6 +382,14 @@ def _parse_toman_amount(value):
         return None
 
 
+def _format_share_percent(value):
+    try:
+        percent = float(value)
+    except (TypeError, ValueError):
+        percent = 0.0
+    return str(int(percent)) if percent.is_integer() else f"{percent:.2f}"
+
+
 def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", include_checker_details=True):
     checker_id = stats.get('checker_id')
     checker_types = stats.get('checker_types') or []
@@ -389,7 +397,13 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
     checker_label = checker_id if checker_id is not None else "Not configured"
     text = f"{title}\n\n"
 
-    if include_checker_details:
+    if not include_checker_details:
+        text += (
+            f"Paid (30 days): {_format_toman(stats.get('paid_last_30_days'))} T\n"
+            f"Open Account: {_format_toman(stats.get('open_account_total'))} T\n"
+            f"Balance ({_format_share_percent(stats.get('share_percent'))}%): {_format_toman(stats.get('unpaid_total'))} T\n\n"
+        )
+    else:
         text += (
             f"Checker User ID: {checker_label}\n"
             f"Enabled Types: {type_label}\n"
@@ -405,34 +419,25 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
                 f"Rejected: {item['rejected']}\n"
                 f"Checker Share: {_format_toman(item['checker_owed_total'])} Tomans\n\n"
             )
-    else:
-        text += f"Share: {stats.get('share_percent', 0):.2f}%\n\n"
 
-    text += (
-        "Settlement\n"
-        f"Approved Total: {_format_toman(stats.get('approved_total'))} Tomans\n"
-    )
-    if include_checker_details:
+        text += (
+            "Settlement\n"
+            f"Approved Total: {_format_toman(stats.get('approved_total'))} Tomans\n"
+        )
         text += (
             f"Checker Owed: {_format_toman(stats.get('owed_total'))} Tomans\n"
             f"Paid to Checker: {_format_toman(stats.get('paid_total'))} Tomans\n"
             f"Unpaid Balance: {_format_toman(stats.get('unpaid_total'))} Tomans\n"
         )
-    else:
-        text += (
-            f"Your Share: {_format_toman(stats.get('owed_total'))} Tomans\n"
-            f"Paid to You: {_format_toman(stats.get('paid_total'))} Tomans\n"
-            f"Remaining Balance: {_format_toman(stats.get('unpaid_total'))} Tomans\n"
-        )
-    if include_checker_details and (stats.get('approved_total_usd') or stats.get('owed_total_usd') or stats.get('paid_total_usd')):
-        text += (
-            f"Legacy USD Approved: ${_format_usd(stats.get('approved_total_usd'))}\n"
-            f"Legacy USD Owed: ${_format_usd(stats.get('owed_total_usd'))}\n"
-            f"Legacy USD Paid: ${_format_usd(stats.get('paid_total_usd'))}\n"
-        )
-    if include_checker_details and stats.get('legacy_estimated_count'):
-        text += f"Legacy Estimated Receipts: {stats.get('legacy_estimated_count')}\n"
-    text += "\n"
+        if stats.get('approved_total_usd') or stats.get('owed_total_usd') or stats.get('paid_total_usd'):
+            text += (
+                f"Legacy USD Approved: ${_format_usd(stats.get('approved_total_usd'))}\n"
+                f"Legacy USD Owed: ${_format_usd(stats.get('owed_total_usd'))}\n"
+                f"Legacy USD Paid: ${_format_usd(stats.get('paid_total_usd'))}\n"
+            )
+        if stats.get('legacy_estimated_count'):
+            text += f"Legacy Estimated Receipts: {stats.get('legacy_estimated_count')}\n"
+        text += "\n"
 
     latest_review = stats.get('latest_review')
     if latest_review:

@@ -2,7 +2,7 @@ import json
 import os
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from dotenv import load_dotenv
 
@@ -209,6 +209,18 @@ def get_checker_paid_total(checker_id=None):
     return normalize_toman_amount(total)
 
 
+def get_checker_paid_total_since(cutoff_datetime, checker_id=None):
+    total = 0.0
+    for item in get_checker_settlements(checker_id):
+        if item.get('amount_toman') is None:
+            continue
+        created_at = _parse_payment_datetime(item.get('created_at'))
+        if created_at is None or created_at < cutoff_datetime:
+            continue
+        total += _safe_float(item.get('amount_toman', 0.0))
+    return normalize_toman_amount(total)
+
+
 def get_checker_paid_total_usd_legacy(checker_id=None):
     total = 0.0
     for item in get_checker_settlements(checker_id):
@@ -224,6 +236,18 @@ def _receipt_type_from_record(payment_record):
     if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
         return RECEIPT_TYPE_SETTLEMENT
     return RECEIPT_TYPE_REGULAR
+
+
+def _open_account_from_balance(balance, share_percent):
+    try:
+        balance_decimal = Decimal(str(balance or 0))
+        percent_decimal = Decimal(str(share_percent))
+    except Exception:
+        return 0.0
+    if percent_decimal <= 0:
+        return 0.0
+    amount = balance_decimal * Decimal('100') / percent_decimal
+    return float(amount.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
 def build_receipt_checker_stats(payments, checker_id=None):
@@ -259,8 +283,10 @@ def build_receipt_checker_stats(payments, checker_id=None):
         'owed_total': 0.0,
         'owed_total_usd': 0.0,
         'paid_total': get_checker_paid_total(checker_id),
+        'paid_last_30_days': get_checker_paid_total_since(datetime.now() - timedelta(days=30), checker_id),
         'paid_total_usd': get_checker_paid_total_usd_legacy(checker_id),
         'unpaid_total': 0.0,
+        'open_account_total': 0.0,
         'unpaid_total_usd': 0.0,
         'legacy_estimated_count': 0,
         'latest_review': None,
@@ -338,6 +364,7 @@ def build_receipt_checker_stats(payments, checker_id=None):
     stats['owed_total'] = normalize_toman_amount(stats['owed_total'])
     stats['owed_total_usd'] = calculate_checker_share_amount(stats['owed_total_usd'], 100)
     stats['unpaid_total'] = max(0.0, normalize_toman_amount(stats['owed_total'] - stats['paid_total']))
+    stats['open_account_total'] = _open_account_from_balance(stats['unpaid_total'], share_percent)
     stats['unpaid_total_usd'] = max(0.0, calculate_checker_share_amount(stats['owed_total_usd'] - stats['paid_total_usd'], 100))
 
     if latest_review:
