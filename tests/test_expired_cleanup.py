@@ -575,7 +575,15 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "last_state": {"days_remaining": 0},
             }
         })
-        client = BulkOnlyFakeClient("s1", {"r303": self.expired_user()})
+        traffic_exhausted_user = {
+            "blocked": True,
+            "expiration_days": 40,
+            "upload_bytes": 6 * self.cleanup.GB_BYTES,
+            "download_bytes": 4 * self.cleanup.GB_BYTES,
+            "max_download_bytes": 10 * self.cleanup.GB_BYTES,
+            "status": "Offline",
+        }
+        client = BulkOnlyFakeClient("s1", {"r303": traffic_exhausted_user})
 
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
@@ -612,7 +620,15 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "last_state": {"days_remaining": 0},
             }
         })
-        client = BulkOnlyFakeClient("s1", {"r303": self.expired_user()})
+        traffic_exhausted_user = {
+            "blocked": True,
+            "expiration_days": 40,
+            "upload_bytes": 6 * self.cleanup.GB_BYTES,
+            "download_bytes": 4 * self.cleanup.GB_BYTES,
+            "max_download_bytes": 10 * self.cleanup.GB_BYTES,
+            "status": "Offline",
+        }
+        client = BulkOnlyFakeClient("s1", {"r303": traffic_exhausted_user})
 
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
@@ -623,6 +639,56 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(state["s1:r303"]["delete_result"], "deleted")
         self.assertEqual(saved_config["cleanup_status"], "deleted")
         self.assertEqual(saved_config["cleanup_delete_result"], "deleted")
+
+    def test_refresh_clears_stale_missing_reason_when_repaired_user_is_still_pending(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {
+            "303": {"configs": [{
+                "username": "r303",
+                "server_id": "s1",
+                "cleanup_status": "already_missing",
+                "cleanup_deleted_at": "2026-06-09 12:00:00",
+                "cleanup_delete_result": "already_missing",
+            }]}
+        })
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:r303": {
+                "username": "r303",
+                "server_id": "s1",
+                "source": "reseller_customer",
+                "reseller_id": "303",
+                "cleanup_status": "already_missing",
+                "delete_result": "already_missing",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 14:00:00",
+                "deleted_at": "2026-06-09 12:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        traffic_exhausted_user = {
+            "blocked": True,
+            "expiration_days": 40,
+            "upload_bytes": 6 * self.cleanup.GB_BYTES,
+            "download_bytes": 4 * self.cleanup.GB_BYTES,
+            "max_download_bytes": 10 * self.cleanup.GB_BYTES,
+            "status": "Offline",
+        }
+        client = BulkOnlyFakeClient("s1", {"r303": traffic_exhausted_user})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
+        records = self.cleanup.get_expired_cleanup_records(filter_key="pending", now=self.now)
+        record = next(item for item in records if item["username"] == "r303")
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(state["s1:r303"]["cleanup_status"], "notified")
+        self.assertNotIn("delete_result", state["s1:r303"])
+        self.assertNotIn("deleted_at", state["s1:r303"])
+        self.assertNotIn("cleanup_delete_result", saved_config)
+        self.assertNotIn("cleanup_deleted_at", saved_config)
+        self.assertEqual(record["reason_code"], "traffic_exhausted")
 
     def test_deleted_users_json_filters_to_past_sixty_days(self):
         self.write_default_files()

@@ -533,6 +533,47 @@ def _apply_fields(target, fields):
             target[key] = value
 
 
+def _clear_state_delete_metadata(entry):
+    if not isinstance(entry, dict):
+        return
+    for key in ('deleted_at', 'delete_result', 'cleanup_error'):
+        entry.pop(key, None)
+
+
+def _clear_candidate_delete_metadata(candidate):
+    ref = candidate.get('_record_ref') or ()
+    if not ref:
+        return
+
+    kind = ref[0]
+    if kind == 'test':
+        data = _load_json_file(TEST_CONFIGS_FILE, {})
+        entry = data.get(ref[1]) if isinstance(data, dict) else None
+        if isinstance(entry, dict):
+            for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
+                entry.pop(key, None)
+            _save_json_file(TEST_CONFIGS_FILE, data)
+        return
+
+    if kind == 'payment':
+        data = _load_json_file(PAYMENTS_FILE, {})
+        entry = data.get(ref[1]) if isinstance(data, dict) else None
+        if isinstance(entry, dict):
+            for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
+                entry.pop(key, None)
+            _save_json_file(PAYMENTS_FILE, data)
+        return
+
+    if kind == 'reseller':
+        data = _load_json_file(RESELLERS_FILE, {})
+        reseller = data.get(ref[1]) if isinstance(data, dict) else None
+        configs = reseller.get('configs', []) if isinstance(reseller, dict) else []
+        if isinstance(configs, list) and 0 <= ref[2] < len(configs) and isinstance(configs[ref[2]], dict):
+            for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
+                configs[ref[2]].pop(key, None)
+            _save_json_file(RESELLERS_FILE, data)
+
+
 def _completed_payment(record):
     if not isinstance(record, dict):
         return False
@@ -1095,6 +1136,15 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             if delete_after is None or now < delete_after:
                 entry['cleanup_status'] = 'notified'
                 entry['last_checked_at'] = now_value
+                if entry.get('delete_result') == 'already_missing':
+                    last_state = capture_last_state(user_data, now=now)
+                    entry['last_state'] = last_state
+                    _clear_state_delete_metadata(entry)
+                    _clear_candidate_delete_metadata(candidate)
+                    _update_candidate_record(
+                        candidate,
+                        _metadata_fields('notified', now_value, last_state=last_state),
+                    )
                 continue
 
             last_state = entry.get('last_state') or capture_last_state(user_data, now=now)
