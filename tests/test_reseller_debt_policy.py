@@ -67,6 +67,26 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(data["total_paid"], 15.0)
         self.assertEqual(data["trust_limit"], 10.0)
 
+    def test_missing_total_paid_ignores_removed_cleanup_history(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 5.0,
+                "configs": [
+                    {"price": 20.0},
+                    {
+                        "price": 10.0,
+                        "removed_from_vpn": True,
+                        "removal_reason": "banned_reseller_cleanup",
+                    },
+                ],
+            }
+        })
+
+        data = self.reseller.get_reseller_data("1988")
+
+        self.assertEqual(data["total_paid"], 15.0)
+
     def test_successful_payment_increments_total_paid_by_debt_credit(self):
         self.write_resellers({
             "1988": {
@@ -301,6 +321,24 @@ class ResellerDebtPolicyTests(unittest.TestCase):
 
         self.assertEqual([candidate["username"] for candidate in candidates], ["first", "second"])
 
+    def test_cleanup_candidates_skip_already_tagged_removed_configs(self):
+        candidates = self.reseller.get_banned_reseller_cleanup_candidates({
+            "status": "banned",
+            "last_payment_at": None,
+            "configs": [
+                {
+                    "username": "already",
+                    "timestamp": "2026-06-01 00:00:00",
+                    "price": 2,
+                    "removed_from_vpn": True,
+                    "removal_reason": "banned_reseller_cleanup",
+                },
+                {"username": "new", "timestamp": "2026-06-02 00:00:00", "price": 3},
+            ],
+        })
+
+        self.assertEqual([candidate["username"] for candidate in candidates], ["new"])
+
     def test_cleanup_deletes_success_and_missing_records_and_keeps_failures(self):
         class FakeClient:
             def __init__(self, delete_result):
@@ -344,9 +382,23 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual([item["username"] for item in result["deleted"]], ["deleted"])
         self.assertEqual([item["username"] for item in result["already_missing"]], ["missing"])
         self.assertEqual([item["username"] for item in result["failed"]], ["failed"])
-        self.assertEqual([config["username"] for config in saved["configs"]], ["paid", "failed"])
+        self.assertEqual([config["username"] for config in saved["configs"]], ["paid", "deleted", "missing", "failed"])
+        tagged_by_username = {config["username"]: config for config in saved["configs"]}
+        self.assertFalse(tagged_by_username["paid"].get("removed_from_vpn", False))
+        self.assertTrue(tagged_by_username["deleted"]["removed_from_vpn"])
+        self.assertEqual(tagged_by_username["deleted"]["removal_reason"], "banned_reseller_cleanup")
+        self.assertEqual(tagged_by_username["deleted"]["removed_cleanup_status"], "deleted_from_vpn")
+        self.assertEqual(
+            tagged_by_username["deleted"]["removal_note"],
+            "Removed during banned reseller unpaid user cleanup",
+        )
+        self.assertIn("removed_at", tagged_by_username["deleted"])
+        self.assertTrue(tagged_by_username["missing"]["removed_from_vpn"])
+        self.assertEqual(tagged_by_username["missing"]["removed_cleanup_status"], "already_missing")
+        self.assertFalse(tagged_by_username["failed"].get("removed_from_vpn", False))
         self.assertEqual(saved["debt"], 7.0)
         self.assertEqual(result["remaining_debt"], 7.0)
+        self.assertEqual(result["tagged_count"], 2)
 
     def test_cleanup_reduces_debt_no_below_zero(self):
         class MissingMultiAPI:
@@ -369,7 +421,11 @@ class ResellerDebtPolicyTests(unittest.TestCase):
 
         self.assertTrue(success)
         self.assertEqual(saved["debt"], 0.0)
-        self.assertEqual(saved["configs"], [])
+        self.assertEqual(len(saved["configs"]), 1)
+        self.assertEqual(saved["configs"][0]["username"], "one")
+        self.assertTrue(saved["configs"][0]["removed_from_vpn"])
+        self.assertEqual(saved["configs"][0]["removed_cleanup_status"], "already_missing")
+        self.assertEqual(saved["total_paid"], 0.0)
         self.assertEqual(result["remaining_debt"], 0.0)
 
     def test_cleanup_keeps_failed_config_value_in_debt(self):
@@ -402,7 +458,10 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         saved = self.read_resellers()["1988"]
 
         self.assertTrue(success)
-        self.assertEqual([config["username"] for config in saved["configs"]], ["failed"])
+        self.assertEqual([config["username"] for config in saved["configs"]], ["removed", "failed"])
+        self.assertTrue(saved["configs"][0]["removed_from_vpn"])
+        self.assertEqual(saved["configs"][0]["removed_cleanup_status"], "deleted_from_vpn")
+        self.assertFalse(saved["configs"][1].get("removed_from_vpn", False))
         self.assertEqual(saved["debt"], 2.0)
         self.assertEqual(result["remaining_debt"], 2.0)
 

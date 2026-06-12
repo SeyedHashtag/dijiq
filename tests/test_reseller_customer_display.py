@@ -82,6 +82,10 @@ def install_stubs():
 
     translations = {
         "reseller_customer_category_active": "Active",
+        "reseller_customer_category_low_days": "Low Days",
+        "reseller_customer_category_low_gb": "Low GB",
+        "reseller_customer_category_expired": "Expired",
+        "reseller_customer_category_deleted": "Deleted",
         "reseller_customer_status_unavailable": "Status unavailable",
         "admin_reseller_section_button": "{status_icon} {status_label} ({count})",
         "admin_reseller_row_compact": "{status_icon} {user_id} ({username_display}) - Debt: ${debt:.2f} | Paid: ${total_paid:.2f} | Limit: ${trust_limit:.2f}",
@@ -145,7 +149,14 @@ def install_stubs():
     reseller_stub.get_reseller_unlock_amount = lambda debt: max(0.0, float(debt or 0.0))
     reseller_stub.get_reseller_total_paid = lambda data: max(
         0.0,
-        float(data.get("total_paid", sum(float(config.get("price", 0.0)) for config in data.get("configs", [])) - float(data.get("debt", 0.0))) or 0.0),
+        float(data.get(
+            "total_paid",
+            sum(
+                float(config.get("price", 0.0))
+                for config in data.get("configs", [])
+                if not config.get("removed_from_vpn")
+            ) - float(data.get("debt", 0.0)),
+        ) or 0.0),
     )
     reseller_stub.get_reseller_trust_limit = lambda total_paid: min(30.0, 5.0 + int(float(total_paid or 0.0) // 10.0) * 5.0)
     reseller_stub.can_reseller_add_debt = lambda data, amount: (
@@ -290,6 +301,30 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
 
         self.assertIn("3. ✅ `r1988033051`", entry)
         self.assertNotIn("🆔", entry)
+
+    def test_removed_cleanup_customer_entry_shows_reason(self):
+        entry = reseller_handlers._format_reseller_customer_entry(
+            4,
+            {
+                "username": "r1988033051c",
+                "customer_name": "reza",
+                "gb": 50,
+                "days": 30,
+                "price": 3,
+                "timestamp": "2026-06-01 12:00:00",
+                "removed_from_vpn": True,
+                "removal_reason": "banned_reseller_cleanup",
+                "removal_note": "Removed during banned reseller unpaid user cleanup",
+                "removed_at": "2026-06-02 13:00:00",
+                "_status_category": "deleted",
+            },
+            "deleted",
+            "en",
+        )
+
+        self.assertIn("4. 🗑 `reza`", entry)
+        self.assertIn("   Deleted", entry)
+        self.assertIn("Removed during banned reseller unpaid user cleanup (2026-06-02 13:00:00)", entry)
 
     def test_admin_reseller_row_shows_debt_and_total_paid(self):
         grouped = {
@@ -541,7 +576,8 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
 
         self.assertIn("Deleted from VPN", text)
         self.assertIn("`deleted`", text)
-        self.assertIn("Already missing, record removed", text)
+        self.assertIn("History records tagged: *2*", text)
+        self.assertIn("Already missing, record tagged", text)
         self.assertIn("`missing`", text)
         self.assertIn("Failed, record kept", text)
         self.assertIn("`failed`", text)

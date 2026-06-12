@@ -23,6 +23,10 @@ DEBT_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_DEBT_BAN_DEADLINE_H
 UNBAN_GRACE_BAN_DEADLINE_HOURS = max(1.0, _safe_float_env('RESELLER_UNBAN_GRACE_BAN_DEADLINE_HOURS', 24.0))
 SUSPENDED_REASON_DEBT = 'debt'
 SUSPENDED_REASON_UNBAN_GRACE = 'unban_grace'
+REMOVAL_REASON_BANNED_RESELLER_CLEANUP = 'banned_reseller_cleanup'
+REMOVAL_NOTE_BANNED_RESELLER_CLEANUP = 'Removed during banned reseller unpaid user cleanup'
+REMOVAL_STATUS_DELETED_FROM_VPN = 'deleted_from_vpn'
+REMOVAL_STATUS_ALREADY_MISSING = 'already_missing'
 RESELLER_TRUST_START_LIMIT = 5.0
 RESELLER_TRUST_LIMIT_STEP = 5.0
 RESELLER_TRUST_PAID_STEP = 10.0
@@ -43,7 +47,7 @@ def _reseller_config_total(record):
     return sum(
         _safe_float(config.get('price', 0.0))
         for config in configs
-        if isinstance(config, dict)
+        if isinstance(config, dict) and not _is_removed_config(config)
     )
 
 
@@ -88,6 +92,20 @@ def _parse_time(value):
         return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
     except (TypeError, ValueError):
         return None
+
+
+def _is_removed_config(config):
+    return isinstance(config, dict) and bool(config.get('removed_from_vpn'))
+
+
+def _mark_config_removed(config, cleanup_status):
+    tagged = dict(config or {})
+    tagged['removed_from_vpn'] = True
+    tagged['removal_reason'] = REMOVAL_REASON_BANNED_RESELLER_CLEANUP
+    tagged['removal_note'] = REMOVAL_NOTE_BANNED_RESELLER_CLEANUP
+    tagged['removed_at'] = _now_str()
+    tagged['removed_cleanup_status'] = cleanup_status
+    return tagged
 
 
 def _compute_debt_state(debt):
@@ -359,6 +377,8 @@ def get_banned_reseller_cleanup_candidates(reseller_data):
     for index, config in enumerate(configs):
         if not isinstance(config, dict):
             continue
+        if _is_removed_config(config):
+            continue
         username = str(config.get('username') or '').strip()
         if not username:
             continue
@@ -379,7 +399,7 @@ def get_banned_reseller_cleanup_candidates(reseller_data):
 
 
 def cleanup_banned_reseller_users(user_id, multi_api):
-    """Delete unpaid customer configs for a banned reseller and update accounting."""
+    """Delete unpaid customer configs for a banned reseller and tag local history."""
     user_id = str(user_id)
     with reseller_lock:
         try:
@@ -394,7 +414,9 @@ def cleanup_banned_reseller_users(user_id, multi_api):
         if user_id not in resellers:
             return False, {'reason': 'Reseller not found'}
 
-        current = _ensure_reseller_defaults(resellers[user_id])
+        stored_reseller = resellers[user_id]
+        had_explicit_total_paid = isinstance(stored_reseller, dict) and 'total_paid' in stored_reseller
+        current = _ensure_reseller_defaults(stored_reseller)
         if current.get('status') != 'banned':
             return False, {'reason': 'Cleanup is only available for banned resellers'}
 
@@ -405,6 +427,7 @@ def cleanup_banned_reseller_users(user_id, multi_api):
                 'already_missing': [],
                 'failed': [],
                 'removed_count': 0,
+                'tagged_count': 0,
                 'removed_value': 0.0,
                 'remaining_debt': _safe_float(current.get('debt', 0.0)),
                 'remaining_configs': len(current.get('configs', []) or []),
@@ -414,14 +437,14 @@ def cleanup_banned_reseller_users(user_id, multi_api):
         deleted = []
         already_missing = []
         failed = []
-        removed_indexes = set()
+        tagged_status_by_index = {}
 
         for candidate in candidates:
             username = candidate['username']
             api_client, live_user = multi_api.find_user(username, preferred_server_id=candidate.get('server_id'))
             if api_client is None or live_user is None:
                 already_missing.append(candidate)
-                removed_indexes.add(candidate['config_index'])
+                tagged_status_by_index[candidate['config_index']] = REMOVAL_STATUS_ALREADY_MISSING
                 continue
 
             result = api_client.delete_user(username)
@@ -430,24 +453,28 @@ def cleanup_banned_reseller_users(user_id, multi_api):
                 continue
 
             deleted.append(candidate)
-            removed_indexes.add(candidate['config_index'])
+            tagged_status_by_index[candidate['config_index']] = REMOVAL_STATUS_DELETED_FROM_VPN
 
         removed_value = sum(
             _safe_float(candidate.get('price', 0.0))
             for candidate in candidates
-            if candidate.get('config_index') in removed_indexes
+            if candidate.get('config_index') in tagged_status_by_index
         )
         failed_value = sum(_safe_float(candidate.get('price', 0.0)) for candidate in failed)
 
         configs = current.get('configs', [])
         if not isinstance(configs, list):
             configs = []
-        current['configs'] = [
-            config
-            for index, config in enumerate(configs)
-            if index not in removed_indexes
-        ]
+        current['configs'] = []
+        for index, config in enumerate(configs):
+            if index in tagged_status_by_index and isinstance(config, dict):
+                current['configs'].append(_mark_config_removed(config, tagged_status_by_index[index]))
+            else:
+                current['configs'].append(config)
         current['debt'] = max(failed_value, _safe_float(current.get('debt', 0.0)) - removed_value)
+        if not had_explicit_total_paid:
+            current.pop('total_paid', None)
+            current.pop('trust_limit', None)
         current = _ensure_reseller_defaults(current)
         resellers[user_id] = current
 
@@ -459,7 +486,8 @@ def cleanup_banned_reseller_users(user_id, multi_api):
             'deleted': deleted,
             'already_missing': already_missing,
             'failed': failed,
-            'removed_count': len(removed_indexes),
+            'removed_count': len(tagged_status_by_index),
+            'tagged_count': len(tagged_status_by_index),
             'removed_value': removed_value,
             'remaining_debt': _safe_float(current.get('debt', 0.0)),
             'remaining_configs': len(current.get('configs', []) or []),

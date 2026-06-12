@@ -867,6 +867,20 @@ def _resolve_reseller_customer_name(cfg):
     return _extract_customer_name_from_note(user_config.get("note"))
 
 
+def _is_removed_config(cfg):
+    return isinstance(cfg, dict) and bool(cfg.get("removed_from_vpn"))
+
+
+def _removed_config_reason_line(cfg):
+    if not _is_removed_config(cfg):
+        return ""
+    note = str(cfg.get("removal_note") or "Removed from VPN during cleanup").strip()
+    removed_at = str(cfg.get("removed_at") or "").strip()
+    if removed_at:
+        return f"\n   🧾 {note} ({removed_at})"
+    return f"\n   🧾 {note}"
+
+
 def _format_reseller_customer_entry(index, cfg, category, language):
     username = cfg.get('username', 'N/A')
     customer_name = _resolve_reseller_customer_name(cfg)
@@ -882,12 +896,14 @@ def _format_reseller_customer_entry(index, cfg, category, language):
     identifier_lines = [f"{index}. {RESELLER_CUSTOMER_CATEGORY_ICONS.get(status_category, '✅')} `{customer_name or username}`"]
     if customer_name:
         identifier_lines.append(f"   🆔 `{username}`")
+    removal_reason = _removed_config_reason_line(cfg)
 
     return (
         "\n".join(identifier_lines) + "\n"
         f"   {status_label}\n"
         f"   📊 {gb} GB | 📅 {days}d | 💰 ${format_usd_amount(price)}\n"
         f"   🕒 {timestamp}"
+        f"{removal_reason}"
     )
 
 
@@ -953,6 +969,11 @@ def _categorize_reseller_customers(configs):
         user_config = live_users.get(str(username)) if username else None
         server_id = cfg.get("server_id")
         enriched = {**cfg, "_user_config": user_config}
+
+        if _is_removed_config(cfg):
+            enriched["_status_category"] = "deleted"
+            categorized["deleted"].append(enriched)
+            continue
 
         if not user_config:
             if server_id and server_id in unavailable_server_ids:
@@ -1380,15 +1401,19 @@ def _reseller_financial_stats(reseller_data):
         configs = []
 
     total_configs = len(configs)
+    billable_configs = [
+        config
+        for config in configs
+        if isinstance(config, dict) and not _is_removed_config(config)
+    ]
     total_turnover = sum(
         _safe_float(config.get("price", 0.0))
-        for config in configs
-        if isinstance(config, dict)
+        for config in billable_configs
     )
     current_debt = _safe_float((reseller_data or {}).get("debt", 0.0))
     total_paid = get_reseller_total_paid(reseller_data)
     trust_limit = get_reseller_trust_limit(total_paid)
-    average_config_value = total_turnover / total_configs if total_configs else 0.0
+    average_config_value = total_turnover / len(billable_configs) if billable_configs else 0.0
     last_config_at = "N/A"
 
     for config in reversed(configs):
@@ -1820,7 +1845,7 @@ def _build_admin_cleanup_preview_text(language, reseller_id, reseller_data, cand
         f"Last successful payment: `{_escape_markdown(last_payment_at)}`\n"
         f"Matched users: *{len(candidates)}*\n"
         f"Total matched value: *${format_usd_amount(total_value)}*\n\n"
-        f"*Users to delete:*\n{_cleanup_item_lines(candidates)}\n\n"
+        f"*Users to remove from VPN:*\n{_cleanup_item_lines(candidates)}\n\n"
         f"{get_message_text(language, 'admin_cleanup_confirm_warning')}"
     )
 
@@ -1838,12 +1863,13 @@ def _build_admin_cleanup_result_text(language, reseller_id, result):
     return (
         f"{get_message_text(language, 'admin_cleanup_result_title')}\n\n"
         f"Reseller: `{_escape_markdown(reseller_id)}`\n"
-        f"Removed records: *{result.get('removed_count', 0)}*\n"
+        f"VPN access removed: *{result.get('removed_count', 0)}*\n"
+        f"History records tagged: *{result.get('tagged_count', result.get('removed_count', 0))}*\n"
         f"Removed value: *${format_usd_amount(result.get('removed_value', 0.0))}*\n"
         f"Remaining configs: *{result.get('remaining_configs', 0)}*\n"
         f"Remaining debt: *${format_usd_amount(result.get('remaining_debt', 0.0))}*\n\n"
         f"{_section('Deleted from VPN', deleted)}\n\n"
-        f"{_section('Already missing, record removed', already_missing)}\n\n"
+        f"{_section('Already missing, record tagged', already_missing)}\n\n"
         f"{_section('Failed, record kept', failed)}"
     )
 
