@@ -306,10 +306,7 @@ def _send_created_test_config(chat_id, username, user_uri_data, is_automatic=Fal
         if ipv4_url:
             success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
 
-        success_message += (
-            f"Subscription URL:\n{sub_url}\n\n"
-            f"Scan the QR code to configure your VPN client."
-        )
+        success_message += f"Subscription URL:\n{sub_url}"
         bot.send_photo(
             chat_id,
             photo=bio,

@@ -1230,8 +1230,7 @@ def process_payment_webhook(request_data):
                         bio.seek(0)
                         bot.send_photo(
                             user_id,
-                            photo=bio,
-                            caption=get_message_text(user_language, "scan_qr_code")
+                            photo=bio
                         )
                     return True
                 else:
