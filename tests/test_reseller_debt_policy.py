@@ -214,6 +214,31 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertIsNone(saved["suspended_reason"])
         self.assertTrue(any(event["auto_banned"] for event in events))
 
+    def test_banned_reseller_does_not_emit_followup_suspended_alert(self):
+        self.write_resellers({
+            "1988": {
+                "status": "suspended",
+                "suspended_reason": "debt",
+                "debt": 7.20,
+                "debt_since": self.hours_ago(73),
+                "configs": [],
+            }
+        })
+
+        first_events = self.reseller.evaluate_reseller_debt_policies()
+        first_saved = self.read_resellers()["1988"]
+
+        self.assertEqual(first_saved["status"], "banned")
+        self.assertEqual(first_saved["debt_last_admin_alert_level"], "banned")
+        self.assertTrue(any(event["auto_banned"] and event["notify_admin"] for event in first_events))
+
+        second_events = self.reseller.evaluate_reseller_debt_policies()
+        second_saved = self.read_resellers()["1988"]
+
+        self.assertEqual(second_saved["status"], "banned")
+        self.assertEqual(second_saved["debt_last_admin_alert_level"], "banned")
+        self.assertEqual(second_events, [])
+
     def test_unbanned_reseller_auto_bans_after_grace_deadline(self):
         self.write_resellers({
             "1988": {

@@ -655,7 +655,7 @@ def evaluate_reseller_debt_policies():
 
             # Admin alert logic
             alert_level = 'none'
-            if auto_banned:
+            if current.get('status') == 'banned':
                 alert_level = 'banned'
             elif debt_state == 'warning' and debt >= DEBT_SETTLEMENT_THRESHOLD:
                 alert_level = 'warning'
