@@ -297,6 +297,27 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(second_saved["debt_last_admin_alert_level"], "banned")
         self.assertEqual(second_events, [])
 
+    def test_debtless_banned_reseller_does_not_emit_debt_admin_alert(self):
+        self.write_resellers({
+            "1988": {
+                "status": "banned",
+                "debt": 0.0,
+                "debt_last_admin_alert_level": "banned",
+                "configs": [],
+            }
+        })
+
+        first_events = self.reseller.evaluate_reseller_debt_policies()
+        first_saved = self.read_resellers()["1988"]
+        second_events = self.reseller.evaluate_reseller_debt_policies()
+        second_saved = self.read_resellers()["1988"]
+
+        self.assertEqual(first_events, [])
+        self.assertEqual(second_events, [])
+        self.assertEqual(first_saved["debt_state"], "active")
+        self.assertEqual(first_saved["debt_last_admin_alert_level"], "none")
+        self.assertEqual(second_saved["debt_last_admin_alert_level"], "none")
+
     def test_unbanned_reseller_auto_bans_after_grace_deadline(self):
         self.write_resellers({
             "1988": {

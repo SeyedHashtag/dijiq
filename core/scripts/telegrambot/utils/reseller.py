@@ -730,12 +730,13 @@ def evaluate_reseller_debt_policies():
 
             # Admin alert logic
             alert_level = 'none'
-            if current.get('status') == 'banned':
-                alert_level = 'banned'
-            elif debt_state == 'warning' and debt >= DEBT_SETTLEMENT_THRESHOLD:
-                alert_level = 'warning'
-            elif debt_state == 'suspended' and debt >= DEBT_SETTLEMENT_THRESHOLD:
-                alert_level = 'suspended'
+            if debt >= DEBT_SETTLEMENT_THRESHOLD:
+                if current.get('status') == 'banned':
+                    alert_level = 'banned'
+                elif debt_state == 'warning':
+                    alert_level = 'warning'
+                elif debt_state == 'suspended':
+                    alert_level = 'suspended'
 
             admin_alert_due = False
             previous_alert_level = str(current.get('debt_last_admin_alert_level', 'none'))
