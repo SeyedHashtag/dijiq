@@ -4,14 +4,15 @@ import qrcode
 import io
 from telebot import types
 from utils.command import bot, is_admin
-from utils.common import create_main_markup
+from utils.common import create_main_markup, is_admin_main_menu_button
 from utils.api_client import APIClient, MultiServerAPI
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
 def handle_cancel_show_user(call):
+    bot.answer_callback_query(call.id)
+    bot.clear_step_handler_by_chat_id(call.message.chat.id)
     bot.edit_message_text("Operation canceled.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-    create_main_markup(call.message)
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '👤 Show User')
 def show_user(message):
@@ -24,6 +25,10 @@ def show_user(message):
 
 def process_show_user(message):
     username = message.text.strip().lower()
+    if is_admin_main_menu_button(message.text):
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
+
     bot.send_chat_action(message.chat.id, 'typing')
 
     # Use API client to get user details directly

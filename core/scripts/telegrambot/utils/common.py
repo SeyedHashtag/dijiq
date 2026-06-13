@@ -1,5 +1,23 @@
 from telebot import types
 
+ADMIN_MAIN_MENU_ROWS = (
+    ('➕ Add User', '👤 Show User'),
+    ('❌ Delete User', '📊 Server Info'),
+    ('💾 Backup Server', '💳 Payment Settings'),
+    ('📝 Edit Plans', '📢 Broadcast Message'),
+    ('📞 Edit Support', '🔄 Update Keyboards'),
+    ('💼 Manage Resellers', '🧪 Manage Test Accounts'),
+    ('💰 Referral Payouts', '⚖️ VPN Servers'),
+    ('✅ Confirmations', '🧹 Expired Cleanup'),
+)
+
+ADMIN_MAIN_MENU_BUTTONS = {button for row in ADMIN_MAIN_MENU_ROWS for button in row}
+
+
+def is_admin_main_menu_button(text):
+    return isinstance(text, str) and text in ADMIN_MAIN_MENU_BUTTONS
+
+
 def create_main_markup_with_language(language_translations, is_admin=False, user_id=None):
     """
     Create a main menu markup with the given language translations.
@@ -8,14 +26,8 @@ def create_main_markup_with_language(language_translations, is_admin=False, user
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if is_admin:
         # Admin menu
-        markup.row('➕ Add User', '👤 Show User')
-        markup.row('❌ Delete User', '📊 Server Info')
-        markup.row('💾 Backup Server', '💳 Payment Settings')
-        markup.row('📝 Edit Plans', '📢 Broadcast Message')
-        markup.row('📞 Edit Support', '🔄 Update Keyboards')
-        markup.row('💼 Manage Resellers', '🧪 Manage Test Accounts')
-        markup.row('💰 Referral Payouts', '⚖️ VPN Servers')
-        markup.row('✅ Confirmations', '🧹 Expired Cleanup')
+        for row in ADMIN_MAIN_MENU_ROWS:
+            markup.row(*row)
     else:
         # Non-admin menu with translations
         markup.row(

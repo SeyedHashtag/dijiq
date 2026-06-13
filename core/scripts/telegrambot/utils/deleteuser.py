@@ -1,13 +1,14 @@
 from telebot import types
 from utils.command import bot, is_admin
-from utils.common import create_main_markup
+from utils.common import create_main_markup, is_admin_main_menu_button
 from utils.api_client import APIClient, MultiServerAPI
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_delete")
 def handle_cancel_delete(call):
+    bot.answer_callback_query(call.id)
+    bot.clear_step_handler_by_chat_id(call.message.chat.id)
     bot.edit_message_text("Operation canceled.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-    create_main_markup(call.message)
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '❌ Delete User')
 def delete_user(message):
@@ -20,6 +21,10 @@ def delete_user(message):
 
 def process_delete_user(message):
     username = message.text.strip().lower()
+
+    if is_admin_main_menu_button(message.text):
+        bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
+        return
 
     if not username:
         bot.reply_to(message, "Username cannot be empty. Operation canceled.", reply_markup=create_main_markup(is_admin=True))
