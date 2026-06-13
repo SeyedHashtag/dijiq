@@ -1,3 +1,11 @@
+## v1.15.0
+✨ Add renewal functionality for customer and reseller accounts
+✨ Add admin notification for reseller settlement completion across multiple paths
+✨ Implement banned reseller cleanup tagging and update related logic
+🐛 Implement admin menu button cancellation handling in delete and show user prompts
+🌐 Refine payment completion messages by removing QR code instructions
+✅ Add tests for renewal flows, banned reseller suspension behavior, and related scenarios
+
 ## v1.14.0
 ✨ Add Toman currency formatting across payment setup, purchase, and receipt checker flows
 ✨ Expand checker stats with last-30-days paid totals, open account totals, and legacy USD details
