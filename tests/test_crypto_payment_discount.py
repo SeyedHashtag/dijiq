@@ -36,6 +36,8 @@ class DummyBot:
         self.sent_photos = []
         self.sent_messages = []
         self.edited_messages = []
+        self.edited_captions = []
+        self.edited_reply_markups = []
         self.deleted_messages = []
         self.callback_answers = []
         self.replies = []
@@ -51,6 +53,12 @@ class DummyBot:
 
     def edit_message_text(self, *args, **kwargs):
         self.edited_messages.append((args, kwargs))
+
+    def edit_message_caption(self, *args, **kwargs):
+        self.edited_captions.append((args, kwargs))
+
+    def edit_message_reply_markup(self, *args, **kwargs):
+        self.edited_reply_markups.append((args, kwargs))
 
     def delete_message(self, *args, **kwargs):
         self.deleted_messages.append((args, kwargs))
@@ -77,9 +85,13 @@ class DummyBot:
             message_id=654,
         )
 
+    def get_chat(self, user_id):
+        return types.SimpleNamespace(username=f"user{user_id}")
+
 
 class FakeCryptoPayment:
     calls = []
+    statuses = {}
 
     def create_payment(self, amount, plan_gb, user_id):
         self.calls.append({"amount": amount, "plan_gb": plan_gb, "user_id": user_id})
@@ -90,6 +102,9 @@ class FakeCryptoPayment:
                 "order_id": "gateway-order",
             }
         }
+
+    def check_payment_status(self, payment_id):
+        return self.statuses.get(payment_id, {"result": {"status": "pending"}})
 
 
 def clear_test_modules():
@@ -191,6 +206,13 @@ def install_common_stubs(bot, payment_records):
         "debt_state_suspended": "Suspended",
         "card_to_card_payment": "Transfer {price} at {exchange_rate} to {card_number}",
         "reseller_suspended_due_debt": "Account suspended due to debt (${debt:.2f}); unlock ${unlock_amount:.2f}",
+        "renewal_failed": "Renewal failed: {reason}",
+        "renewal_ineligible_missing": "missing",
+        "renewal_ineligible_no_record": "no record",
+        "renewal_ineligible_not_expired": "not expired",
+        "renewal_ineligible_plan_missing": "plan missing",
+        "renewal_ineligible_plan_mismatch": "plan mismatch",
+        "renewal_reset_failed": "reset failed",
         "cancel": "cancel",
     }.get(key, key)
     sys.modules["utils.translations"] = translations_stub
@@ -276,6 +298,7 @@ def load_purchase_plan(bot=None, payment_records=None):
     payment_records = payment_records if payment_records is not None else []
     install_common_stubs(bot, payment_records)
     FakeCryptoPayment.calls = []
+    FakeCryptoPayment.statuses = {}
     spec = importlib.util.spec_from_file_location("purchase_plan_under_test", PURCHASE_PLAN_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -312,6 +335,33 @@ def make_admin_approval_call(action):
             caption="Pending settlement",
         ),
     )
+
+
+class FakeRenewalAPIClient:
+    server_id = "s1"
+
+    def get_user_uri(self, username):
+        return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
+
+
+def install_renewal_success_stub(calls):
+    renewal_stub = types.ModuleType("utils.renewal")
+
+    def execute_customer_renewal(payment_record):
+        calls.append(("execute", payment_record.get("payment_id") or payment_record.get("renewal_username")))
+        return {
+            "success": True,
+            "username": payment_record.get("renewal_username", "renewed-user"),
+            "server_id": payment_record.get("renewal_server_id", "s1"),
+            "api_client": FakeRenewalAPIClient(),
+            "before_state": {"status": "expired"},
+            "after_state": {"status": "active"},
+        }
+
+    renewal_stub.execute_customer_renewal = execute_customer_renewal
+    renewal_stub.format_renewal_success = lambda *args, **kwargs: "renewal success"
+    sys.modules["utils.renewal"] = renewal_stub
+    return renewal_stub
 
 
 class CryptoPaymentDiscountTests(unittest.TestCase):
@@ -435,6 +485,85 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(apply_calls, [])
         self.assertEqual(statuses, [("settlement-payment", "rejected")])
         self.assertEqual(bot.sent_messages[-1][0], (1988, "Settlement rejected; contact support"))
+
+    def test_card_approval_dispatches_renewal_instead_of_new_user_creation(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        renewal_calls = []
+        install_renewal_success_stub(renewal_calls)
+        statuses = []
+        field_updates = []
+        payment_record = {
+            "status": "pending_approval",
+            "type": "renewal",
+            "user_id": 1988,
+            "plan_gb": "40",
+            "days": 30,
+            "price": 100.0,
+            "payment_method": "Card to Card",
+            "renewal_username": "old-user",
+            "renewal_server_id": "s1",
+            "renewal_base_record_id": "base-1",
+        }
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.get_payment_record = lambda _payment_id: payment_record
+        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+        purchase_plan.update_payment_record_fields = lambda payment_id, fields: field_updates.append((payment_id, fields))
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for renewal payments")
+
+        purchase_plan.handle_admin_approval(make_admin_approval_call("approve"))
+
+        self.assertEqual(renewal_calls, [("execute", "old-user")])
+        self.assertIn(("settlement-payment", "completed"), statuses)
+        self.assertTrue(any(fields.get("renewal_after_state") == {"status": "active"} for _pid, fields in field_updates))
+        self.assertEqual(bot.sent_photos[-1][1]["caption"], "renewal success")
+
+    def test_crypto_check_webhook_and_pending_poll_dispatch_renewals(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        renewal_calls = []
+        install_renewal_success_stub(renewal_calls)
+        statuses = []
+        field_updates = []
+        payment_record = {
+            "status": "pending",
+            "type": "renewal",
+            "user_id": 1988,
+            "plan_gb": "40",
+            "days": 30,
+            "price": 95.0,
+            "payment_method": "Crypto",
+            "payment_id": "renew-payment",
+            "order_id": "renew-order",
+            "renewal_username": "old-user",
+            "renewal_server_id": "s1",
+            "renewal_base_record_id": "base-1",
+        }
+        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+        purchase_plan.update_payment_record_fields = lambda payment_id, fields: field_updates.append((payment_id, fields))
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for renewal payments")
+        FakeCryptoPayment.statuses = {"renew-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
+        purchase_plan.handle_check_payment(types.SimpleNamespace(
+            data="check_payment:renew-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=1988, username="buyer"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        ))
+
+        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
+        purchase_plan.load_payments = lambda: {"renew-payment": {"order_id": "renew-order"}}
+        self.assertTrue(purchase_plan.process_payment_webhook({"order_id": "renew-order", "status": "paid"}))
+
+        purchase_plan.load_payments = lambda: {"renew-payment": dict(payment_record)}
+        purchase_plan.check_pending_payments()
+
+        self.assertEqual([call[0] for call in renewal_calls], ["execute", "execute", "execute"])
+        self.assertEqual(statuses.count(("renew-payment", "completed")), 3)
+        self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 3)
 
     def test_auto_suspended_debt_event_uses_lifecycle_notification_once(self):
         bot = DummyBot()

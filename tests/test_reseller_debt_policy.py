@@ -87,6 +87,64 @@ class ResellerDebtPolicyTests(unittest.TestCase):
 
         self.assertEqual(data["total_paid"], 15.0)
 
+    def test_missing_total_paid_includes_renewal_history_in_legacy_turnover(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 4.0,
+                "configs": [
+                    {
+                        "username": "customer1",
+                        "price": 10.0,
+                        "renewals": [{"price": 5.0}],
+                    },
+                ],
+            }
+        })
+
+        data = self.reseller.get_reseller_data("1988")
+
+        self.assertEqual(self.reseller.get_reseller_config_value(data["configs"][0]), 15.0)
+        self.assertEqual(data["total_paid"], 11.0)
+        self.assertEqual(data["trust_limit"], 10.0)
+
+    def test_add_reseller_renewal_debt_appends_history_without_duplicating_config(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 0.0,
+                "configs": [
+                    {
+                        "username": "customer1",
+                        "server_id": "s1",
+                        "price": 10.0,
+                    },
+                ],
+            }
+        })
+
+        success = self.reseller.add_reseller_renewal_debt(
+            "1988",
+            "customer1",
+            4.0,
+            {
+                "gb": "5",
+                "days": 30,
+                "before_state": {"status": "expired"},
+                "after_state": {"status": "active"},
+            },
+            server_id="s1",
+        )
+        saved = self.read_resellers()["1988"]
+
+        self.assertTrue(success)
+        self.assertEqual(saved["debt"], 4.0)
+        self.assertEqual(len(saved["configs"]), 1)
+        self.assertEqual(len(saved["configs"][0]["renewals"]), 1)
+        self.assertEqual(saved["configs"][0]["renewals"][0]["price"], 4.0)
+        self.assertEqual(saved["configs"][0]["cleanup_status"], "renewed")
+        self.assertEqual(saved["configs"][0]["cleanup_last_state"], {"status": "active"})
+
     def test_successful_payment_increments_total_paid_by_debt_credit(self):
         self.write_resellers({
             "1988": {

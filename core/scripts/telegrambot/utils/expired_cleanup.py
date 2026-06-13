@@ -50,7 +50,7 @@ except ImportError:
 from utils.api_client import MultiServerAPI
 from utils.command import bot, is_admin
 from utils.language import get_user_language
-from utils.translations import get_message_text
+from utils.translations import get_button_text, get_message_text
 
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
@@ -930,7 +930,47 @@ def _notify_candidate(candidate, grace_hours, last_state=None, missing=False):
             account_type=_account_type_label(source, language),
             state_summary=_format_state_summary(last_state, language, missing=missing),
         )
-        bot.send_message(int(recipient_id), message, parse_mode='Markdown')
+        markup = None
+        try:
+            from utils.edit_plans import load_plans
+            from utils.renewal import find_customer_renewal_offer, find_reseller_renewal_offer
+
+            plans = load_plans()
+            if source == 'customer':
+                offer = find_customer_renewal_offer(
+                    candidate.get('telegram_user_id'),
+                    candidate.get('username'),
+                    candidate.get('_api_client'),
+                    candidate.get('_user_data'),
+                    plans,
+                    server_id=candidate.get('server_id'),
+                )
+                if offer.get('eligible'):
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton(
+                        get_button_text(language, "renew_plan") or "Renew Plan",
+                        callback_data=f"renew_plan:{offer['token']}"
+                    ))
+            elif source == 'reseller_customer':
+                ref = candidate.get('_record_ref') or ()
+                if len(ref) >= 3 and ref[0] == 'reseller':
+                    offer = find_reseller_renewal_offer(
+                        candidate.get('reseller_id'),
+                        int(ref[2]),
+                        candidate.get('_api_client'),
+                        candidate.get('_user_data'),
+                        plans,
+                    )
+                    if offer.get('eligible'):
+                        markup = types.InlineKeyboardMarkup()
+                        markup.add(types.InlineKeyboardButton(
+                            get_button_text(language, "renew_plan") or "Renew Plan",
+                            callback_data=f"reseller:renew:{offer['token']}"
+                        ))
+        except Exception as e:
+            print(f"Failed to build renewal cleanup action for {candidate.get('username')}: {e}")
+
+        bot.send_message(int(recipient_id), message, parse_mode='Markdown', reply_markup=markup)
         return None
     except Exception as e:
         return str(e)

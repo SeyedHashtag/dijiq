@@ -128,7 +128,17 @@ def load_module():
     translations_stub.get_message_text = (
         lambda language, key: "{account_type}|{username}|{grace_hours}|{state_summary}"
     )
+    translations_stub.get_button_text = lambda language, key: "Renew Plan" if key == "renew_plan" else key
     sys.modules["utils.translations"] = translations_stub
+
+    edit_plans_stub = types.ModuleType("utils.edit_plans")
+    edit_plans_stub.load_plans = lambda: {}
+    sys.modules["utils.edit_plans"] = edit_plans_stub
+
+    renewal_stub = types.ModuleType("utils.renewal")
+    renewal_stub.find_customer_renewal_offer = lambda *args, **kwargs: {"eligible": False}
+    renewal_stub.find_reseller_renewal_offer = lambda *args, **kwargs: {"eligible": False}
+    sys.modules["utils.renewal"] = renewal_stub
 
     spec = importlib.util.spec_from_file_location("expired_cleanup_under_test", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -189,6 +199,35 @@ class ExpiredCleanupTests(unittest.TestCase):
             "max_download_bytes": 5 * self.cleanup.GB_BYTES,
             "status": "expired",
         }
+
+    def test_customer_cleanup_notice_includes_renewal_button_when_eligible(self):
+        edit_plans_stub = types.ModuleType("utils.edit_plans")
+        edit_plans_stub.load_plans = lambda: {"5": {"price": 10.0, "days": 30, "unlimited": False}}
+        sys.modules["utils.edit_plans"] = edit_plans_stub
+
+        renewal_stub = types.ModuleType("utils.renewal")
+        renewal_stub.find_customer_renewal_offer = lambda *args, **kwargs: {"eligible": True, "token": "renew-token"}
+        renewal_stub.find_reseller_renewal_offer = lambda *args, **kwargs: {"eligible": False}
+        sys.modules["utils.renewal"] = renewal_stub
+
+        error = self.cleanup._notify_candidate(
+            {
+                "source": "customer",
+                "telegram_user_id": "1988",
+                "username": "alice",
+                "server_id": "s1",
+                "_api_client": object(),
+                "_user_data": self.expired_user(),
+            },
+            grace_hours=24,
+            last_state=self.expired_user(),
+        )
+
+        self.assertIsNone(error)
+        chat_id, _message, kwargs = self.cleanup._test_bot.sent_messages[-1]
+        self.assertEqual(chat_id, 1988)
+        callbacks = self.callback_data_from_markup(kwargs["reply_markup"])
+        self.assertEqual(callbacks, ["renew_plan:renew-token"])
 
     def test_user_must_be_blocked_to_be_expired_by_days_or_traffic(self):
         unblocked_expired_days = {

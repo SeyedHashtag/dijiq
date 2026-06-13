@@ -40,15 +40,28 @@ def _safe_float(value, default=0.0):
         return float(default)
 
 
-def _reseller_config_total(record):
-    configs = (record or {}).get('configs', [])
+def get_reseller_config_value(config):
+    if not isinstance(config, dict) or _is_removed_config(config):
+        return 0.0
+    renewals = config.get('renewals', [])
+    renewal_total = 0.0
+    if isinstance(renewals, list):
+        renewal_total = sum(
+            _safe_float(renewal.get('price', 0.0))
+            for renewal in renewals
+            if isinstance(renewal, dict)
+        )
+    return _safe_float(config.get('price', 0.0)) + renewal_total
+
+
+def get_reseller_config_total_value(configs):
     if not isinstance(configs, list):
         return 0.0
-    return sum(
-        _safe_float(config.get('price', 0.0))
-        for config in configs
-        if isinstance(config, dict) and not _is_removed_config(config)
-    )
+    return sum(get_reseller_config_value(config) for config in configs)
+
+
+def _reseller_config_total(record):
+    return get_reseller_config_total_value((record or {}).get('configs', []))
 
 
 def get_reseller_total_paid(record):
@@ -279,6 +292,68 @@ def add_reseller_debt(user_id, amount, config_data):
                 json.dump(resellers, f, indent=4)
             return True
         return False
+
+
+def add_reseller_renewal_debt(user_id, username, amount, renewal_data, server_id=None):
+    user_id = str(user_id)
+    with reseller_lock:
+        try:
+            if os.path.exists(RESELLERS_FILE):
+                with open(RESELLERS_FILE, 'r') as f:
+                    resellers = json.load(f)
+            else:
+                return False
+        except Exception:
+            return False
+
+        if user_id not in resellers:
+            return False
+
+        current = _ensure_reseller_defaults(resellers[user_id])
+        configs = current.get('configs', [])
+        if not isinstance(configs, list):
+            return False
+
+        target_index = None
+        target_username = str(username or '').strip().lower()
+        for index, config in enumerate(configs):
+            if not isinstance(config, dict) or _is_removed_config(config):
+                continue
+            if str(config.get('username') or '').strip().lower() != target_username:
+                continue
+            if server_id and config.get('server_id') and str(config.get('server_id')) != str(server_id):
+                continue
+            target_index = index
+            break
+
+        if target_index is None:
+            return False
+
+        before = _safe_float(current.get('debt', 0.0))
+        amount_value = _safe_float(amount, 0.0)
+        current['debt'] = before + amount_value
+        renewal_record = dict(renewal_data or {})
+        renewal_record.setdefault('timestamp', _now_str())
+        renewal_record.setdefault('price', amount_value)
+        configs[target_index].setdefault('renewals', [])
+        if not isinstance(configs[target_index]['renewals'], list):
+            configs[target_index]['renewals'] = []
+        configs[target_index]['renewals'].append(renewal_record)
+        configs[target_index]['cleanup_status'] = 'renewed'
+        configs[target_index]['cleanup_error'] = None
+        if renewal_record.get('after_state') is not None:
+            configs[target_index]['cleanup_last_state'] = renewal_record.get('after_state')
+
+        if before < DEBT_SETTLEMENT_THRESHOLD and current['debt'] >= DEBT_SETTLEMENT_THRESHOLD:
+            current['debt_since'] = _now_str()
+
+        current = _ensure_reseller_defaults(current)
+        resellers[user_id] = current
+
+        os.makedirs(os.path.dirname(RESELLERS_FILE), exist_ok=True)
+        with open(RESELLERS_FILE, 'w') as f:
+            json.dump(resellers, f, indent=4)
+        return True
 
 
 def clear_reseller_debt(user_id):

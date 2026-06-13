@@ -159,6 +159,82 @@ def _settlement_approved_message(language, user_id, credited_amount, remaining_d
     )
 
 
+def _renewal_reason_text(language, reason):
+    return get_message_text(language, reason or "renewal_failed") or str(reason or "renewal_failed")
+
+
+def _process_customer_renewal_payment(payment_id, payment_record, notify_chat_id=None, payment_method=None, telegram_username=None):
+    from utils.renewal import execute_customer_renewal, format_renewal_success
+
+    user_id = payment_record.get('user_id')
+    language = get_user_language(user_id)
+    notify_chat_id = notify_chat_id or user_id
+    payment_method = payment_method or payment_record.get('payment_method', 'Card to Card')
+
+    result = execute_customer_renewal(payment_record)
+    if not result.get('success'):
+        update_payment_record_fields(payment_id, {
+            "renewal_failure_reason": result.get('reason'),
+            "renewal_before_state": result.get('before_state', payment_record.get('renewal_before_state')),
+        })
+        update_payment_status(payment_id, 'renewal_failed')
+        bot.send_message(
+            notify_chat_id,
+            get_message_text(language, "renewal_failed").format(
+                reason=_renewal_reason_text(language, result.get('reason'))
+            ),
+            parse_mode="Markdown"
+        )
+        return False
+
+    username = result.get('username') or payment_record.get('renewal_username')
+    api_client = result.get('api_client')
+    plan_gb = payment_record.get('plan_gb')
+    days = payment_record.get('days')
+
+    update_payment_record_fields(payment_id, {
+        "username": username,
+        "server_id": result.get('server_id'),
+        "renewal_after_state": result.get('after_state'),
+        "renewal_before_state": result.get('before_state', payment_record.get('renewal_before_state')),
+    })
+    update_payment_status(payment_id, 'completed')
+    add_referral_reward(user_id, payment_record.get('price', 0))
+
+    send_admin_payment_notification(
+        user_id,
+        username,
+        plan_gb,
+        payment_record.get('price', 0),
+        payment_id,
+        payment_method,
+        telegram_username=telegram_username,
+        converted_amount=payment_record.get('converted_amount'),
+        converted_currency=payment_record.get('converted_currency'),
+        exchange_rate=payment_record.get('exchange_rate')
+    )
+
+    user_uri_data = api_client.get_user_uri(username) if api_client else None
+    sub_url = user_uri_data.get('normal_sub') if user_uri_data else None
+    ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
+    success_message = format_renewal_success(language, result, plan_gb, days, sub_url=sub_url, ipv4_url=ipv4_url)
+
+    if sub_url:
+        qr = qrcode.make(ipv4_url or sub_url)
+        bio = io.BytesIO()
+        qr.save(bio, 'PNG')
+        bio.seek(0)
+        bot.send_photo(
+            notify_chat_id,
+            photo=bio,
+            caption=success_message,
+            parse_mode="Markdown"
+        )
+    else:
+        bot.send_message(notify_chat_id, success_message, parse_mode="Markdown")
+    return True
+
+
 def _build_receipt_approval_markup(payment_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -171,7 +247,12 @@ def _build_receipt_approval_markup(payment_id):
 def _format_pending_receipt_caption(payment_id, payment_record, telegram_username=None):
     receipt_type = _receipt_type_from_record(payment_record)
     user_id = payment_record.get('user_id')
-    plan_label = "Settlement" if receipt_type == RECEIPT_TYPE_SETTLEMENT else f"{payment_record.get('plan_gb')} GB"
+    if receipt_type == RECEIPT_TYPE_SETTLEMENT:
+        plan_label = "Settlement"
+    elif payment_record.get('type') == 'renewal':
+        plan_label = f"Renewal {payment_record.get('plan_gb')} GB"
+    else:
+        plan_label = f"{payment_record.get('plan_gb')} GB"
     caption = (
         f"⏳ New Pending Payment\n\n"
         f"A user has submitted a receipt for a 'Card to Card' payment.\n\n"
@@ -536,6 +617,205 @@ def handle_cancel_purchase(call):
         text=get_message_text(language, "purchase_canceled")
     )
 
+
+def _resolve_customer_renewal_offer_for_call(call, token):
+    from utils.renewal import resolve_customer_renewal_token
+
+    return resolve_customer_renewal_token(call.from_user.id, token, load_plans())
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('renew_plan:'))
+def handle_customer_renewal_start(call):
+    try:
+        bot.answer_callback_query(call.id)
+        user_id = call.from_user.id
+        language = get_user_language(user_id)
+        token = call.data.split(':', 1)[1]
+        offer = _resolve_customer_renewal_offer_for_call(call, token)
+        if not offer.get('eligible'):
+            bot.edit_message_text(
+                get_message_text(language, "renewal_unavailable").format(
+                    reason=_renewal_reason_text(language, offer.get('reason'))
+                ),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode="Markdown"
+            )
+            return
+
+        load_dotenv(TELEGRAM_ENV_PATH, override=True)
+        crypto_configured = all(os.getenv(key) for key in ['CRYPTO_MERCHANT_ID', 'CRYPTO_API_KEY'])
+        card_to_card_configured = get_card_number_for_receipt_type(RECEIPT_TYPE_REGULAR)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        methods_count = 0
+        if crypto_configured:
+            markup.add(types.InlineKeyboardButton(get_crypto_discount_button_text(language), callback_data=f"renew_payment_method:crypto:{token}"))
+            methods_count += 1
+        if card_to_card_configured:
+            markup.add(types.InlineKeyboardButton(get_button_text(language, "card_to_card"), callback_data=f"renew_payment_method:card_to_card:{token}"))
+            methods_count += 1
+        if methods_count == 0:
+            bot.edit_message_text(
+                get_message_text(language, "no_payment_methods"),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+            )
+            return
+        markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
+
+        from utils.renewal import format_renewal_offer
+        bot.edit_message_text(
+            format_renewal_offer(language, offer, include_payment_prompt=True),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        language = get_user_language(call.from_user.id)
+        bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('renew_payment_method:'))
+def handle_customer_renewal_payment_method(call):
+    try:
+        user_id = call.from_user.id
+        language = get_user_language(user_id)
+        _, method, token = call.data.split(':', 2)
+        offer = _resolve_customer_renewal_offer_for_call(call, token)
+        if not offer.get('eligible'):
+            bot.answer_callback_query(
+                call.id,
+                text=get_message_text(language, "renewal_unavailable").format(
+                    reason=_renewal_reason_text(language, offer.get('reason'))
+                ),
+                show_alert=True
+            )
+            return
+        if method == 'crypto':
+            _handle_customer_renewal_crypto(call, offer)
+        elif method == 'card_to_card':
+            _handle_customer_renewal_card_to_card(call, offer)
+        else:
+            bot.answer_callback_query(call.id, text=get_message_text(language, "invalid_payment_method"))
+    except Exception as e:
+        language = get_user_language(call.from_user.id)
+        bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
+
+
+def _handle_customer_renewal_crypto(call, offer):
+    from utils.renewal import customer_payment_metadata
+
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    discount_metadata = build_crypto_discount_metadata(offer['price'])
+    discounted_price = discount_metadata['price']
+    payment_handler = CryptoPayment()
+    payment_response = payment_handler.create_payment(discounted_price, offer['plan_gb'], user_id)
+    if "error" in payment_response:
+        bot.edit_message_text(
+            get_message_text(language, "error_creating_payment").format(error=payment_response['error']),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+    payment_data = payment_response.get('result', {})
+    payment_id = payment_data.get('uuid')
+    payment_url = payment_data.get('url')
+    gateway_order_id = payment_data.get('order_id')
+    if not payment_id or not payment_url:
+        bot.edit_message_text(
+            get_message_text(language, "invalid_payment_response"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+
+    payment_record = {
+        'user_id': user_id,
+        'plan_gb': offer['plan_gb'],
+        'days': offer['days'],
+        'unlimited': offer.get('unlimited', False),
+        'payment_id': payment_id,
+        'order_id': gateway_order_id,
+        'status': 'pending',
+        'payment_method': 'Crypto',
+        **customer_payment_metadata(offer),
+        **discount_metadata,
+    }
+    add_payment_record(payment_id, payment_record)
+
+    qr = qrcode.make(payment_url)
+    bio = io.BytesIO()
+    qr.save(bio, 'PNG')
+    bio.seek(0)
+    payment_message = get_message_text(language, "payment_instructions").format(
+        price=format_usd_amount(discounted_price),
+        payment_url=payment_url,
+        payment_id=payment_id,
+    )
+    payment_message += "\n\n" + build_crypto_discount_display(language, discount_metadata)['summary']
+    payment_message += "\n\n" + get_message_text(language, "renewal_quota_reset_warning")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton(get_button_text(language, "payment_link"), url=payment_url),
+        types.InlineKeyboardButton(get_button_text(language, "check_status"), callback_data=f"check_payment:{payment_id}")
+    )
+    bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+    bot.send_photo(
+        call.message.chat.id,
+        photo=bio,
+        caption=payment_message,
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+def _handle_customer_renewal_card_to_card(call, offer):
+    from utils.renewal import customer_payment_metadata
+
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    load_dotenv(TELEGRAM_ENV_PATH, override=True)
+    card_number = get_card_number_for_receipt_type(RECEIPT_TYPE_REGULAR)
+    exchange_rate = get_exchange_rate()
+    if not card_number:
+        bot.edit_message_text(
+            get_message_text(language, "card_to_card_not_configured"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+    price = offer['price']
+    price_in_tomans = float(price) * exchange_rate
+    message = get_message_text(language, "card_to_card_payment").format(
+        price=format_toman_amount(price_in_tomans),
+        exchange_rate=format_toman_amount(exchange_rate),
+        card_number=card_number
+    )
+    message += "\n\n" + get_message_text(language, "renewal_quota_reset_warning")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="cancel_purchase"))
+    bot.edit_message_text(
+        message,
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+    user_data[user_id] = {
+        'state': 'waiting_receipt',
+        'plan_gb': offer['plan_gb'],
+        'price': price,
+        'converted_amount': price_in_tomans,
+        'converted_currency': 'Tomans',
+        'exchange_rate': exchange_rate,
+        'receipt_type': RECEIPT_TYPE_REGULAR,
+        'renewal_metadata': customer_payment_metadata(offer),
+        'receipt_prompt_message_id': call.message.message_id,
+    }
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('payment_method:'))
 def handle_payment_method_selection(call, data=None):
     try:
@@ -705,6 +985,7 @@ def process_receipt_photo(message, plan_gb, price):
         converted_amount = None
         converted_currency = None
         exchange_rate = None
+        renewal_metadata = None
         receipt_type = RECEIPT_TYPE_SETTLEMENT if plan_gb == 'Settlement' else RECEIPT_TYPE_REGULAR
         if user_id in user_data:
             receipt_prompt_message_id = user_data[user_id].get('receipt_prompt_message_id')
@@ -713,6 +994,7 @@ def process_receipt_photo(message, plan_gb, price):
             exchange_rate = user_data[user_id].get('exchange_rate')
             receipt_type = user_data[user_id].get('receipt_type', receipt_type)
             settlement_amount = user_data[user_id].get('settlement_amount')
+            renewal_metadata = user_data[user_id].get('renewal_metadata')
         else:
             settlement_amount = None
         file_id = message.photo[-1].file_id
@@ -763,6 +1045,8 @@ def process_receipt_photo(message, plan_gb, price):
                 'receipt_checker_user_id': checker_id,
                 'payment_method': 'Card to Card'
             }
+            if renewal_metadata:
+                payment_record.update(renewal_metadata)
         if converted_amount is not None:
             payment_record['converted_amount'] = converted_amount
             payment_record['converted_currency'] = converted_currency or 'Tomans'
@@ -944,6 +1228,35 @@ def handle_admin_approval(call):
                 )
                  return
 
+            if payment_record.get('type') == 'renewal':
+                user_to_notify = payment_record['user_id']
+                telegram_username = None
+                try:
+                    chat = bot.get_chat(user_to_notify)
+                    telegram_username = chat.username
+                except:
+                    pass
+                success = _process_customer_renewal_payment(
+                    payment_id,
+                    payment_record,
+                    notify_chat_id=user_to_notify,
+                    payment_method=payment_record.get('payment_method', 'Card to Card'),
+                    telegram_username=telegram_username,
+                )
+                if success:
+                    _update_receipt_message_refs(
+                        payment_id,
+                        payment_record,
+                        f"✅ Renewal Payment {payment_id} approved by {call.from_user.first_name}."
+                    )
+                else:
+                    _update_receipt_message_refs(
+                        payment_id,
+                        payment_record,
+                        f"⚠️ Renewal Payment {payment_id} was approved but renewal failed."
+                    )
+                return
+
             user_to_notify = payment_record['user_id']
             user_language = get_user_language(user_to_notify)
             plan_gb = payment_record['plan_gb']
@@ -1027,6 +1340,9 @@ def handle_admin_approval(call):
             if payment_record.get('type') == 'settlement' or payment_record.get('plan_gb') == 'Settlement':
                  bot.send_message(user_to_notify, get_message_text(user_language, "settlement_payment_rejected"))
                  rejection_caption = f"{current_caption}\n\n❌ Settlement Payment {payment_id} rejected by {call.from_user.first_name}."
+            elif payment_record.get('type') == 'renewal':
+                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
+                 rejection_caption = f"{current_caption}\n\n❌ Renewal Payment {payment_id} rejected by {call.from_user.first_name}."
             else:
                  bot.send_message(user_to_notify, get_message_text(user_language, "payment_rejected"))
                  rejection_caption = f"{current_caption}\n\n❌ Payment {payment_id} rejected by {call.from_user.first_name}."
@@ -1082,6 +1398,16 @@ def handle_check_payment(call):
                 parse_mode="Markdown"
             )
              return
+
+        if payment_record.get('type') == 'renewal':
+            _process_customer_renewal_payment(
+                payment_id,
+                payment_record,
+                notify_chat_id=call.message.chat.id,
+                payment_method="Crypto",
+                telegram_username=call.from_user.username,
+            )
+            return
 
         days = payment_record.get('days')
         price = payment_record.get('price')
@@ -1179,6 +1505,21 @@ def process_payment_webhook(request_data):
                         parse_mode="Markdown"
                      )
                      return True
+
+                if payment_record.get('type') == 'renewal':
+                    telegram_username = None
+                    try:
+                        chat = bot.get_chat(user_id)
+                        telegram_username = chat.username
+                    except:
+                        pass
+                    return _process_customer_renewal_payment(
+                        record_key,
+                        payment_record,
+                        notify_chat_id=user_id,
+                        payment_method="Crypto",
+                        telegram_username=telegram_username,
+                    )
 
                 days = payment_record.get('days')
                 price = payment_record.get('price')
@@ -1293,6 +1634,22 @@ def check_pending_payments():
                              except:
                                  pass
                              continue
+
+                        if record.get('type') == 'renewal':
+                            telegram_username = None
+                            try:
+                                chat = bot.get_chat(user_id)
+                                telegram_username = chat.username
+                            except:
+                                pass
+                            _process_customer_renewal_payment(
+                                payment_id,
+                                record,
+                                notify_chat_id=user_id,
+                                payment_method="Crypto",
+                                telegram_username=telegram_username,
+                            )
+                            continue
 
                         days = record.get('days')
                         price = record.get('price')

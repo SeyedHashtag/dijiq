@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
 from utils.api_client import APIClient, MultiServerAPI
-from utils.translations import BUTTON_TRANSLATIONS, get_message_text
+from utils.edit_plans import load_plans
+from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 
 @bot.message_handler(func=lambda message: any(
@@ -63,7 +64,7 @@ def my_configs(message):
     # Process and display configs
     if len(user_configs) == 1:
         # Only one config found, display it directly
-        display_config(message.chat.id, user_configs[0][0], user_configs[0][1], user_configs[0][2])
+        display_config(message.chat.id, user_configs[0][0], user_configs[0][1], user_configs[0][2], user_id=user_id)
     else:
         # Multiple configs found, create a selection menu
         markup = types.InlineKeyboardMarkup()
@@ -97,7 +98,7 @@ def handle_show_config(call):
         
         if user_data:
             # Show the config
-            display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id)
+            display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id, user_id=call.from_user.id)
         else:
             bot.edit_message_text(
                 f"⚠️ Error: User '{username}' not found or API error.",
@@ -112,7 +113,7 @@ def handle_show_config(call):
             message_id=call.message.message_id
         )
 
-def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None):
+def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None, user_id=None):
     """Display user configuration details and QR code"""
     
     # Check if the user is blocked/expired
@@ -159,15 +160,42 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         
         if is_blocked:
             # User is blocked/expired
+            language = get_user_language(user_id or chat_id)
+            renewal_markup = None
             message = (
                 f"❌ **Your configuration has expired!**\n{formatted_details}\n\n"
                 "Please use the '💰 Purchase Plan' button to buy a new subscription."
             )
+
+            try:
+                from utils.renewal import find_customer_renewal_offer, format_renewal_offer
+
+                offer = find_customer_renewal_offer(
+                    user_id or chat_id,
+                    username,
+                    api_client,
+                    user_data,
+                    load_plans(),
+                )
+                if offer.get('eligible'):
+                    message = (
+                        f"❌ **Your configuration has expired!**\n{formatted_details}\n\n"
+                        f"{format_renewal_offer(language, offer, include_payment_prompt=False)}"
+                    )
+                    renewal_markup = types.InlineKeyboardMarkup()
+                    renewal_markup.add(
+                        types.InlineKeyboardButton(
+                            get_button_text(language, "renew_plan") or "Renew Plan",
+                            callback_data=f"renew_plan:{offer['token']}"
+                        )
+                    )
+            except Exception as renewal_error:
+                print(f"Error building renewal offer for {username}: {renewal_error}")
             
             if is_callback:
-                bot.edit_message_text(message, chat_id=chat_id, message_id=message_id, parse_mode="Markdown")
+                bot.edit_message_text(message, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=renewal_markup)
             else:
-                bot.send_message(chat_id, message, parse_mode="Markdown")
+                bot.send_message(chat_id, message, parse_mode="Markdown", reply_markup=renewal_markup)
             return
         
         # User is active, get subscription URL using the new API endpoint

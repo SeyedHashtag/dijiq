@@ -798,7 +798,7 @@ def handle_reseller_stats(call):
     configs = reseller_data.get('configs', [])
     total_configs = len(configs)
     
-    total_value = sum(float(c.get('price', 0)) for c in configs)
+    total_value = sum(_reseller_config_value(c) for c in configs if isinstance(c, dict))
     current_debt = float(reseller_data.get('debt', 0.0))
     total_paid = get_reseller_total_paid(reseller_data)
     trust_limit = get_reseller_trust_limit(total_paid)
@@ -1197,9 +1197,11 @@ def handle_reseller_customer_config(call):
     bot.answer_callback_query(call.id)
 
     preferred_server_id = None
-    for cfg in (reseller_data or {}).get('configs', []):
+    matched_config_index = None
+    for index, cfg in enumerate((reseller_data or {}).get('configs', [])):
         if cfg.get('username') == username:
             preferred_server_id = cfg.get('server_id')
+            matched_config_index = index
             break
 
     # Fetch live config data from the server that owns this config.
@@ -1262,12 +1264,41 @@ def handle_reseller_customer_config(call):
     )
 
     if is_blocked:
+        expired_markup = back_markup
+        if matched_config_index is not None and not _is_reseller_suspended(reseller_data):
+            try:
+                from utils.renewal import find_reseller_renewal_offer
+
+                offer = find_reseller_renewal_offer(
+                    user_id,
+                    matched_config_index,
+                    api_client,
+                    user_config,
+                    load_plans(),
+                    reseller_data=reseller_data,
+                )
+                if offer.get("eligible"):
+                    expired_markup = types.InlineKeyboardMarkup()
+                    expired_markup.add(
+                        types.InlineKeyboardButton(
+                            get_button_text(language, "renew_plan") or "Renew Plan",
+                            callback_data=f"reseller:renew:{offer['token']}"
+                        )
+                    )
+                    expired_markup.add(
+                        types.InlineKeyboardButton(
+                            get_button_text(language, "reseller_back_to_customers"),
+                            callback_data=f"reseller:my_customers:{return_category}:{return_page}"
+                        )
+                    )
+            except Exception as renewal_error:
+                print(f"Error building reseller renewal offer for {username}: {renewal_error}")
         message_text = f"❌ **Configuration expired/blocked**\n{formatted_details}"
         bot.edit_message_text(
             message_text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            reply_markup=back_markup,
+            reply_markup=expired_markup,
             parse_mode="Markdown"
         )
         return
@@ -1315,6 +1346,196 @@ def handle_reseller_customer_config(call):
         )
 
 
+def _resolve_reseller_renewal_offer_for_call(call, token):
+    from utils.renewal import resolve_reseller_renewal_token
+
+    reseller_data = get_reseller_data(call.from_user.id)
+    return resolve_reseller_renewal_token(
+        call.from_user.id,
+        token,
+        load_plans(),
+        reseller_data=reseller_data,
+    ), reseller_data
+
+
+def _reseller_renewal_details_message(language, offer, current_debt, trust_limit):
+    from utils.renewal import format_renewal_offer
+
+    projected_debt = current_debt + float(offer.get('price', 0.0))
+    message = format_renewal_offer(language, offer, include_payment_prompt=False)
+    message += "\n\n" + get_message_text(language, "reseller_renewal_debt_details").format(
+        price=format_usd_amount(offer.get('price', 0.0)),
+        current_debt=format_usd_amount(current_debt),
+        projected_debt=format_usd_amount(projected_debt),
+        trust_limit=format_usd_amount(trust_limit),
+    )
+    if projected_debt >= DEBT_WARNING_THRESHOLD:
+        message += "\n\n" + get_message_text(language, "reseller_debt_warning_message").format(
+            current_debt=current_debt,
+            purchase_adds=float(offer.get('price', 0.0)),
+            projected_debt=projected_debt,
+        )
+    return message
+
+
+def _renewal_reason_text(language, reason):
+    return get_message_text(language, reason or "renewal_failed") or str(reason or "renewal_failed")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:renew:"))
+def handle_reseller_renewal_start(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = get_reseller_unlock_amount(debt)
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount),
+            show_alert=True,
+        )
+        return
+
+    token = call.data.split(":", 2)[2]
+    offer, reseller_data = _resolve_reseller_renewal_offer_for_call(call, token)
+    if not offer.get("eligible"):
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "renewal_unavailable").format(reason=_renewal_reason_text(language, offer.get("reason"))),
+            show_alert=True,
+        )
+        return
+
+    price = float(offer.get('price', 0.0))
+    current_debt = float(reseller_data.get('debt', 0.0))
+    can_add, trust_limit, available_credit = can_reseller_add_debt(reseller_data, price)
+    if not can_add:
+        _show_reseller_trust_limit_block(call, language, current_debt, price, trust_limit, available_credit)
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "confirm"), callback_data=f"reseller:renew_confirm:{token}"))
+    markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
+    bot.edit_message_text(
+        _reseller_renewal_details_message(language, offer, current_debt, trust_limit),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode="Markdown",
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:renew_confirm:"))
+def handle_reseller_renewal_confirm(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
+    if not reseller_data:
+        bot.answer_callback_query(call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = get_reseller_unlock_amount(debt)
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount),
+            show_alert=True,
+        )
+        return
+
+    token = call.data.split(":", 2)[2]
+    offer, reseller_data = _resolve_reseller_renewal_offer_for_call(call, token)
+    if not offer.get("eligible"):
+        bot.answer_callback_query(
+            call.id,
+            get_message_text(language, "renewal_unavailable").format(reason=_renewal_reason_text(language, offer.get("reason"))),
+            show_alert=True,
+        )
+        return
+
+    price = float(offer.get('price', 0.0))
+    current_debt = float(reseller_data.get('debt', 0.0))
+    can_add, trust_limit, available_credit = can_reseller_add_debt(reseller_data, price)
+    if not can_add:
+        _show_reseller_trust_limit_block(call, language, current_debt, price, trust_limit, available_credit)
+        return
+
+    from utils.renewal import execute_reseller_renewal, format_renewal_success, reseller_renewal_record
+    from utils.reseller import add_reseller_renewal_debt
+
+    result = execute_reseller_renewal(offer)
+    if not result.get('success'):
+        bot.edit_message_text(
+            get_message_text(language, "renewal_failed").format(reason=_renewal_reason_text(language, result.get('reason'))),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+        )
+        return
+
+    renewal_record = reseller_renewal_record(offer, result.get('before_state'), result.get('after_state'))
+    debt_added = add_reseller_renewal_debt(
+        user_id,
+        offer.get('username'),
+        price,
+        renewal_record,
+        server_id=offer.get('server_id'),
+    )
+    if not debt_added:
+        for admin_id in ADMIN_USER_IDS:
+            try:
+                bot.send_message(admin_id, f"⚠️ Reseller renewal accounting failed for user {user_id}: {offer.get('username')}")
+            except:
+                pass
+        bot.edit_message_text(
+            get_message_text(language, "renewal_accounting_failed"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+        )
+        return
+
+    api_client = result.get('api_client')
+    user_uri_data = api_client.get_user_uri(offer.get('username')) if api_client else None
+    sub_url = user_uri_data.get('normal_sub') if user_uri_data else None
+    ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
+    success_message = format_renewal_success(
+        language,
+        result,
+        offer.get('plan_gb'),
+        offer.get('days'),
+        sub_url=sub_url,
+        ipv4_url=ipv4_url,
+    )
+
+    if sub_url:
+        qr = qrcode.make(ipv4_url or sub_url)
+        bio = io.BytesIO()
+        qr.save(bio, 'PNG')
+        bio.seek(0)
+        try:
+            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        except Exception:
+            pass
+        bot.send_photo(
+            call.message.chat.id,
+            photo=bio,
+            caption=success_message,
+            parse_mode="Markdown",
+        )
+    else:
+        bot.edit_message_text(
+            success_message,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+        )
+
+
 # Admin Management Handlers
 
 ADMIN_RESELLER_STATUS_ORDER = ["pending", "suspended", "banned", "approved", "rejected"]
@@ -1354,6 +1575,24 @@ def _safe_float(value, default=0.0):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _reseller_config_value(config):
+    try:
+        from utils.reseller import get_reseller_config_value
+        return get_reseller_config_value(config)
+    except Exception:
+        if not isinstance(config, dict) or _is_removed_config(config):
+            return 0.0
+        renewals = config.get("renewals", [])
+        renewal_total = 0.0
+        if isinstance(renewals, list):
+            renewal_total = sum(
+                _safe_float(renewal.get("price", 0.0))
+                for renewal in renewals
+                if isinstance(renewal, dict)
+            )
+        return _safe_float(config.get("price", 0.0)) + renewal_total
 
 
 def _username_display(language, reseller_data):
@@ -1406,10 +1645,7 @@ def _reseller_financial_stats(reseller_data):
         for config in configs
         if isinstance(config, dict) and not _is_removed_config(config)
     ]
-    total_turnover = sum(
-        _safe_float(config.get("price", 0.0))
-        for config in billable_configs
-    )
+    total_turnover = sum(_reseller_config_value(config) for config in billable_configs)
     current_debt = _safe_float((reseller_data or {}).get("debt", 0.0))
     total_paid = get_reseller_total_paid(reseller_data)
     trust_limit = get_reseller_trust_limit(total_paid)
