@@ -1,3 +1,6 @@
+## v1.15.1
+🔧 Refine admin alert logic for debt policies and add test for debtless banned resellers
+
 ## v1.15.0
 ✨ Add renewal functionality for customer and reseller accounts
 ✨ Add admin notification for reseller settlement completion across multiple paths
