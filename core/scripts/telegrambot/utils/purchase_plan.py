@@ -159,6 +159,44 @@ def _settlement_approved_message(language, user_id, credited_amount, remaining_d
     )
 
 
+def _send_reseller_settlement_admin_notification(
+    user_id,
+    payment_id,
+    payment_record,
+    credited_amount=None,
+    payment_method="Crypto",
+    telegram_username=None,
+):
+    if telegram_username is None:
+        try:
+            chat = bot.get_chat(user_id)
+            telegram_username = chat.username
+        except Exception:
+            telegram_username = None
+
+    price = payment_record.get('price')
+    if price is None:
+        price = credited_amount if credited_amount is not None else _settlement_credit_amount(payment_record)
+
+    notification_kwargs = {"telegram_username": telegram_username}
+    if payment_record.get('converted_amount') is not None:
+        notification_kwargs.update({
+            "converted_amount": payment_record.get('converted_amount'),
+            "converted_currency": payment_record.get('converted_currency'),
+            "exchange_rate": payment_record.get('exchange_rate'),
+        })
+
+    send_admin_payment_notification(
+        user_id,
+        "Settlement",
+        "Settlement",
+        price,
+        payment_id,
+        payment_method,
+        **notification_kwargs,
+    )
+
+
 def _renewal_reason_text(language, reason):
     return get_message_text(language, reason or "renewal_failed") or str(reason or "renewal_failed")
 
@@ -1387,17 +1425,25 @@ def handle_check_payment(call):
         plan_gb = payment_record.get('plan_gb')
         
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
-             if not success:
-                 bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
-                 return
-             update_payment_status(payment_id, 'completed')
-             bot.send_message(
+            success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
+            if not success:
+                bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
+                return
+            update_payment_status(payment_id, 'completed')
+            _send_reseller_settlement_admin_notification(
+                user_id,
+                payment_id,
+                payment_record,
+                credited_amount=credited_amount,
+                payment_method="Crypto",
+                telegram_username=call.from_user.username,
+            )
+            bot.send_message(
                 call.message.chat.id,
                 _settlement_approved_message(language, user_id, credited_amount, remaining_debt),
                 parse_mode="Markdown"
             )
-             return
+            return
 
         if payment_record.get('type') == 'renewal':
             _process_customer_renewal_payment(
@@ -1495,16 +1541,23 @@ def process_payment_webhook(request_data):
                 plan_gb = payment_record.get('plan_gb')
                 
                 if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                     success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
-                     if not success:
-                         return False
-                     update_payment_status(record_key, 'completed')
-                     bot.send_message(
+                    success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
+                    if not success:
+                        return False
+                    update_payment_status(record_key, 'completed')
+                    _send_reseller_settlement_admin_notification(
+                        user_id,
+                        record_key,
+                        payment_record,
+                        credited_amount=credited_amount,
+                        payment_method="Crypto",
+                    )
+                    bot.send_message(
                         user_id,
                         _settlement_approved_message(user_language, user_id, credited_amount, remaining_debt),
                         parse_mode="Markdown"
-                     )
-                     return True
+                    )
+                    return True
 
                 if payment_record.get('type') == 'renewal':
                     telegram_username = None
@@ -1620,20 +1673,27 @@ def check_pending_payments():
                         plan_gb = record.get('plan_gb')
                         
                         if record.get('type') == 'settlement' or plan_gb == 'Settlement':
-                             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, record)
-                             if not success:
-                                 continue
-                             update_payment_status(payment_id, 'completed')
-                             try:
+                            success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, record)
+                            if not success:
+                                continue
+                            update_payment_status(payment_id, 'completed')
+                            _send_reseller_settlement_admin_notification(
+                                user_id,
+                                payment_id,
+                                record,
+                                credited_amount=credited_amount,
+                                payment_method="Crypto",
+                            )
+                            try:
                                 user_language = get_user_language(user_id)
                                 bot.send_message(
                                     user_id,
                                     _settlement_approved_message(user_language, user_id, credited_amount, remaining_debt),
                                     parse_mode="Markdown"
                                 )
-                             except:
-                                 pass
-                             continue
+                            except:
+                                pass
+                            continue
 
                         if record.get('type') == 'renewal':
                             telegram_username = None

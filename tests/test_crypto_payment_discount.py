@@ -565,6 +565,60 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(statuses.count(("renew-payment", "completed")), 3)
         self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 3)
 
+    def test_crypto_settlement_completion_notifies_admins_across_completion_paths(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        payment_record = {
+            "status": "pending",
+            "type": "settlement",
+            "user_id": 1988,
+            "plan_gb": "Settlement",
+            "price": 95.0,
+            "settlement_amount": 100.0,
+            "payment_method": "Crypto",
+            "payment_id": "settle-payment",
+            "order_id": "settle-order",
+        }
+        apply_calls = []
+        statuses = []
+        admin_notifications = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
+        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for settlement payments")
+        FakeCryptoPayment.statuses = {"settle-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
+        purchase_plan.handle_check_payment(types.SimpleNamespace(
+            data="check_payment:settle-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=1988, username="buyer"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        ))
+
+        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
+        purchase_plan.load_payments = lambda: {"settle-payment": {"order_id": "settle-order"}}
+        self.assertTrue(purchase_plan.process_payment_webhook({"order_id": "settle-order", "status": "paid"}))
+
+        purchase_plan.load_payments = lambda: {"settle-payment": dict(payment_record)}
+        purchase_plan.check_pending_payments()
+
+        self.assertEqual(apply_calls, [(1988, 100.0), (1988, 100.0), (1988, 100.0)])
+        self.assertEqual(statuses.count(("settle-payment", "completed")), 3)
+        self.assertEqual(len(admin_notifications), 3)
+        for args, kwargs in admin_notifications:
+            self.assertEqual(args, (1988, "Settlement", "Settlement", 95.0, "settle-payment", "Crypto"))
+            self.assertNotIn("converted_amount", kwargs)
+        self.assertEqual(admin_notifications[0][1]["telegram_username"], "buyer")
+        self.assertEqual(admin_notifications[1][1]["telegram_username"], "user1988")
+        self.assertEqual(admin_notifications[2][1]["telegram_username"], "user1988")
+        approved_messages = [args[1] for args, _kwargs in bot.sent_messages if "Settlement approved" in args[1]]
+        self.assertEqual(approved_messages, [
+            "Settlement approved amount $100.00; remaining $0.00",
+            "Settlement approved amount $100.00; remaining $0.00",
+            "Settlement approved amount $100.00; remaining $0.00",
+        ])
+
     def test_auto_suspended_debt_event_uses_lifecycle_notification_once(self):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
