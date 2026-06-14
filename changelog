@@ -1,3 +1,8 @@
+## v1.15.4
+♻️ Shorten manual review callback data format to fit Telegram 64-byte callback limit
+✨ Add backward compatibility for legacy callback data formats
+✅ Add tests for new callback data format, legacy compatibility, and Telegram length limits
+
 ## v1.15.3
 ✨ Add atomic payment completion persistence with username, server, status, timestamp, and update-history changes in one locked write
 🐛 Keep approved receipt and crypto sale records in processing and alert admins when completion persistence fails after VPN user creation
