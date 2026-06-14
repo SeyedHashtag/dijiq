@@ -818,14 +818,22 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "cleanup_status": "manual_review",
                 "last_state": {"days_remaining": 0},
             },
+            "s1:duplicate": {
+                "username": "duplicate",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "manual_review_reason": "duplicate_payment",
+                "last_state": {"days_remaining": 30},
+            },
         })
 
         counts = self.cleanup.get_expired_cleanup_counts(now=self.now)
 
         self.assertEqual(counts["manual_review"], 1)
+        self.assertEqual(counts["duplicate_payment"], 1)
         self.assertEqual(counts["pending"], 1)
         self.assertEqual(counts["due"], 1)
-        self.assertEqual(counts["queue"], 2)
         self.assertEqual(counts["deleted"], 1)
         self.assertEqual(counts["delete_failed"], 1)
         self.assertEqual(counts["server_unavailable"], 1)
@@ -884,7 +892,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(reasons["unavailable"], "server_unavailable")
         self.assertEqual(reasons["failed"], "delete_failed")
 
-    def test_admin_cleanup_default_ui_shows_queue_not_history(self):
+    def test_admin_cleanup_default_ui_shows_pending_not_history(self):
         self.write_default_files()
         self.write_json(self.cleanup.STATE_FILE, {
             "s1:pending": {
@@ -892,7 +900,7 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "server_id": "s1",
                 "source": "customer",
                 "cleanup_status": "notified",
-                "delete_after": "2026-06-09 14:00:00",
+                "delete_after": "2099-06-09 14:00:00",
                 "last_state": {"days_remaining": 0},
             },
             "s1:deleted": {
@@ -910,11 +918,15 @@ class ExpiredCleanupTests(unittest.TestCase):
         markup = self.cleanup._build_admin_cleanup_markup(filter_key="queue", page=0, now=self.now)
         callbacks = self.callback_data_from_markup(markup)
 
-        self.assertIn("Queue: *1*", text)
+        self.assertIn("Pending: *1*", text)
+        self.assertIn("View: *Pending*", text)
+        self.assertIn("waiting for the grace period", text)
         self.assertIn("`pending`", text)
         self.assertNotIn("`deleted`", text)
+        self.assertIn("admin_expired_cleanup:list:duplicate_payment:0", callbacks)
         self.assertIn("admin_expired_cleanup:list:deleted:0", callbacks)
-        self.assertIn("admin_expired_cleanup:export:queue", callbacks)
+        self.assertNotIn("admin_expired_cleanup:list:queue:0", callbacks)
+        self.assertIn("admin_expired_cleanup:export:pending", callbacks)
         self.assertIn("admin_expired_cleanup:export:all", callbacks)
 
     def test_manual_review_ui_shows_records_and_review_actions(self):
@@ -971,10 +983,18 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(state[state_key]["manual_review_reason"], "duplicate_payment")
         self.assertEqual(state[state_key]["last_state"]["status"], "active")
 
-        text = self.cleanup._build_admin_cleanup_text("en", filter_key="manual_review", page=0, now=self.now)
-        self.assertIn("`duplicate-user-b`", text)
-        self.assertIn("Duplicate payment review", text)
-        self.assertIn("Manual reason: `duplicate\\_payment`", text)
+        manual_text = self.cleanup._build_admin_cleanup_text("en", filter_key="manual_review", page=0, now=self.now)
+        duplicate_text = self.cleanup._build_admin_cleanup_text("en", filter_key="duplicate_payment", page=0, now=self.now)
+        duplicate_markup = self.cleanup._build_admin_cleanup_markup(filter_key="duplicate_payment", page=0, now=self.now)
+        callbacks = self.callback_data_from_markup(duplicate_markup)
+
+        self.assertNotIn("`duplicate-user-b`", manual_text)
+        self.assertIn("`duplicate-user-b`", duplicate_text)
+        self.assertIn("Duplicate payment review", duplicate_text)
+        self.assertIn("Manual reason: `duplicate\\_payment`", duplicate_text)
+        self.assertIn("Duplicate configs from repeated payment creation", duplicate_text)
+        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_delete:duplicate_payment:") for callback in callbacks))
+        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_keep:duplicate_payment:") for callback in callbacks))
 
     def test_manual_review_keep_updates_metadata_but_keeps_record_visible(self):
         self.write_default_files()
@@ -1086,6 +1106,7 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         self.assertEqual(started, [True])
         self.assertEqual(self.cleanup._test_bot.edited_messages[-1][1]["chat_id"], 10)
+        self.assertIn("View: *Pending*", self.cleanup._test_bot.edited_messages[-1][0])
         self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Scan started.")
 
     def test_admin_cleanup_text_shows_running_scan_state(self):
@@ -1111,7 +1132,7 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "server_id": "s1",
                 "source": "customer",
                 "cleanup_status": "notified",
-                "delete_after": "2026-06-09 14:00:00",
+                "delete_after": "2099-06-09 14:00:00",
                 "last_state": {"days_remaining": 0},
             },
             "s1:deleted": {
@@ -1123,16 +1144,27 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "deleted_at": "2026-06-09 12:00:00",
                 "last_state": {"days_remaining": 0},
             },
+            "s1:duplicate": {
+                "username": "duplicate",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "manual_review_reason": "duplicate_payment",
+                "last_state": {"days_remaining": 30},
+            },
         })
 
         self.cleanup._send_cleanup_export(10, filter_key="queue")
-        queue_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
+        pending_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
+        self.cleanup._send_cleanup_export(10, filter_key="duplicate_payment")
+        duplicate_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
         self.cleanup._send_cleanup_export(10, filter_key="all")
         all_payload = json.loads(self.cleanup._test_bot.sent_documents[-1][1].getvalue().decode("utf-8"))
 
-        self.assertEqual([record["username"] for record in queue_payload], ["pending"])
-        self.assertEqual({record["username"] for record in all_payload}, {"pending", "deleted"})
-        self.assertIn("reason_code", queue_payload[0])
+        self.assertEqual([record["username"] for record in pending_payload], ["pending"])
+        self.assertEqual([record["username"] for record in duplicate_payload], ["duplicate"])
+        self.assertEqual({record["username"] for record in all_payload}, {"pending", "deleted", "duplicate"})
+        self.assertIn("reason_code", pending_payload[0])
 
     def test_expired_cleanup_notices_do_not_offer_renewal(self):
         spec = importlib.util.spec_from_file_location("translations_under_test", TRANSLATIONS_PATH)

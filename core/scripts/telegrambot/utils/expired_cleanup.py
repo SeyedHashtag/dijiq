@@ -63,8 +63,8 @@ TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
 DELETE_RESULTS = {'deleted', 'already_missing'}
 ADMIN_CLEANUP_PAGE_SIZE = 8
 ADMIN_CLEANUP_FILTERS = (
-    'queue',
     'manual_review',
+    'duplicate_payment',
     'pending',
     'due',
     'deleted',
@@ -75,6 +75,7 @@ ADMIN_CLEANUP_FILTERS = (
 )
 ADMIN_CLEANUP_STATUS_ORDER = (
     'manual_review',
+    'duplicate_payment',
     'pending',
     'due',
     'deleted',
@@ -84,8 +85,8 @@ ADMIN_CLEANUP_STATUS_ORDER = (
     'renewed',
 )
 ADMIN_CLEANUP_STATUS_LABELS = {
-    'queue': 'Queue',
     'manual_review': 'Manual Review',
+    'duplicate_payment': 'Duplicate',
     'pending': 'Pending',
     'due': 'Due',
     'deleted': 'Deleted',
@@ -94,6 +95,17 @@ ADMIN_CLEANUP_STATUS_LABELS = {
     'server_unavailable': 'Server Unavailable',
     'renewed': 'Renewed',
     'unknown': 'Unknown',
+}
+ADMIN_CLEANUP_FILTER_DESCRIPTIONS = {
+    'pending': 'Notified users waiting for the grace period before automatic cleanup.',
+    'due': 'Notified users whose grace period has passed and are ready for automatic cleanup.',
+    'manual_review': 'Server-only or orphaned records that need an admin decision.',
+    'duplicate_payment': 'Duplicate configs from repeated payment creation that need an admin decision.',
+    'deleted': 'Users deleted by expired cleanup.',
+    'already_missing': 'Users that were already absent from the VPN server.',
+    'delete_failed': 'Users cleanup tried to delete but the server rejected or failed.',
+    'server_unavailable': 'Users skipped because their VPN server was unavailable.',
+    'renewed': 'Users that cleanup saw as active again after renewal or reset.',
 }
 ADMIN_CLEANUP_REASON_LABELS = {
     'time_expired': 'Time expired',
@@ -377,8 +389,16 @@ def _get_admin_cleanup_text(language, key, fallback):
 
 
 def _normalize_admin_cleanup_filter(filter_key):
-    filter_key = str(filter_key or 'queue')
-    return filter_key if filter_key in ADMIN_CLEANUP_FILTERS else 'queue'
+    filter_key = str(filter_key or 'pending')
+    return filter_key if filter_key in ADMIN_CLEANUP_FILTERS else 'pending'
+
+
+def _is_duplicate_payment_review(record):
+    return (
+        isinstance(record, dict)
+        and record.get('effective_status') == 'manual_review'
+        and record.get('manual_review_reason') == 'duplicate_payment'
+    )
 
 
 def _effective_cleanup_status(entry, now=None):
@@ -466,8 +486,10 @@ def _cleanup_record_from_state(state_key, entry, now=None):
 
 def _record_matches_filter(record, filter_key):
     filter_key = _normalize_admin_cleanup_filter(filter_key)
-    if filter_key == 'queue':
-        return record.get('effective_status') in {'pending', 'due'}
+    if filter_key == 'duplicate_payment':
+        return _is_duplicate_payment_review(record)
+    if filter_key == 'manual_review':
+        return record.get('effective_status') == 'manual_review' and not _is_duplicate_payment_review(record)
     return record.get('effective_status') == filter_key
 
 
@@ -490,7 +512,7 @@ def _record_sort_key(record):
     )
 
 
-def get_expired_cleanup_records(filter_key='queue', now=None):
+def get_expired_cleanup_records(filter_key='pending', now=None):
     now = now or datetime.now()
     state = _load_json_file(STATE_FILE, {})
     if not isinstance(state, dict):
@@ -510,10 +532,12 @@ def get_expired_cleanup_records(filter_key='queue', now=None):
 def get_expired_cleanup_counts(now=None):
     counts = {status: 0 for status in ADMIN_CLEANUP_STATUS_ORDER}
     for record in get_expired_cleanup_records(filter_key='all', now=now):
+        if _is_duplicate_payment_review(record):
+            counts['duplicate_payment'] += 1
+            continue
         status = record.get('effective_status')
         if status in counts:
             counts[status] += 1
-    counts['queue'] = counts['pending'] + counts['due']
     return counts
 
 
@@ -1286,15 +1310,16 @@ def _paginate_records(records, page):
     return records[start:start + ADMIN_CLEANUP_PAGE_SIZE], total_pages, page
 
 
-def _build_admin_cleanup_text(language, filter_key='queue', page=0, now=None):
+def _build_admin_cleanup_text(language, filter_key='pending', page=0, now=None):
     filter_key = _normalize_admin_cleanup_filter(filter_key)
     counts = get_expired_cleanup_counts(now=now)
     records = get_expired_cleanup_records(filter_key=filter_key, now=now)
     page_records, total_pages, page = _paginate_records(records, page)
     title = _get_admin_cleanup_text(language, "admin_expired_cleanup_title", "🧹 *Expired Cleanup*")
     label = _status_label(filter_key)
+    description = ADMIN_CLEANUP_FILTER_DESCRIPTIONS.get(filter_key, 'Records in the selected cleanup view.')
     count_lines = [
-        f"Manual Review: *{counts.get('manual_review', 0)}* | Queue: *{counts.get('queue', 0)}* (Pending {counts.get('pending', 0)} / Due {counts.get('due', 0)})",
+        f"Manual Review: *{counts.get('manual_review', 0)}* | Duplicate: *{counts.get('duplicate_payment', 0)}* | Pending: *{counts.get('pending', 0)}* | Due: *{counts.get('due', 0)}*",
         f"Deleted: *{counts.get('deleted', 0)}* | Missing: *{counts.get('already_missing', 0)}*",
         f"Failed: *{counts.get('delete_failed', 0)}* | Unavailable: *{counts.get('server_unavailable', 0)}* | Renewed: *{counts.get('renewed', 0)}*",
     ]
@@ -1317,18 +1342,17 @@ def _build_admin_cleanup_text(language, filter_key='queue', page=0, now=None):
         f"{title}\n\n"
         f"{chr(10).join(count_lines)}\n\n"
         f"{scan_line}"
-        f"View: *{_escape_markdown(label)}* | Page *{page + 1}/{total_pages}*\n\n"
+        f"View: *{_escape_markdown(label)}* | Page *{page + 1}/{total_pages}*\n"
+        f"{_escape_markdown(description)}\n\n"
         f"{rows}"
     )
 
 
 def _filter_button_label(filter_key, counts):
-    if filter_key == 'queue':
-        return f"Queue ({counts.get('queue', 0)})"
     return f"{_status_label(filter_key)} ({counts.get(filter_key, 0)})"
 
 
-def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
+def _build_admin_cleanup_markup(filter_key='pending', page=0, now=None):
     filter_key = _normalize_admin_cleanup_filter(filter_key)
     records = get_expired_cleanup_records(filter_key=filter_key, now=now)
     page_records, total_pages, page = _paginate_records(records, page)
@@ -1337,7 +1361,7 @@ def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
 
     markup.add(
         types.InlineKeyboardButton(_filter_button_label('manual_review', counts), callback_data="admin_expired_cleanup:list:manual_review:0"),
-        types.InlineKeyboardButton(_filter_button_label('queue', counts), callback_data="admin_expired_cleanup:list:queue:0"),
+        types.InlineKeyboardButton(_filter_button_label('duplicate_payment', counts), callback_data="admin_expired_cleanup:list:duplicate_payment:0"),
     )
     markup.add(
         types.InlineKeyboardButton(_filter_button_label('pending', counts), callback_data="admin_expired_cleanup:list:pending:0"),
@@ -1364,14 +1388,14 @@ def _build_admin_cleanup_markup(filter_key='queue', page=0, now=None):
             nav_buttons.append(types.InlineKeyboardButton("Next ➡️", callback_data=f"admin_expired_cleanup:list:{filter_key}:{page + 1}"))
         markup.add(*nav_buttons)
 
-    if filter_key == 'manual_review':
+    if filter_key in {'manual_review', 'duplicate_payment'}:
         for index, record in enumerate(page_records, start=1):
             record_id = _state_record_id(record.get('state_key'))
             username = str(record.get('username') or 'N/A')
             label = username if len(username) <= 18 else username[:15] + "..."
             markup.add(
-                types.InlineKeyboardButton(f"Delete {index}", callback_data=f"admin_expired_cleanup:review_delete:{record_id}"),
-                types.InlineKeyboardButton(f"Keep {index}: {label}", callback_data=f"admin_expired_cleanup:review_keep:{record_id}"),
+                types.InlineKeyboardButton(f"Delete {index}", callback_data=f"admin_expired_cleanup:review_delete:{filter_key}:{record_id}"),
+                types.InlineKeyboardButton(f"Keep {index}: {label}", callback_data=f"admin_expired_cleanup:review_keep:{filter_key}:{record_id}"),
             )
 
     markup.add(
@@ -1423,7 +1447,7 @@ def _start_cleanup_refresh_for_dashboard(grace_hours=24):
     return True
 
 
-def _render_admin_expired_cleanup(chat_id, message_id, admin_id, filter_key='queue', page=0):
+def _render_admin_expired_cleanup(chat_id, message_id, admin_id, filter_key='pending', page=0):
     language = get_user_language(admin_id)
     filter_key = _normalize_admin_cleanup_filter(filter_key)
     bot.edit_message_text(
@@ -1527,8 +1551,8 @@ def admin_expired_cleanup_menu(message):
     language = get_user_language(message.from_user.id)
     bot.reply_to(
         message,
-        _build_admin_cleanup_text(language, filter_key='queue', page=0),
-        reply_markup=_build_admin_cleanup_markup(filter_key='queue', page=0),
+        _build_admin_cleanup_text(language, filter_key='pending', page=0),
+        reply_markup=_build_admin_cleanup_markup(filter_key='pending', page=0),
         parse_mode="Markdown",
     )
 
@@ -1561,15 +1585,19 @@ def handle_admin_expired_cleanup(call):
         bot.answer_callback_query(call.id, "Scan started." if started else "Scan already running.")
         return
 
-    if action == "review_keep" and len(parts) == 3:
-        message = _handle_manual_review_keep(parts[2], call.from_user.id)
-        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, "manual_review", 0)
+    if action == "review_keep" and len(parts) in {3, 4}:
+        return_filter = _normalize_admin_cleanup_filter(parts[2]) if len(parts) == 4 else "manual_review"
+        record_id = parts[3] if len(parts) == 4 else parts[2]
+        message = _handle_manual_review_keep(record_id, call.from_user.id)
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
         bot.answer_callback_query(call.id, message)
         return
 
-    if action == "review_delete" and len(parts) == 3:
-        message = _handle_manual_review_delete(parts[2])
-        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, "manual_review", 0)
+    if action == "review_delete" and len(parts) in {3, 4}:
+        return_filter = _normalize_admin_cleanup_filter(parts[2]) if len(parts) == 4 else "manual_review"
+        record_id = parts[3] if len(parts) == 4 else parts[2]
+        message = _handle_manual_review_delete(record_id)
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
         bot.answer_callback_query(call.id, message)
         return
 
