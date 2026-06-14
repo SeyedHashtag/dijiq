@@ -1,3 +1,9 @@
+## v1.15.2
+✨ Add duplicate payment review handling so repeated receipt approvals, crypto webhooks, and pending-payment checks only process a payment once
+✨ Keep duplicate-payment manual review records visible in the expired cleanup admin UI even when the duplicate account is still active
+♻️ Update renewal state summaries to show days remaining and usage details without the old status/blocked lines
+✅ Add tests for duplicate payment claims, settlement idempotency, cleanup manual-review visibility, and renewal summary formatting
+
 ## v1.15.1
 🔧 Refine admin alert logic for debt policies and add test for debtless banned resellers
 
