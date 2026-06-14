@@ -438,6 +438,50 @@ def _record_checker_share_audit(payment_id, payment_record):
     update_payment_record_fields(payment_id, fields)
 
 
+def _answer_payment_already_processed(call, language, payment_id, default_status='unknown'):
+    latest_record = get_payment_record(payment_id) or {}
+    latest_status = latest_record.get('status', default_status)
+    bot.answer_callback_query(
+        call.id,
+        text=get_message_text(language, "payment_already_processed").format(status=latest_status)
+    )
+
+
+def _claim_payment_or_answer(call, language, payment_id, allowed_statuses):
+    if claim_payment_for_processing(payment_id, allowed_statuses=allowed_statuses):
+        return True
+    _answer_payment_already_processed(call, language, payment_id)
+    return False
+
+
+def _record_processing_error(payment_id, error):
+    update_payment_record_fields(payment_id, {
+        "processing_error": str(error),
+        "processing_failed_at": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    })
+
+
+def _release_processing_for_retry(payment_id, retry_status, error):
+    _record_processing_error(payment_id, error)
+    update_payment_status(payment_id, retry_status)
+
+
+def _record_sale_creation_failure(payment_id, username=None, api_client=None):
+    error = "failed_to_create_user"
+    if not username or api_client is None:
+        _release_processing_for_retry(payment_id, 'pending_approval', error)
+    else:
+        _record_processing_error(payment_id, error)
+
+
+def _record_crypto_sale_creation_failure(payment_id, username=None, api_client=None):
+    error = "failed_to_create_user"
+    if not username or api_client is None:
+        _release_processing_for_retry(payment_id, 'pending', error)
+    else:
+        _record_processing_error(payment_id, error)
+
+
 def create_sale_username(api_client, user_id):
     if isinstance(api_client, set):
         return allocate_username("s", user_id, api_client)
@@ -1219,6 +1263,10 @@ def handle_admin_approval(call):
         if payment_record['status'] != 'pending_approval':
             bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
             return
+        if action in {'approve', 'reject'}:
+            if not _claim_payment_or_answer(call, language, payment_id, {'pending_approval'}):
+                return
+            payment_record = get_payment_record(payment_id) or payment_record
         if action == 'approve':
             _record_review_audit(payment_id, call, action, reviewer_role)
             _record_checker_share_audit(payment_id, payment_record)
@@ -1228,6 +1276,7 @@ def handle_admin_approval(call):
                     payment_record,
                  )
                  if not success:
+                     _release_processing_for_retry(payment_id, 'pending_approval', "settlement credit failed")
                      bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
                      return
                  update_payment_status(payment_id, 'completed')
@@ -1366,6 +1415,7 @@ def handle_admin_approval(call):
                     f"✅ Payment {payment_id} approved by {call.from_user.first_name}."
                 )
             else:
+                _record_sale_creation_failure(payment_id, username=username, api_client=api_client)
                 bot.answer_callback_query(call.id, text=get_message_text(language, "failed_to_create_user"))
                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_user_error"))
         elif action == 'reject':
@@ -1427,6 +1477,7 @@ def handle_check_payment(call):
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
             if not success:
+                _release_processing_for_retry(payment_id, 'pending', "settlement credit failed")
                 bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
                 return
             update_payment_status(payment_id, 'completed')
@@ -1508,6 +1559,7 @@ def handle_check_payment(call):
                 get_message_text(language, "payment_completed_user_error"),
                 parse_mode="Markdown"
             )
+            _record_crypto_sale_creation_failure(payment_id, username=username, api_client=api_client)
     elif status and status.lower() == 'pending':
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_pending"))
     else:
@@ -1536,6 +1588,9 @@ def process_payment_webhook(request_data):
         if status and status.lower() == 'paid':
             payment_record = get_payment_record(record_key)
             if payment_record and payment_record.get('status') == 'pending':
+                if not claim_payment_for_processing(record_key, allowed_statuses={'pending'}):
+                    return False
+                payment_record = get_payment_record(record_key) or payment_record
                 user_id = payment_record.get('user_id')
                 user_language = get_user_language(user_id)
                 plan_gb = payment_record.get('plan_gb')
@@ -1543,6 +1598,7 @@ def process_payment_webhook(request_data):
                 if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
                     success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
                     if not success:
+                        _release_processing_for_retry(record_key, 'pending', "settlement credit failed")
                         return False
                     update_payment_status(record_key, 'completed')
                     _send_reseller_settlement_admin_notification(
@@ -1628,6 +1684,7 @@ def process_payment_webhook(request_data):
                         )
                     return True
                 else:
+                    _record_crypto_sale_creation_failure(record_key, username=username, api_client=api_client)
                     bot.send_message(
                         user_id,
                         get_message_text(user_language, "payment_completed_user_error"),
@@ -1668,6 +1725,9 @@ def check_pending_payments():
                     status = result.get('status') or result.get('payment_status') or result.get('paymentStatus')
                     
                     if status and status.lower() == 'paid':
+                        if not claim_payment_for_processing(payment_id, allowed_statuses={'pending'}):
+                            continue
+                        record = get_payment_record(payment_id) or record
                         # Process payment
                         user_id = record.get('user_id')
                         plan_gb = record.get('plan_gb')
@@ -1675,6 +1735,7 @@ def check_pending_payments():
                         if record.get('type') == 'settlement' or plan_gb == 'Settlement':
                             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, record)
                             if not success:
+                                _release_processing_for_retry(payment_id, 'pending', "settlement credit failed")
                                 continue
                             update_payment_status(payment_id, 'completed')
                             _send_reseller_settlement_admin_notification(
@@ -1775,6 +1836,8 @@ def check_pending_payments():
                                     )
                                 except Exception as e:
                                     print(f"Failed to send success message to user {user_id}: {e}")
+                        else:
+                            _record_crypto_sale_creation_failure(payment_id, username=username, api_client=api_client)
                 except Exception as e:
                     print(f"Error checking pending payment {payment_id}: {e}")
 

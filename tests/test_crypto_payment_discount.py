@@ -213,6 +213,14 @@ def install_common_stubs(bot, payment_records):
         "renewal_ineligible_plan_missing": "plan missing",
         "renewal_ineligible_plan_mismatch": "plan mismatch",
         "renewal_reset_failed": "reset failed",
+        "payment_already_processed": "Already processed: {status}",
+        "payment_approved": "approved {username} {sub_url}",
+        "payment_completed": "completed {username} {sub_url}",
+        "payment_completed_no_url": "completed no url",
+        "payment_completed_user_error": "completed user error",
+        "payment_approved_user_error": "approved user error",
+        "failed_to_create_user": "failed to create user",
+        "payment_rejected": "rejected",
         "cancel": "cancel",
     }.get(key, key)
     sys.modules["utils.translations"] = translations_stub
@@ -362,6 +370,71 @@ def install_renewal_success_stub(calls):
     renewal_stub.format_renewal_success = lambda *args, **kwargs: "renewal success"
     sys.modules["utils.renewal"] = renewal_stub
     return renewal_stub
+
+
+class DummySaleClient:
+    server_id = "s1"
+
+    def get_user_uri(self, username):
+        return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
+
+
+def make_receipt_approval_call(action, payment_id="receipt-payment", reviewer_id=1):
+    return types.SimpleNamespace(
+        data=f"admin_approval:{action}:{payment_id}",
+        id=f"{action}-callback-{reviewer_id}",
+        from_user=types.SimpleNamespace(id=reviewer_id, first_name=f"Reviewer{reviewer_id}"),
+        message=types.SimpleNamespace(
+            chat=types.SimpleNamespace(id=555),
+            message_id=777,
+            caption="Pending receipt",
+        ),
+    )
+
+
+def install_payment_store(purchase_plan, store):
+    statuses = []
+    field_updates = []
+    claims = []
+
+    def get_payment_record(payment_id):
+        record = store.get(payment_id)
+        return dict(record) if isinstance(record, dict) else None
+
+    def load_payments():
+        return {payment_id: dict(record) for payment_id, record in store.items()}
+
+    def update_payment_status(payment_id, status):
+        if payment_id not in store:
+            return False
+        store[payment_id]["status"] = status
+        statuses.append((payment_id, status))
+        return True
+
+    def update_payment_record_fields(payment_id, fields):
+        if payment_id not in store:
+            return False
+        store[payment_id].update(fields)
+        field_updates.append((payment_id, dict(fields)))
+        return True
+
+    def claim_payment_for_processing(payment_id, allowed_statuses=None):
+        allowed = {str(status) for status in (allowed_statuses or {"pending"})}
+        record = store.get(payment_id)
+        current_status = str(record.get("status", "")) if isinstance(record, dict) else ""
+        claims.append((payment_id, current_status, tuple(sorted(allowed))))
+        if not record or current_status not in allowed:
+            return False
+        record["status"] = "processing"
+        statuses.append((payment_id, "processing"))
+        return True
+
+    purchase_plan.get_payment_record = get_payment_record
+    purchase_plan.load_payments = load_payments
+    purchase_plan.update_payment_status = update_payment_status
+    purchase_plan.update_payment_record_fields = update_payment_record_fields
+    purchase_plan.claim_payment_for_processing = claim_payment_for_processing
+    return statuses, field_updates, claims
 
 
 class CryptoPaymentDiscountTests(unittest.TestCase):
@@ -519,34 +592,130 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertTrue(any(fields.get("renewal_after_state") == {"status": "active"} for _pid, fields in field_updates))
         self.assertEqual(bot.sent_photos[-1][1]["caption"], "renewal success")
 
+    def test_receipt_approval_claim_blocks_fast_duplicate_admin_press(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "receipt-payment": {
+                "status": "pending_approval",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 100.0,
+                "payment_method": "Card to Card",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        created = []
+        nested_call_sent = {"value": False}
+        client = DummySaleClient()
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+
+        def create_sale_user_with_note(*args, **kwargs):
+            created.append(args)
+            if not nested_call_sent["value"]:
+                nested_call_sent["value"] = True
+                purchase_plan.handle_admin_approval(make_receipt_approval_call("approve"))
+            return "s1988a", {"ok": True}, client
+
+        purchase_plan.create_sale_user_with_note = create_sale_user_with_note
+
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("approve"))
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(store["receipt-payment"]["status"], "completed")
+        self.assertEqual(statuses.count(("receipt-payment", "completed")), 1)
+        self.assertTrue(any(answer[1].get("text") == "Already processed: processing" for answer in bot.callback_answers))
+
+    def test_receipt_approval_claim_blocks_checker_admin_cross_press(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "receipt-payment": {
+                "status": "pending_approval",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 100.0,
+                "payment_method": "Card to Card",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        created = []
+        nested_call_sent = {"value": False}
+        client = DummySaleClient()
+        purchase_plan.is_admin = lambda user_id: user_id == 1
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+
+        def create_sale_user_with_note(*args, **kwargs):
+            created.append(args)
+            if not nested_call_sent["value"]:
+                nested_call_sent["value"] = True
+                purchase_plan.handle_admin_approval(make_receipt_approval_call("approve", reviewer_id=42))
+            return "s1988a", {"ok": True}, client
+
+        purchase_plan.create_sale_user_with_note = create_sale_user_with_note
+
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("approve", reviewer_id=1))
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(store["receipt-payment"]["status"], "completed")
+        self.assertEqual(statuses.count(("receipt-payment", "completed")), 1)
+        self.assertTrue(any(answer[1].get("text") == "Already processed: processing" for answer in bot.callback_answers))
+
+    def test_receipt_reject_claim_blocks_later_approve(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "receipt-payment": {
+                "status": "pending_approval",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 100.0,
+                "payment_method": "Card to Card",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        created = []
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: created.append(args) or ("s1988a", {"ok": True}, DummySaleClient())
+
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("reject"))
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("approve"))
+
+        self.assertEqual(created, [])
+        self.assertEqual(store["receipt-payment"]["status"], "rejected")
+        self.assertEqual(statuses.count(("receipt-payment", "rejected")), 1)
+        self.assertTrue(any(answer[1].get("text") == "Already processed: rejected" for answer in bot.callback_answers))
+
     def test_crypto_check_webhook_and_pending_poll_dispatch_renewals(self):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
         renewal_calls = []
         install_renewal_success_stub(renewal_calls)
-        statuses = []
-        field_updates = []
-        payment_record = {
-            "status": "pending",
-            "type": "renewal",
-            "user_id": 1988,
-            "plan_gb": "40",
-            "days": 30,
-            "price": 95.0,
-            "payment_method": "Crypto",
-            "payment_id": "renew-payment",
-            "order_id": "renew-order",
-            "renewal_username": "old-user",
-            "renewal_server_id": "s1",
-            "renewal_base_record_id": "base-1",
+        store = {
+            "renew-payment": {
+                "status": "pending",
+                "type": "renewal",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 95.0,
+                "payment_method": "Crypto",
+                "payment_id": "renew-payment",
+                "order_id": "renew-order",
+                "renewal_username": "old-user",
+                "renewal_server_id": "s1",
+                "renewal_base_record_id": "base-1",
+            }
         }
-        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
-        purchase_plan.update_payment_record_fields = lambda payment_id, fields: field_updates.append((payment_id, fields))
+        statuses, field_updates, _claims = install_payment_store(purchase_plan, store)
         purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
         purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for renewal payments")
         FakeCryptoPayment.statuses = {"renew-payment": {"result": {"status": "paid"}}}
 
-        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
         purchase_plan.handle_check_payment(types.SimpleNamespace(
             data="check_payment:renew-payment",
             id="check-callback",
@@ -554,41 +723,39 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
         ))
 
-        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
-        purchase_plan.load_payments = lambda: {"renew-payment": {"order_id": "renew-order"}}
-        self.assertTrue(purchase_plan.process_payment_webhook({"order_id": "renew-order", "status": "paid"}))
+        self.assertFalse(purchase_plan.process_payment_webhook({"order_id": "renew-order", "status": "paid"}))
 
-        purchase_plan.load_payments = lambda: {"renew-payment": dict(payment_record)}
         purchase_plan.check_pending_payments()
 
-        self.assertEqual([call[0] for call in renewal_calls], ["execute", "execute", "execute"])
-        self.assertEqual(statuses.count(("renew-payment", "completed")), 3)
-        self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 3)
+        self.assertEqual([call[0] for call in renewal_calls], ["execute"])
+        self.assertEqual(statuses.count(("renew-payment", "completed")), 1)
+        self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 1)
+        self.assertEqual(store["renew-payment"]["status"], "completed")
 
     def test_crypto_settlement_completion_notifies_admins_across_completion_paths(self):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
-        payment_record = {
-            "status": "pending",
-            "type": "settlement",
-            "user_id": 1988,
-            "plan_gb": "Settlement",
-            "price": 95.0,
-            "settlement_amount": 100.0,
-            "payment_method": "Crypto",
-            "payment_id": "settle-payment",
-            "order_id": "settle-order",
+        store = {
+            "settle-payment": {
+                "status": "pending",
+                "type": "settlement",
+                "user_id": 1988,
+                "plan_gb": "Settlement",
+                "price": 95.0,
+                "settlement_amount": 100.0,
+                "payment_method": "Crypto",
+                "payment_id": "settle-payment",
+                "order_id": "settle-order",
+            }
         }
         apply_calls = []
-        statuses = []
         admin_notifications = []
         sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
-        purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
         purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
         purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for settlement payments")
         FakeCryptoPayment.statuses = {"settle-payment": {"result": {"status": "paid"}}}
 
-        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
         purchase_plan.handle_check_payment(types.SimpleNamespace(
             data="check_payment:settle-payment",
             id="check-callback",
@@ -596,28 +763,81 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
         ))
 
-        purchase_plan.get_payment_record = lambda _payment_id: dict(payment_record)
-        purchase_plan.load_payments = lambda: {"settle-payment": {"order_id": "settle-order"}}
-        self.assertTrue(purchase_plan.process_payment_webhook({"order_id": "settle-order", "status": "paid"}))
+        self.assertFalse(purchase_plan.process_payment_webhook({"order_id": "settle-order", "status": "paid"}))
 
-        purchase_plan.load_payments = lambda: {"settle-payment": dict(payment_record)}
         purchase_plan.check_pending_payments()
 
-        self.assertEqual(apply_calls, [(1988, 100.0), (1988, 100.0), (1988, 100.0)])
-        self.assertEqual(statuses.count(("settle-payment", "completed")), 3)
-        self.assertEqual(len(admin_notifications), 3)
-        for args, kwargs in admin_notifications:
-            self.assertEqual(args, (1988, "Settlement", "Settlement", 95.0, "settle-payment", "Crypto"))
-            self.assertNotIn("converted_amount", kwargs)
-        self.assertEqual(admin_notifications[0][1]["telegram_username"], "buyer")
-        self.assertEqual(admin_notifications[1][1]["telegram_username"], "user1988")
-        self.assertEqual(admin_notifications[2][1]["telegram_username"], "user1988")
+        self.assertEqual(apply_calls, [(1988, 100.0)])
+        self.assertEqual(statuses.count(("settle-payment", "completed")), 1)
+        self.assertEqual(len(admin_notifications), 1)
+        args, kwargs = admin_notifications[0]
+        self.assertEqual(args, (1988, "Settlement", "Settlement", 95.0, "settle-payment", "Crypto"))
+        self.assertNotIn("converted_amount", kwargs)
+        self.assertEqual(kwargs["telegram_username"], "buyer")
         approved_messages = [args[1] for args, _kwargs in bot.sent_messages if "Settlement approved" in args[1]]
-        self.assertEqual(approved_messages, [
-            "Settlement approved amount $100.00; remaining $0.00",
-            "Settlement approved amount $100.00; remaining $0.00",
-            "Settlement approved amount $100.00; remaining $0.00",
-        ])
+        self.assertEqual(approved_messages, ["Settlement approved amount $100.00; remaining $0.00"])
+        self.assertEqual(store["settle-payment"]["status"], "completed")
+
+    def test_crypto_webhook_claim_processes_settlement_once(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "settle-payment": {
+                "status": "pending",
+                "type": "settlement",
+                "user_id": 1988,
+                "plan_gb": "Settlement",
+                "price": 95.0,
+                "settlement_amount": 100.0,
+                "payment_method": "Crypto",
+                "payment_id": "settle-payment",
+                "order_id": "settle-order",
+            }
+        }
+        apply_calls = []
+        admin_notifications = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
+
+        self.assertTrue(purchase_plan.process_payment_webhook({"order_id": "settle-order", "status": "paid"}))
+        self.assertFalse(purchase_plan.process_payment_webhook({"order_id": "settle-order", "status": "paid"}))
+
+        self.assertEqual(apply_calls, [(1988, 100.0)])
+        self.assertEqual(statuses.count(("settle-payment", "completed")), 1)
+        self.assertEqual(len(admin_notifications), 1)
+        self.assertEqual(store["settle-payment"]["status"], "completed")
+
+    def test_crypto_pending_poller_claim_processes_settlement_once(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "settle-payment": {
+                "status": "pending",
+                "type": "settlement",
+                "user_id": 1988,
+                "plan_gb": "Settlement",
+                "price": 95.0,
+                "settlement_amount": 100.0,
+                "payment_method": "Crypto",
+                "payment_id": "settle-payment",
+                "order_id": "settle-order",
+            }
+        }
+        apply_calls = []
+        admin_notifications = []
+        sys.modules["utils.reseller"].apply_reseller_payment = lambda user_id, amount: apply_calls.append((user_id, amount)) or (True, 0.0)
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
+        FakeCryptoPayment.statuses = {"settle-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.check_pending_payments()
+        purchase_plan.check_pending_payments()
+
+        self.assertEqual(apply_calls, [(1988, 100.0)])
+        self.assertEqual(statuses.count(("settle-payment", "completed")), 1)
+        self.assertEqual(len(admin_notifications), 1)
+        self.assertEqual(store["settle-payment"]["status"], "completed")
 
     def test_auto_suspended_debt_event_uses_lifecycle_notification_once(self):
         bot = DummyBot()

@@ -98,6 +98,7 @@ ADMIN_CLEANUP_STATUS_LABELS = {
 ADMIN_CLEANUP_REASON_LABELS = {
     'time_expired': 'Time expired',
     'traffic_exhausted': 'Traffic quota exhausted',
+    'duplicate_payment': 'Duplicate payment review',
     'missing_on_server': 'User was not found on the VPN server',
     'server_unavailable': 'VPN server was unavailable',
     'delete_failed': 'Deletion failed and will be retried',
@@ -401,6 +402,12 @@ def _cleanup_reason(entry):
     if not isinstance(entry, dict):
         return 'unknown', ADMIN_CLEANUP_REASON_LABELS['unknown']
 
+    if (
+        entry.get('cleanup_status') == 'manual_review'
+        and entry.get('manual_review_reason') == 'duplicate_payment'
+    ):
+        return 'duplicate_payment', ADMIN_CLEANUP_REASON_LABELS['duplicate_payment']
+
     status = str(entry.get('cleanup_status') or entry.get('delete_result') or '')
     delete_result = str(entry.get('delete_result') or '')
     if status == 'server_unavailable':
@@ -451,6 +458,8 @@ def _cleanup_record_from_state(state_key, entry, now=None):
         'delete_result': entry.get('delete_result'),
         'reason_code': reason_code,
         'reason': reason,
+        'manual_review_reason': entry.get('manual_review_reason'),
+        'review_note': entry.get('review_note'),
         'last_state': entry.get('last_state'),
     }
 
@@ -992,7 +1001,7 @@ def _state_entry(candidate, now_value, grace_hours, notification_error=None, las
 
 
 def _manual_review_entry(candidate, now_value, last_state=None):
-    return {
+    entry = {
         'username': candidate.get('username'),
         'server_id': candidate.get('server_id') or 'primary',
         'source': 'server_user',
@@ -1001,6 +1010,18 @@ def _manual_review_entry(candidate, now_value, last_state=None):
         'cleanup_status': 'manual_review',
         'last_state': last_state,
     }
+    for key in ('manual_review_reason', 'review_note', 'payment_id', 'keeper_username'):
+        if candidate.get(key):
+            entry[key] = candidate.get(key)
+    return entry
+
+
+def _is_duplicate_payment_manual_review(entry):
+    return (
+        isinstance(entry, dict)
+        and entry.get('cleanup_status') == 'manual_review'
+        and entry.get('manual_review_reason') == 'duplicate_payment'
+    )
 
 
 def _convert_server_user_to_manual_review(entry, now_value):
@@ -1107,6 +1128,11 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
 
             if lookup_status == 'found' and not is_user_expired(user_data):
                 if entry:
+                    if _is_duplicate_payment_manual_review(entry):
+                        entry['last_state'] = capture_last_state(user_data, now=now)
+                        entry['last_checked_at'] = now_value
+                        entry.pop('cleanup_error', None)
+                        continue
                     if entry.get('cleanup_status') == 'manual_review':
                         _mark_renewed(state, key, candidate, now_value, last_state=capture_last_state(user_data, now=now))
                     else:
@@ -1239,11 +1265,17 @@ def _build_admin_cleanup_row(index, record):
     reason = _escape_markdown(record.get('reason') or ADMIN_CLEANUP_REASON_LABELS['unknown'])
     review_status = record.get('review_status')
     review_line = f"\n   Review: `{_escape_markdown(review_status)}`" if review_status else ""
+    manual_reason = record.get('manual_review_reason')
+    manual_reason_line = f"\n   Manual reason: `{_escape_markdown(manual_reason)}`" if manual_reason else ""
+    review_note = record.get('review_note')
+    review_note_line = f"\n   Note: {_escape_markdown(review_note)}" if review_note else ""
     return (
         f"{index}. `{username}` | `{server_id}` | {source}\n"
         f"   Status: *{_escape_markdown(status)}* | Time: `{_escape_markdown(delete_time)}`\n"
         f"   Reason: {reason}"
         f"{review_line}"
+        f"{manual_reason_line}"
+        f"{review_note_line}"
     )
 
 
