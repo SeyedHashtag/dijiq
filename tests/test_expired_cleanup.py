@@ -947,8 +947,10 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         self.assertIn("Manual Review: *1*", text)
         self.assertIn("`orphan`", text)
-        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_delete:") for callback in callbacks))
-        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_keep:") for callback in callbacks))
+        review_callbacks = [callback for callback in callbacks if callback and callback.startswith("aec:")]
+        self.assertTrue(any(callback.startswith("aec:rd:mr:") for callback in review_callbacks))
+        self.assertTrue(any(callback.startswith("aec:rk:mr:") for callback in review_callbacks))
+        self.assertTrue(all(len(callback.encode("utf-8")) <= 64 for callback in review_callbacks))
 
     def test_duplicate_payment_manual_review_stays_visible_for_active_user(self):
         self.write_default_files()
@@ -993,8 +995,45 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertIn("Duplicate payment review", duplicate_text)
         self.assertIn("Manual reason: `duplicate\\_payment`", duplicate_text)
         self.assertIn("Duplicate configs from repeated payment creation", duplicate_text)
-        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_delete:duplicate_payment:") for callback in callbacks))
-        self.assertTrue(any(callback and callback.startswith("admin_expired_cleanup:review_keep:duplicate_payment:") for callback in callbacks))
+        review_callbacks = [callback for callback in callbacks if callback and callback.startswith("aec:")]
+        self.assertTrue(any(callback.startswith("aec:rd:dp:") for callback in review_callbacks))
+        self.assertTrue(any(callback.startswith("aec:rk:dp:") for callback in review_callbacks))
+        self.assertTrue(all(len(callback.encode("utf-8")) <= 64 for callback in review_callbacks))
+
+    def test_manual_review_action_callbacks_fit_telegram_limit(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:orphan": {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:duplicate": {
+                "username": "duplicate",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "manual_review_reason": "duplicate_payment",
+                "last_state": {"days_remaining": 30},
+            },
+        })
+
+        manual_callbacks = self.callback_data_from_markup(
+            self.cleanup._build_admin_cleanup_markup(filter_key="manual_review", page=0, now=self.now)
+        )
+        duplicate_callbacks = self.callback_data_from_markup(
+            self.cleanup._build_admin_cleanup_markup(filter_key="duplicate_payment", page=0, now=self.now)
+        )
+        review_callbacks = [
+            callback
+            for callback in manual_callbacks + duplicate_callbacks
+            if callback and callback.startswith("aec:")
+        ]
+
+        self.assertEqual(len(review_callbacks), 4)
+        self.assertTrue(all(len(callback.encode("utf-8")) <= 64 for callback in review_callbacks))
 
     def test_manual_review_keep_updates_metadata_but_keeps_record_visible(self):
         self.write_default_files()
@@ -1011,7 +1050,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         record_id = self.cleanup._state_record_id(state_key)
         call = types.SimpleNamespace(
             id="callback-1",
-            data=f"admin_expired_cleanup:review_keep:{record_id}",
+            data=f"aec:rk:mr:{record_id}",
             from_user=types.SimpleNamespace(id=1),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
         )
@@ -1046,7 +1085,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         record_id = self.cleanup._state_record_id(state_key)
         call = types.SimpleNamespace(
             id="callback-1",
-            data=f"admin_expired_cleanup:review_delete:{record_id}",
+            data=f"aec:rd:mr:{record_id}",
             from_user=types.SimpleNamespace(id=1),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
         )
@@ -1058,6 +1097,44 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(state[state_key]["cleanup_status"], "deleted")
         self.assertEqual(state[state_key]["delete_result"], "deleted")
         self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "User deleted.")
+
+    def test_legacy_manual_review_callback_formats_still_work(self):
+        self.write_default_files()
+        state_key = "s1:orphan"
+        self.write_json(self.cleanup.STATE_FILE, {
+            state_key: {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+        record_id = self.cleanup._state_record_id(state_key)
+
+        legacy_three_part = types.SimpleNamespace(
+            id="callback-1",
+            data=f"admin_expired_cleanup:review_keep:{record_id}",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+        self.cleanup.handle_admin_expired_cleanup(legacy_three_part)
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(state[state_key]["review_status"], "kept")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
+
+        legacy_four_part = types.SimpleNamespace(
+            id="callback-2",
+            data=f"admin_expired_cleanup:review_keep:manual_review:{record_id}",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=21),
+        )
+        self.cleanup.handle_admin_expired_cleanup(legacy_four_part)
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(state[state_key]["review_status"], "kept")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
 
     def test_admin_cleanup_pagination_and_callback_route(self):
         self.write_default_files()

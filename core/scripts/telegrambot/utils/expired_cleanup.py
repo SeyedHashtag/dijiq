@@ -116,6 +116,17 @@ ADMIN_CLEANUP_REASON_LABELS = {
     'delete_failed': 'Deletion failed and will be retried',
     'unknown': 'Reason unavailable',
 }
+ADMIN_CLEANUP_REVIEW_FILTER_CODES = {
+    'manual_review': 'mr',
+    'duplicate_payment': 'dp',
+}
+ADMIN_CLEANUP_REVIEW_FILTERS_BY_CODE = {
+    value: key for key, value in ADMIN_CLEANUP_REVIEW_FILTER_CODES.items()
+}
+ADMIN_CLEANUP_REVIEW_ACTIONS = {
+    'rk': 'review_keep',
+    'rd': 'review_delete',
+}
 
 _cleanup_lock = threading.RLock()
 _cleanup_refresh_lock = threading.Lock()
@@ -1352,6 +1363,37 @@ def _filter_button_label(filter_key, counts):
     return f"{_status_label(filter_key)} ({counts.get(filter_key, 0)})"
 
 
+def _manual_review_callback_data(action, filter_key, record_id):
+    action_code = 'rd' if action == 'review_delete' else 'rk'
+    filter_code = ADMIN_CLEANUP_REVIEW_FILTER_CODES.get(
+        _normalize_admin_cleanup_filter(filter_key),
+        ADMIN_CLEANUP_REVIEW_FILTER_CODES['manual_review'],
+    )
+    return f"aec:{action_code}:{filter_code}:{record_id}"
+
+
+def _parse_manual_review_callback_data(data):
+    parts = str(data or '').split(":")
+    if len(parts) == 4 and parts[0] == "aec":
+        action = ADMIN_CLEANUP_REVIEW_ACTIONS.get(parts[1])
+        filter_key = ADMIN_CLEANUP_REVIEW_FILTERS_BY_CODE.get(parts[2])
+        if action and filter_key and parts[3]:
+            return action, filter_key, parts[3]
+        return None
+
+    if (
+        len(parts) in {3, 4}
+        and parts[0] == "admin_expired_cleanup"
+        and parts[1] in {"review_keep", "review_delete"}
+    ):
+        filter_key = _normalize_admin_cleanup_filter(parts[2]) if len(parts) == 4 else "manual_review"
+        record_id = parts[3] if len(parts) == 4 else parts[2]
+        if record_id:
+            return parts[1], filter_key, record_id
+
+    return None
+
+
 def _build_admin_cleanup_markup(filter_key='pending', page=0, now=None):
     filter_key = _normalize_admin_cleanup_filter(filter_key)
     records = get_expired_cleanup_records(filter_key=filter_key, now=now)
@@ -1394,8 +1436,14 @@ def _build_admin_cleanup_markup(filter_key='pending', page=0, now=None):
             username = str(record.get('username') or 'N/A')
             label = username if len(username) <= 18 else username[:15] + "..."
             markup.add(
-                types.InlineKeyboardButton(f"Delete {index}", callback_data=f"admin_expired_cleanup:review_delete:{filter_key}:{record_id}"),
-                types.InlineKeyboardButton(f"Keep {index}: {label}", callback_data=f"admin_expired_cleanup:review_keep:{filter_key}:{record_id}"),
+                types.InlineKeyboardButton(
+                    f"Delete {index}",
+                    callback_data=_manual_review_callback_data('review_delete', filter_key, record_id),
+                ),
+                types.InlineKeyboardButton(
+                    f"Keep {index}: {label}",
+                    callback_data=_manual_review_callback_data('review_keep', filter_key, record_id),
+                ),
             )
 
     markup.add(
@@ -1557,7 +1605,7 @@ def admin_expired_cleanup_menu(message):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_expired_cleanup:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("admin_expired_cleanup:", "aec:")))
 def handle_admin_expired_cleanup(call):
     if not is_admin(call.from_user.id):
         bot.answer_callback_query(call.id, "⛔ Unauthorized", show_alert=True)
@@ -1565,6 +1613,17 @@ def handle_admin_expired_cleanup(call):
 
     parts = call.data.split(":")
     action = parts[1] if len(parts) > 1 else ""
+
+    review_callback = _parse_manual_review_callback_data(call.data)
+    if review_callback:
+        review_action, return_filter, record_id = review_callback
+        if review_action == "review_keep":
+            message = _handle_manual_review_keep(record_id, call.from_user.id)
+        else:
+            message = _handle_manual_review_delete(record_id)
+        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
+        bot.answer_callback_query(call.id, message)
+        return
 
     if action == "noop":
         bot.answer_callback_query(call.id)
@@ -1583,22 +1642,6 @@ def handle_admin_expired_cleanup(call):
         started = _start_cleanup_refresh_for_dashboard()
         _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, filter_key, page)
         bot.answer_callback_query(call.id, "Scan started." if started else "Scan already running.")
-        return
-
-    if action == "review_keep" and len(parts) in {3, 4}:
-        return_filter = _normalize_admin_cleanup_filter(parts[2]) if len(parts) == 4 else "manual_review"
-        record_id = parts[3] if len(parts) == 4 else parts[2]
-        message = _handle_manual_review_keep(record_id, call.from_user.id)
-        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
-        bot.answer_callback_query(call.id, message)
-        return
-
-    if action == "review_delete" and len(parts) in {3, 4}:
-        return_filter = _normalize_admin_cleanup_filter(parts[2]) if len(parts) == 4 else "manual_review"
-        record_id = parts[3] if len(parts) == 4 else parts[2]
-        message = _handle_manual_review_delete(record_id)
-        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
-        bot.answer_callback_query(call.id, message)
         return
 
     if action == "export" and len(parts) == 3:
