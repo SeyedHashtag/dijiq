@@ -92,6 +92,42 @@ def update_payment_record_fields(payment_id, fields):
             json.dump(payments, f, indent=4)
         return True
 
+def complete_payment_record(payment_id, fields, status='completed'):
+    with payment_lock:
+        try:
+            if os.path.exists(PAYMENTS_FILE):
+                with open(PAYMENTS_FILE, 'r') as f:
+                    payments = json.load(f)
+            else:
+                return False
+        except Exception:
+            return False
+
+        if payment_id not in payments or not isinstance(fields, dict):
+            return False
+
+        payment = payments[payment_id]
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        previous_status = payment.get('status', 'unknown')
+        payment.update(fields)
+        payment['status'] = status
+        payment['updated_at'] = current_time
+
+        updates = payment.setdefault('updates', [])
+        if not isinstance(updates, list):
+            updates = []
+            payment['updates'] = updates
+        updates.append({
+            'status': status,
+            'timestamp': current_time,
+            'previous_status': previous_status
+        })
+
+        os.makedirs(os.path.dirname(PAYMENTS_FILE), exist_ok=True)
+        with open(PAYMENTS_FILE, 'w') as f:
+            json.dump(payments, f, indent=4)
+        return True
+
 def claim_payment_for_processing(payment_id, allowed_statuses=None):
     with payment_lock:
         try:

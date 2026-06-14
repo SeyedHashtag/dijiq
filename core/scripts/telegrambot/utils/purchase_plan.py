@@ -13,6 +13,7 @@ from utils.payment_records import (
     claim_payment_for_processing,
     get_user_payments,
     update_payment_record_fields,
+    complete_payment_record,
 )
 from utils.api_client import APIClient, MultiServerAPI
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
@@ -480,6 +481,41 @@ def _record_crypto_sale_creation_failure(payment_id, username=None, api_client=N
         _release_processing_for_retry(payment_id, 'pending', error)
     else:
         _record_processing_error(payment_id, error)
+
+
+def _notify_sale_completion_persistence_failure(payment_id, user_id, username, server_id):
+    message = (
+        "Payment completion persistence failed.\n\n"
+        f"Payment ID: {payment_id}\n"
+        f"User ID: {user_id}\n"
+        f"Username: {username or 'N/A'}\n"
+        f"Server ID: {server_id or 'N/A'}\n\n"
+        "The VPN user was created, but the payment record was not completed. "
+        "The record was left in processing for manual follow-up."
+    )
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            bot.send_message(admin_id, message)
+        except Exception:
+            pass
+
+
+def _complete_sale_payment_or_notify(payment_id, user_id, username, api_client):
+    server_id = getattr(api_client, 'server_id', None) if api_client is not None else None
+    if complete_payment_record(payment_id, {"username": username, "server_id": server_id}):
+        return True
+
+    error = f"payment_completion_persistence_failed username={username} server_id={server_id}"
+    _record_processing_error(payment_id, error)
+    logging.getLogger('dijiq.payments').error(
+        "Payment completion persistence failed. payment_id=%s user_id=%s username=%s server_id=%s",
+        payment_id,
+        user_id,
+        username,
+        server_id,
+    )
+    _notify_sale_completion_persistence_failure(payment_id, user_id, username, server_id)
+    return False
 
 
 def create_sale_username(api_client, user_id):
@@ -1366,8 +1402,12 @@ def handle_admin_approval(call):
                 unlimited,
             )
             if result:
-                update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
-                update_payment_status(payment_id, 'completed')
+                if not _complete_sale_payment_or_notify(payment_id, user_to_notify, username, api_client):
+                    bot.answer_callback_query(
+                        call.id,
+                        text=get_message_text(language, "error_processing_payment").format(error="payment record update failed")
+                    )
+                    return
                 add_referral_reward(payment_record['user_id'], payment_record['price'])
                 
                 telegram_username = None
@@ -1526,11 +1566,16 @@ def handle_check_payment(call):
             unlimited,
         )
         if result:
-            update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
+            if not _complete_sale_payment_or_notify(payment_id, user_id, username, api_client):
+                bot.send_message(
+                    call.message.chat.id,
+                    get_message_text(language, "payment_completed_user_error"),
+                    parse_mode="Markdown"
+                )
+                return
             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
-            update_payment_status(payment_id, 'completed')
             if user_uri_data and 'normal_sub' in user_uri_data:
                 sub_url = user_uri_data['normal_sub']
                 ipv4_url = user_uri_data.get('ipv4', '')
@@ -1650,7 +1695,8 @@ def process_payment_webhook(request_data):
                     unlimited,
                 )
                 if result:
-                    update_payment_record_fields(record_key, {"username": username, "server_id": api_client.server_id})
+                    if not _complete_sale_payment_or_notify(record_key, user_id, username, api_client):
+                        return False
                     payment_method = "Crypto" if "order_id" in payment_record else "Card to Card"
                     telegram_username = None
                     try:
@@ -1665,8 +1711,7 @@ def process_payment_webhook(request_data):
                     sub_url = user_uri_data.get('normal_sub') if user_uri_data else None
                     ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
                     ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
-                    
-                    update_payment_status(record_key, 'completed')
+
                     success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                     bot.send_message(
                         user_id,
@@ -1793,7 +1838,8 @@ def check_pending_payments():
                         )
                         
                         if add_result:
-                            update_payment_record_fields(payment_id, {"username": username, "server_id": api_client.server_id})
+                            if not _complete_sale_payment_or_notify(payment_id, user_id, username, api_client):
+                                continue
                             telegram_username = None
                             try:
                                 chat = bot.get_chat(user_id)
@@ -1803,9 +1849,7 @@ def check_pending_payments():
                             send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=telegram_username)
                             add_referral_reward(user_id, price)
                             user_uri_data = api_client.get_user_uri(username)
-                            
-                            update_payment_status(payment_id, 'completed')
-                            
+
                             user_language = get_user_language(user_id)
                             
                             if user_uri_data and 'normal_sub' in user_uri_data:

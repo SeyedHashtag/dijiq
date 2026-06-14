@@ -157,6 +157,7 @@ def install_common_stubs(bot, payment_records):
     payment_records_stub.claim_payment_for_processing = lambda *args, **kwargs: True
     payment_records_stub.get_user_payments = lambda *args, **kwargs: {}
     payment_records_stub.update_payment_record_fields = lambda *args, **kwargs: True
+    payment_records_stub.complete_payment_record = lambda *args, **kwargs: True
     sys.modules["utils.payment_records"] = payment_records_stub
 
     api_client_stub = types.ModuleType("utils.api_client")
@@ -418,6 +419,21 @@ def install_payment_store(purchase_plan, store):
         field_updates.append((payment_id, dict(fields)))
         return True
 
+    def complete_payment_record(payment_id, fields, status="completed"):
+        if payment_id not in store or not isinstance(fields, dict):
+            return False
+        previous_status = store[payment_id].get("status", "unknown")
+        store[payment_id].update(fields)
+        store[payment_id]["status"] = status
+        store[payment_id].setdefault("updates", []).append({
+            "status": status,
+            "previous_status": previous_status,
+            "timestamp": "now",
+        })
+        field_updates.append((payment_id, dict(fields)))
+        statuses.append((payment_id, status))
+        return True
+
     def claim_payment_for_processing(payment_id, allowed_statuses=None):
         allowed = {str(status) for status in (allowed_statuses or {"pending"})}
         record = store.get(payment_id)
@@ -433,6 +449,7 @@ def install_payment_store(purchase_plan, store):
     purchase_plan.load_payments = load_payments
     purchase_plan.update_payment_status = update_payment_status
     purchase_plan.update_payment_record_fields = update_payment_record_fields
+    purchase_plan.complete_payment_record = complete_payment_record
     purchase_plan.claim_payment_for_processing = claim_payment_for_processing
     return statuses, field_updates, claims
 
@@ -625,8 +642,46 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         self.assertEqual(len(created), 1)
         self.assertEqual(store["receipt-payment"]["status"], "completed")
+        self.assertEqual(store["receipt-payment"]["username"], "s1988a")
+        self.assertEqual(store["receipt-payment"]["server_id"], "s1")
+        self.assertEqual(store["receipt-payment"]["updates"][-1]["previous_status"], "processing")
         self.assertEqual(statuses.count(("receipt-payment", "completed")), 1)
         self.assertTrue(any(answer[1].get("text") == "Already processed: processing" for answer in bot.callback_answers))
+
+    def test_receipt_approval_leaves_payment_processing_when_completion_persistence_fails(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "receipt-payment": {
+                "status": "pending_approval",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 100.0,
+                "payment_method": "Card to Card",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        admin_success_notifications = []
+        referral_rewards = []
+        purchase_plan.ADMIN_USER_IDS = [1]
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.complete_payment_record = lambda *args, **kwargs: False
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_success_notifications.append((args, kwargs))
+        purchase_plan.add_referral_reward = lambda *args, **kwargs: referral_rewards.append((args, kwargs))
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: ("s1988a", {"ok": True}, DummySaleClient())
+
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("approve"))
+
+        self.assertEqual(store["receipt-payment"]["status"], "processing")
+        self.assertEqual(statuses, [("receipt-payment", "processing")])
+        self.assertIn("payment_completion_persistence_failed", store["receipt-payment"]["processing_error"])
+        self.assertEqual(admin_success_notifications, [])
+        self.assertEqual(referral_rewards, [])
+        self.assertEqual(bot.sent_photos, [])
+        admin_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1]
+        self.assertEqual(len(admin_messages), 1)
+        self.assertIn("Payment completion persistence failed.", admin_messages[0])
 
     def test_receipt_approval_claim_blocks_checker_admin_cross_press(self):
         bot = DummyBot()
@@ -731,6 +786,80 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(statuses.count(("renew-payment", "completed")), 1)
         self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 1)
         self.assertEqual(store["renew-payment"]["status"], "completed")
+
+    def test_crypto_check_completes_sale_with_username_and_server(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "crypto-payment": {
+                "status": "pending",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 95.0,
+                "payment_method": "Crypto",
+                "payment_id": "crypto-payment",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: ("s1988a", {"ok": True}, DummySaleClient())
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        FakeCryptoPayment.statuses = {"crypto-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.handle_check_payment(types.SimpleNamespace(
+            data="check_payment:crypto-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=1988, username="buyer"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        ))
+
+        self.assertEqual(statuses, [("crypto-payment", "processing"), ("crypto-payment", "completed")])
+        self.assertEqual(store["crypto-payment"]["status"], "completed")
+        self.assertEqual(store["crypto-payment"]["username"], "s1988a")
+        self.assertEqual(store["crypto-payment"]["server_id"], "s1")
+        self.assertEqual(store["crypto-payment"]["updates"][-1]["previous_status"], "processing")
+        self.assertEqual(bot.sent_photos[-1][1]["caption"], "completed s1988a https://sub.example/s1988a")
+
+    def test_crypto_check_leaves_payment_processing_when_completion_persistence_fails(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "crypto-payment": {
+                "status": "pending",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 95.0,
+                "payment_method": "Crypto",
+                "payment_id": "crypto-payment",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        admin_success_notifications = []
+        referral_rewards = []
+        purchase_plan.ADMIN_USER_IDS = [1]
+        purchase_plan.complete_payment_record = lambda *args, **kwargs: False
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: ("s1988a", {"ok": True}, DummySaleClient())
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_success_notifications.append((args, kwargs))
+        purchase_plan.add_referral_reward = lambda *args, **kwargs: referral_rewards.append((args, kwargs))
+        FakeCryptoPayment.statuses = {"crypto-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.handle_check_payment(types.SimpleNamespace(
+            data="check_payment:crypto-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=1988, username="buyer"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        ))
+
+        self.assertEqual(store["crypto-payment"]["status"], "processing")
+        self.assertEqual(statuses, [("crypto-payment", "processing")])
+        self.assertIn("payment_completion_persistence_failed", store["crypto-payment"]["processing_error"])
+        self.assertEqual(admin_success_notifications, [])
+        self.assertEqual(referral_rewards, [])
+        self.assertEqual(bot.sent_photos, [])
+        admin_messages = [args[1] for args, _kwargs in bot.sent_messages if args[0] == 1]
+        self.assertEqual(len(admin_messages), 1)
+        self.assertIn("Payment completion persistence failed.", admin_messages[0])
 
     def test_crypto_settlement_completion_notifies_admins_across_completion_paths(self):
         bot = DummyBot()
