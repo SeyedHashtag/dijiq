@@ -533,12 +533,10 @@ def execute_reseller_renewal(offer, multi_api=None):
 
 def format_state_summary(state):
     if not isinstance(state, dict):
-        return "Status: unknown"
+        return "Days remaining: unknown\nUsage: unknown"
     gb_limit = state.get('gb_limit')
     gb_limit_text = "Unlimited" if gb_limit is None else f"{_safe_float(gb_limit):.2f} GB"
     return (
-        f"Status: {state.get('status') or 'unknown'}\n"
-        f"Blocked: {'yes' if state.get('blocked') else 'no'}\n"
         f"Days remaining: {state.get('days_remaining') if state.get('days_remaining') is not None else 'unknown'}\n"
         f"Usage: {_safe_float(state.get('gb_used')):.2f} / {gb_limit_text}"
     )
