@@ -15,10 +15,32 @@ import os
 import requests
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from requests.adapters import HTTPAdapter
 from dotenv import load_dotenv
 
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+_HTTP_POOL_CONNECTIONS = 8
+_HTTP_POOL_MAXSIZE = 16
+_thread_local = threading.local()
+
+
+def _get_thread_session(session_key) -> requests.Session:
+    """Return a per-thread pooled HTTP session for a server/auth pair."""
+    sessions = getattr(_thread_local, "api_sessions", None)
+    if sessions is None:
+        sessions = {}
+        _thread_local.api_sessions = sessions
+
+    session = sessions.get(session_key)
+    if session is None:
+        session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=_HTTP_POOL_CONNECTIONS, pool_maxsize=_HTTP_POOL_MAXSIZE)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        sessions[session_key] = session
+    return session
 
 
 def _safe_server_id(value: str, fallback: str = "primary") -> str:
@@ -149,14 +171,25 @@ class APIClient:
             'accept': 'application/json',
             'Authorization': self.token,
         }
+        self._session_key = (self.base_url, self.token)
 
     # ------------------------------------------------------------------ #
     # Private HTTP helpers                                                  #
     # ------------------------------------------------------------------ #
 
+    @property
+    def session(self) -> requests.Session:
+        return _get_thread_session(self._session_key)
+
+    def _request(self, method: str, url: str, *, data: dict | None = None, headers: dict | None = None, timeout: int = 10):
+        request_headers = {**self.headers}
+        if headers:
+            request_headers.update(headers)
+        return self.session.request(method, url, headers=request_headers, json=data, timeout=timeout)
+
     def _get(self, url: str):
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
+            response = self._request("GET", url, timeout=10)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -164,26 +197,24 @@ class APIClient:
             return None
 
     def _post(self, url: str, data: dict):
-        headers = {**self.headers, 'Content-Type': 'application/json'}
         try:
-            response = requests.post(url, headers=headers, json=data, timeout=10)
+            response = self._request("POST", url, data=data, headers={'Content-Type': 'application/json'}, timeout=10)
             response.raise_for_status()
             try:
                 return response.json()
-            except json.JSONDecodeError:
+            except ValueError:
                 return response.text or True
         except requests.exceptions.RequestException as e:
             print(f"[APIClient] POST {url} failed: {e}")
             return None
 
     def _patch(self, url: str, data: dict):
-        headers = {**self.headers, 'Content-Type': 'application/json'}
         try:
-            response = requests.patch(url, headers=headers, json=data, timeout=10)
+            response = self._request("PATCH", url, data=data, headers={'Content-Type': 'application/json'}, timeout=10)
             response.raise_for_status()
             try:
                 return response.json()
-            except json.JSONDecodeError:
+            except ValueError:
                 return {"message": "Updated successfully."}
         except requests.exceptions.RequestException as e:
             print(f"[APIClient] PATCH {url} failed: {e}")
@@ -191,11 +222,11 @@ class APIClient:
 
     def _delete(self, url: str):
         try:
-            response = requests.delete(url, headers=self.headers, timeout=10)
+            response = self._request("DELETE", url, timeout=10)
             response.raise_for_status()
             try:
                 return response.json()
-            except json.JSONDecodeError:
+            except ValueError:
                 return {"message": "Deleted successfully."}
         except requests.exceptions.RequestException as e:
             print(f"[APIClient] DELETE {url} failed: {e}")
@@ -255,9 +286,9 @@ class APIClient:
         REST API, but uses the same auth token.
         """
         try:
-            response = requests.get(
+            response = self._request(
+                "GET",
                 "http://127.0.0.1:25413/online",
-                headers={'Authorization': self.token},
                 timeout=5,
             )
             if response.status_code == 200:
@@ -293,6 +324,50 @@ class MultiServerAPI:
         for server in self.servers:
             if include_disabled or server.get("enabled", True):
                 yield server, APIClient(server)
+
+    @staticmethod
+    def _max_parallel_workers(server_count: int) -> int:
+        try:
+            configured = int(os.getenv("SERVER_FETCH_WORKERS", "8"))
+        except (TypeError, ValueError):
+            configured = 8
+        return max(1, min(server_count, configured))
+
+    def _client_entries(self, include_disabled: bool = False) -> list[dict]:
+        entries = []
+        for server in self.servers:
+            if include_disabled or server.get("enabled", True):
+                entries.append({
+                    "server": server,
+                    "client": APIClient(server),
+                    "index": len(entries),
+                })
+        return entries
+
+    def _fetch_users_for_servers(self, include_disabled: bool = False) -> list[dict]:
+        entries = self._client_entries(include_disabled=include_disabled)
+        if len(entries) <= 1 or self._max_parallel_workers(len(entries)) == 1:
+            for entry in entries:
+                entry["users"] = entry["client"].get_users()
+            return entries
+
+        results = [None] * len(entries)
+
+        def fetch_users(entry):
+            return {**entry, "users": entry["client"].get_users()}
+
+        with ThreadPoolExecutor(max_workers=self._max_parallel_workers(len(entries)), thread_name_prefix="dijiq-api") as executor:
+            future_to_index = {executor.submit(fetch_users, entry): index for index, entry in enumerate(entries)}
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    results[index] = future.result()
+                except Exception as e:
+                    entry = entries[index]
+                    print(f"[MultiServerAPI] Fetch users for {entry['server'].get('id')} failed: {e}")
+                    results[index] = {**entry, "users": None}
+
+        return results
 
     @staticmethod
     def active_user_count(users) -> int:
@@ -345,8 +420,10 @@ class MultiServerAPI:
         usernames = set()
         server_states = []
 
-        for index, (server, client) in enumerate(self.iter_clients(include_disabled=False)):
-            users = client.get_users()
+        for entry in self._fetch_users_for_servers(include_disabled=False):
+            server = entry["server"]
+            client = entry["client"]
+            users = entry["users"]
             healthy = users is not None
             active_count = self.active_user_count(users) if healthy else None
             weight = _safe_weight(server.get("weight", 1))
@@ -355,7 +432,7 @@ class MultiServerAPI:
             server_states.append({
                 "server": server,
                 "client": client,
-                "index": index,
+                "index": entry["index"],
                 "healthy": healthy,
                 "active_count": active_count,
                 "weight": weight,
@@ -460,14 +537,15 @@ class MultiServerAPI:
 
     def get_server_statuses(self) -> list[dict]:
         statuses = []
-        for index, (server, client) in enumerate(self.iter_clients(include_disabled=True)):
-            users = client.get_users()
+        for entry in self._fetch_users_for_servers(include_disabled=True):
+            server = entry["server"]
+            users = entry["users"]
             healthy = users is not None
             active_count = self.active_user_count(users)
             weight = _safe_weight(server.get("weight", 1))
             statuses.append({
                 **server,
-                "index": index,
+                "index": entry["index"],
                 "healthy": healthy,
                 "active_count": active_count if healthy else None,
                 "load_ratio": (active_count / weight) if healthy else None,
@@ -479,8 +557,8 @@ class MultiServerAPI:
 
     def get_all_usernames(self) -> set[str]:
         usernames = set()
-        for _, client in self.iter_clients(include_disabled=True):
-            users = client.get_users()
+        for entry in self._fetch_users_for_servers(include_disabled=True):
+            users = entry["users"]
             if users is not None:
                 usernames.update(self.extract_usernames(users))
         return usernames
@@ -501,8 +579,9 @@ class MultiServerAPI:
         return None, None
 
     def iter_all_users(self, include_disabled: bool = True):
-        for _, client in self.iter_clients(include_disabled=include_disabled):
-            users = client.get_users()
+        for entry in self._fetch_users_for_servers(include_disabled=include_disabled):
+            client = entry["client"]
+            users = entry["users"]
             if users is None:
                 continue
             if isinstance(users, dict):

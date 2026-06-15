@@ -2,6 +2,8 @@ import importlib.util
 import os
 import sys
 import tempfile
+import threading
+import time
 import types
 import unittest
 from pathlib import Path
@@ -27,16 +29,19 @@ spec.loader.exec_module(api_client)
 
 
 class FakeClient:
-    def __init__(self, server_id, users, add_results=None):
+    def __init__(self, server_id, users, add_results=None, delay=0):
         self.server_id = server_id
         self.server_name = server_id
         self.users = users
         self.add_results = list(add_results or [])
+        self.delay = delay
         self.get_users_calls = 0
         self.add_user_calls = []
 
     def get_users(self):
         self.get_users_calls += 1
+        if self.delay:
+            time.sleep(self.delay)
         return self.users
 
     def add_user(self, username, traffic_limit, expiration_days, unlimited=False, note=None):
@@ -58,6 +63,7 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.original_get_server_configs = api_client.get_server_configs
         self.original_monotonic = api_client.time.monotonic
         self.original_ttl = os.environ.get("SERVER_USERS_CACHE_TTL_SECONDS")
+        self.original_workers = os.environ.get("SERVER_FETCH_WORKERS")
         os.environ["SERVER_USERS_CACHE_TTL_SECONDS"] = "30"
         api_client.MultiServerAPI._creation_cache = None
 
@@ -70,6 +76,10 @@ class MultiServerCreationCacheTests(unittest.TestCase):
             os.environ.pop("SERVER_USERS_CACHE_TTL_SECONDS", None)
         else:
             os.environ["SERVER_USERS_CACHE_TTL_SECONDS"] = self.original_ttl
+        if self.original_workers is None:
+            os.environ.pop("SERVER_FETCH_WORKERS", None)
+        else:
+            os.environ["SERVER_FETCH_WORKERS"] = self.original_workers
 
     def make_multi_api(self, clients):
         servers = [
@@ -186,6 +196,99 @@ class MultiServerCreationCacheTests(unittest.TestCase):
 
         self.assertEqual(default_usernames, ["active", "disabled"])
         self.assertEqual(enabled_usernames, ["active"])
+
+    def test_get_all_usernames_fetches_servers_in_parallel(self):
+        os.environ["SERVER_FETCH_WORKERS"] = "3"
+        started_count = 0
+        lock = threading.Lock()
+        all_started = threading.Event()
+        release = threading.Event()
+
+        class BlockingClient(FakeClient):
+            def get_users(inner_self):
+                nonlocal started_count
+                inner_self.get_users_calls += 1
+                with lock:
+                    started_count += 1
+                    if started_count == 3:
+                        all_started.set()
+                release.wait(timeout=1)
+                return inner_self.users
+
+        clients = {
+            "s1": BlockingClient("s1", {"a": {"blocked": False}}),
+            "s2": BlockingClient("s2", {"b": {"blocked": False}}),
+            "s3": BlockingClient("s3", {"c": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+        result = {}
+
+        worker = threading.Thread(target=lambda: result.setdefault("usernames", multi_api.get_all_usernames()))
+        worker.start()
+
+        try:
+            self.assertTrue(all_started.wait(timeout=0.5))
+        finally:
+            release.set()
+            worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(result["usernames"], {"a", "b", "c"})
+
+
+class APIClientPoolingTests(unittest.TestCase):
+    def setUp(self):
+        self.original_session_factory = api_client.requests.Session
+        self.original_thread_sessions = getattr(api_client._thread_local, "api_sessions", None)
+        api_client._thread_local.api_sessions = {}
+
+    def tearDown(self):
+        api_client.requests.Session = self.original_session_factory
+        if self.original_thread_sessions is None:
+            try:
+                del api_client._thread_local.api_sessions
+            except AttributeError:
+                pass
+        else:
+            api_client._thread_local.api_sessions = self.original_thread_sessions
+
+    def test_clients_reuse_thread_local_session_for_same_server(self):
+        sessions = []
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {}
+
+        class FakeSession:
+            def __init__(self):
+                self.request_calls = []
+
+            def mount(self, *_args, **_kwargs):
+                return None
+
+            def request(self, method, url, **kwargs):
+                self.request_calls.append((method, url, kwargs))
+                return FakeResponse()
+
+        def session_factory():
+            session = FakeSession()
+            sessions.append(session)
+            return session
+
+        api_client.requests.Session = session_factory
+        server = {"id": "s1", "name": "s1", "url": "https://s1.test", "token": "token", "enabled": True}
+
+        first = api_client.APIClient(server)
+        second = api_client.APIClient(server)
+        first.get_users()
+        second.get_user("alice")
+
+        self.assertEqual(len(sessions), 1)
+        self.assertIs(first.session, second.session)
+        self.assertEqual([call[0] for call in sessions[0].request_calls], ["GET", "GET"])
 
 
 class ServerConfigPersistenceTests(unittest.TestCase):
