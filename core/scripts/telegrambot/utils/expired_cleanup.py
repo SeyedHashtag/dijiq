@@ -647,6 +647,68 @@ def _find_user_in_records(users, username):
     return None
 
 
+def _new_server_lookup_context():
+    return {
+        'checked_any': False,
+        'unavailable': False,
+        'servers': {},
+        'exact': {},
+        'usernames': {},
+    }
+
+
+def _remember_server_users(context, server_id, client, users):
+    server_id = str(server_id or getattr(client, 'server_id', None) or 'primary')
+    server_key = server_id.lower()
+    context['checked_any'] = True
+    context['servers'][server_key] = {
+        'server_id': server_id,
+        'client': client,
+        'available': users is not None,
+    }
+    if users is None:
+        context['unavailable'] = True
+        return
+
+    for username, user_data in _iter_named_user_records(users):
+        username = str(username or '').strip()
+        if not username:
+            continue
+        username_key = username.lower()
+        context['exact'][_state_key(server_id, username).lower()] = (client, user_data)
+        context['usernames'].setdefault(username_key, []).append((server_id, client, user_data))
+
+
+def _lookup_user_from_context(context, username, preferred_server_id=None):
+    if not isinstance(context, dict):
+        return None, None, None
+
+    username = str(username or '').strip()
+    if not username:
+        return None, None, 'missing'
+
+    if preferred_server_id:
+        server_state = context.get('servers', {}).get(str(preferred_server_id).lower())
+        if not server_state:
+            return None, None, 'unavailable'
+        client = server_state.get('client')
+        if not server_state.get('available'):
+            return client, None, 'unavailable'
+        match = context.get('exact', {}).get(_state_key(preferred_server_id, username).lower())
+        if match:
+            return match[0], match[1], 'found'
+        return client, None, 'missing'
+
+    matches = context.get('usernames', {}).get(username.lower()) or []
+    if matches:
+        _server_id, client, user_data = matches[0]
+        return client, user_data, 'found'
+
+    if context.get('unavailable') or not context.get('checked_any'):
+        return None, None, 'unavailable'
+    return None, None, 'missing'
+
+
 def discover_cleanup_candidates(include_already_missing=False):
     candidates = []
 
@@ -714,6 +776,31 @@ def discover_cleanup_candidates(include_already_missing=False):
     for candidate in candidates:
         deduped.setdefault(_state_key(candidate.get('server_id'), candidate['username']), candidate)
     return list(deduped.values())
+
+
+def _iter_server_user_snapshots(multi_api):
+    fetch_users = getattr(multi_api, '_fetch_users_for_servers', None)
+    if callable(fetch_users):
+        try:
+            for index, entry in enumerate(fetch_users(include_disabled=True)):
+                if not isinstance(entry, dict):
+                    continue
+                yield index, entry.get('server'), entry.get('client'), entry.get('users')
+            return
+        except Exception:
+            pass
+
+    try:
+        client_iter = multi_api.iter_clients(include_disabled=True)
+    except Exception:
+        return
+
+    for index, (server, client) in enumerate(client_iter):
+        try:
+            users = client.get_users()
+        except Exception:
+            users = None
+        yield index, server, client, users
 
 
 def _server_candidate_match_sets(candidates):
@@ -824,23 +911,21 @@ def discover_already_missing_cleanup_candidates(state):
     return candidates
 
 
-def discover_server_cleanup_candidates(multi_api):
+def _scan_server_cleanup_candidates(multi_api):
     candidates = []
+    lookup_context = _new_server_lookup_context()
     if multi_api is None:
-        return candidates
+        return candidates, lookup_context
 
-    try:
-        client_iter = multi_api.iter_clients(include_disabled=True)
-    except Exception:
-        return candidates
-
-    for index, (server, client) in enumerate(client_iter):
+    for index, server, client, users in _iter_server_user_snapshots(multi_api):
+        if client is None:
+            continue
         server_id = str(
             (server or {}).get('id')
             or getattr(client, 'server_id', None)
             or f'server{index + 1}'
         )
-        users = client.get_users()
+        _remember_server_users(lookup_context, server_id, client, users)
         if users is None:
             continue
 
@@ -856,6 +941,11 @@ def discover_server_cleanup_candidates(multi_api):
                 '_api_client': client,
             })
 
+    return candidates, lookup_context
+
+
+def discover_server_cleanup_candidates(multi_api):
+    candidates, _lookup_context = _scan_server_cleanup_candidates(multi_api)
     return candidates
 
 
@@ -1116,7 +1206,7 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             state = {}
 
         multi_api = multi_api or MultiServerAPI()
-        server_candidates = discover_server_cleanup_candidates(multi_api)
+        server_candidates, lookup_context = _scan_server_cleanup_candidates(multi_api)
         state_candidates = discover_state_cleanup_candidates(state)
         already_missing_candidates = discover_already_missing_cleanup_candidates(state)
         candidates = _merge_cleanup_candidates(
@@ -1143,11 +1233,17 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 user_data = candidate.get('_user_data')
                 lookup_status = 'found'
             else:
-                api_client, user_data, lookup_status = _get_user_lookup(
-                    multi_api,
+                api_client, user_data, lookup_status = _lookup_user_from_context(
+                    lookup_context,
                     username,
                     preferred_server_id=candidate.get('server_id'),
                 )
+                if lookup_status is None:
+                    api_client, user_data, lookup_status = _get_user_lookup(
+                        multi_api,
+                        username,
+                        preferred_server_id=candidate.get('server_id'),
+                    )
 
             if lookup_status == 'unavailable':
                 if entry:

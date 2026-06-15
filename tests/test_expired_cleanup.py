@@ -276,6 +276,8 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
         self.assertEqual(client.deleted, [])
+        self.assertEqual(client.get_user_calls, [])
+        self.assertEqual(client.get_users_calls, 2)
         self.assertEqual(self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]["cleanup_status"], "renewed")
 
     def test_candidate_discovery_includes_test_customer_and_reseller_configs(self):
@@ -489,6 +491,42 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(client.get_users_calls, 1)
         self.assertEqual(client.get_user_calls, [])
         self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
+
+    def test_state_cleanup_uses_bulk_scan_for_renewal_without_per_user_lookup(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:t101": {
+                "username": "t101",
+                "server_id": "s1",
+                "source": "test",
+                "telegram_user_id": "101",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = FakeClient("s1", {
+            "t101": {
+                "blocked": False,
+                "expiration_days": 30,
+                "upload_bytes": 0,
+                "download_bytes": 0,
+                "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+            }
+        })
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(client.get_users_calls, 1)
+        self.assertEqual(client.get_user_calls, [])
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
+        self.assertEqual(self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]["cleanup_status"], "renewed")
 
     def test_deletes_after_grace_and_saves_last_state(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
