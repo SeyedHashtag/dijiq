@@ -82,10 +82,11 @@ class FakeMultiServerAPI:
         self.last_user_snapshot_cache_hit = True
         self.__class__.instances.append(self)
 
-    def iter_all_users(self, include_disabled=True, force_refresh=False):
+    def iter_all_users(self, include_disabled=True, force_refresh=False, cache_ttl_seconds=None):
         self.__class__.iter_calls.append({
             "include_disabled": include_disabled,
             "force_refresh": force_refresh,
+            "cache_ttl_seconds": cache_ttl_seconds,
         })
         yield from self.__class__.users_by_include_disabled[bool(include_disabled)]
 
@@ -123,6 +124,7 @@ def install_stubs():
     translations_stub.BUTTON_TRANSLATIONS = {"en": {"my_configs": "📱 My Configs"}}
     translations_stub.get_message_text = lambda language, key: {
         "no_active_configs": "No active configs",
+        "my_configs_cache_notice": "This list may take a few minutes to update.",
     }.get(key, key)
     translations_stub.get_button_text = lambda language, key: key
     sys.modules["utils.translations"] = translations_stub
@@ -167,9 +169,13 @@ class MyConfigsTests(unittest.TestCase):
 
         my_configs_module.my_configs(self.make_message())
 
-        self.assertEqual(FakeMultiServerAPI.iter_calls, [{"include_disabled": False, "force_refresh": False}])
+        self.assertEqual(
+            FakeMultiServerAPI.iter_calls,
+            [{"include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300}],
+        )
         self.assertEqual(len(self.displayed_configs), 1)
         self.assertEqual(self.displayed_configs[0][0][1], "s123a")
+        self.assertTrue(self.displayed_configs[0][1]["show_cache_notice"])
         self.assertEqual(my_configs_module.bot.replies, [])
 
     def test_my_configs_excludes_disabled_servers_for_customer_lookup(self):
@@ -180,9 +186,30 @@ class MyConfigsTests(unittest.TestCase):
 
         my_configs_module.my_configs(self.make_message())
 
-        self.assertEqual(FakeMultiServerAPI.iter_calls, [{"include_disabled": False, "force_refresh": False}])
+        self.assertEqual(
+            FakeMultiServerAPI.iter_calls,
+            [{"include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300}],
+        )
         self.assertEqual(self.displayed_configs, [])
-        self.assertEqual(my_configs_module.bot.replies[0][0][1], "No active configs")
+        self.assertEqual(
+            my_configs_module.bot.replies[0][0][1],
+            "No active configs\n\nThis list may take a few minutes to update.",
+        )
+
+    def test_my_configs_selection_menu_includes_cache_notice(self):
+        enabled_client = FakeClient("enabled")
+        FakeMultiServerAPI.users_by_include_disabled[False] = [
+            (enabled_client, "s123a", {"max_download_bytes": 20}),
+            (enabled_client, "s123b", {"max_download_bytes": 30}),
+        ]
+
+        my_configs_module.my_configs(self.make_message())
+
+        self.assertEqual(
+            my_configs_module.bot.replies[0][0][1],
+            "📱 Select a configuration to view:\n\nThis list may take a few minutes to update.",
+        )
+        self.assertEqual(len(my_configs_module.bot.replies[0][1]["reply_markup"].buttons), 2)
 
 
 if __name__ == "__main__":

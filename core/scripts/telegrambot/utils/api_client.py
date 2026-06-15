@@ -378,9 +378,14 @@ class MultiServerAPI:
             "entries": self._fetch_users_for_servers(include_disabled=include_disabled),
         }
 
-    def _get_user_snapshot(self, include_disabled: bool = False, force_refresh: bool = False) -> dict:
+    def _get_user_snapshot(
+        self,
+        include_disabled: bool = False,
+        force_refresh: bool = False,
+        cache_ttl_seconds: float | None = None,
+    ) -> dict:
         signature = (bool(include_disabled), self._servers_signature(self.servers))
-        ttl = self._creation_cache_ttl_seconds()
+        ttl = self._user_snapshot_cache_ttl_seconds(cache_ttl_seconds)
         now = time.monotonic()
 
         with self._creation_cache_lock:
@@ -436,6 +441,16 @@ class MultiServerAPI:
             ttl = float(os.getenv("SERVER_USERS_CACHE_TTL_SECONDS", "30"))
         except (TypeError, ValueError):
             return 30.0
+        return max(0.0, ttl)
+
+    @classmethod
+    def _user_snapshot_cache_ttl_seconds(cls, cache_ttl_seconds: float | None = None) -> float:
+        if cache_ttl_seconds is None:
+            return cls._creation_cache_ttl_seconds()
+        try:
+            ttl = float(cache_ttl_seconds)
+        except (TypeError, ValueError):
+            return cls._creation_cache_ttl_seconds()
         return max(0.0, ttl)
 
     @staticmethod
@@ -615,8 +630,17 @@ class MultiServerAPI:
                 return client, user
         return None, None
 
-    def iter_all_users(self, include_disabled: bool = True, force_refresh: bool = False):
-        for entry in self._get_user_snapshot(include_disabled=include_disabled, force_refresh=force_refresh).get("entries", []):
+    def iter_all_users(
+        self,
+        include_disabled: bool = True,
+        force_refresh: bool = False,
+        cache_ttl_seconds: float | None = None,
+    ):
+        for entry in self._get_user_snapshot(
+            include_disabled=include_disabled,
+            force_refresh=force_refresh,
+            cache_ttl_seconds=cache_ttl_seconds,
+        ).get("entries", []):
             client = entry["client"]
             users = entry["users"]
             if users is None:

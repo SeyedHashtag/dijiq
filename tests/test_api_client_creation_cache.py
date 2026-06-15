@@ -228,6 +228,41 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertEqual(clients["s2"].get_users_calls, 1)
         self.assertTrue(multi_api.last_user_snapshot_cache_hit)
 
+    def test_iter_all_users_default_snapshot_expires_after_default_ttl(self):
+        current_time = [100.0]
+        api_client.time.monotonic = lambda: current_time[0]
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        list(multi_api.iter_all_users())
+        current_time[0] = 129.0
+        list(multi_api.iter_all_users())
+        current_time[0] = 131.0
+        list(multi_api.iter_all_users())
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
+
+    def test_iter_all_users_explicit_snapshot_ttl_can_reuse_longer(self):
+        current_time = [100.0]
+        api_client.time.monotonic = lambda: current_time[0]
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        list(multi_api.iter_all_users(cache_ttl_seconds=300))
+        current_time[0] = 250.0
+        list(multi_api.iter_all_users(cache_ttl_seconds=300))
+
+        self.assertEqual(clients["s1"].get_users_calls, 1)
+        self.assertEqual(clients["s2"].get_users_calls, 1)
+        self.assertTrue(multi_api.last_user_snapshot_cache_hit)
+
     def test_iter_all_users_force_refresh_bypasses_cached_snapshot(self):
         clients = {
             "s1": FakeClient("s1", {"active": {"blocked": False}}),
@@ -241,6 +276,38 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertEqual(clients["s1"].get_users_calls, 2)
         self.assertEqual(clients["s2"].get_users_calls, 2)
         self.assertFalse(multi_api.last_user_snapshot_cache_hit)
+
+    def test_iter_all_users_force_refresh_bypasses_explicit_snapshot_ttl(self):
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        list(multi_api.iter_all_users(cache_ttl_seconds=300))
+        list(multi_api.iter_all_users(force_refresh=True, cache_ttl_seconds=300))
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
+        self.assertFalse(multi_api.last_user_snapshot_cache_hit)
+
+    def test_creation_snapshot_uses_default_ttl_after_longer_user_snapshot_read(self):
+        current_time = [100.0]
+        api_client.time.monotonic = lambda: current_time[0]
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        list(multi_api.iter_all_users(include_disabled=False, cache_ttl_seconds=300))
+        current_time[0] = 131.0
+        multi_api.prepare_new_user_creation()
+        current_time[0] = 160.0
+        multi_api.prepare_new_user_creation()
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
 
     def test_iter_all_users_cache_signature_changes_when_server_enabled_changes(self):
         clients = {

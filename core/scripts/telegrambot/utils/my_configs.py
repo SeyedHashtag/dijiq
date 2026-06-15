@@ -13,6 +13,20 @@ from utils.edit_plans import load_plans
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
 
+MY_CONFIGS_CACHE_TTL_SECONDS = 300
+
+
+def _my_configs_cache_notice(language):
+    return get_message_text(language, "my_configs_cache_notice")
+
+
+def _append_my_configs_cache_notice(text, language, show_cache_notice=True):
+    if not show_cache_notice:
+        return text
+    notice = _my_configs_cache_notice(language)
+    return f"{text}\n\n{notice}" if notice else text
+
+
 @bot.message_handler(func=lambda message: any(
     message.text == translations["my_configs"] 
     for translations in BUTTON_TRANSLATIONS.values()
@@ -22,6 +36,7 @@ def my_configs(message):
     user_id = message.from_user.id
     started_at = time.monotonic()
     bot.send_chat_action(message.chat.id, 'typing')
+    language = get_user_language(user_id)
     
     multi_api = MultiServerAPI()
     if not multi_api.servers:
@@ -45,7 +60,10 @@ def my_configs(message):
 
         paid_configs = []
         test_configs = []
-        for api_client, username, config_data in multi_api.iter_all_users(include_disabled=False):
+        for api_client, username, config_data in multi_api.iter_all_users(
+            include_disabled=False,
+            cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
+        ):
             if username and any(pattern.match(username) for pattern in paid_patterns):
                 paid_configs.append((username, config_data, api_client))
             elif username and any(pattern.match(username) for pattern in test_patterns):
@@ -61,10 +79,9 @@ def my_configs(message):
         )
 
         if not user_configs:
-            language = get_user_language(user_id)
             bot.reply_to(
                 message,
-                get_message_text(language, "no_active_configs")
+                _append_my_configs_cache_notice(get_message_text(language, "no_active_configs"), language)
             )
             return
     except Exception as e:
@@ -76,7 +93,14 @@ def my_configs(message):
     # Process and display configs
     if len(user_configs) == 1:
         # Only one config found, display it directly
-        display_config(message.chat.id, user_configs[0][0], user_configs[0][1], user_configs[0][2], user_id=user_id)
+        display_config(
+            message.chat.id,
+            user_configs[0][0],
+            user_configs[0][1],
+            user_configs[0][2],
+            user_id=user_id,
+            show_cache_notice=True,
+        )
     else:
         # Multiple configs found, create a selection menu
         markup = types.InlineKeyboardMarkup()
@@ -90,7 +114,7 @@ def my_configs(message):
         
         bot.reply_to(
             message,
-            "📱 Select a configuration to view:",
+            _append_my_configs_cache_notice("📱 Select a configuration to view:", language),
             reply_markup=markup
         )
 
@@ -110,7 +134,16 @@ def handle_show_config(call):
         
         if user_data:
             # Show the config
-            display_config(call.message.chat.id, username, user_data, api_client, is_callback=True, message_id=call.message.message_id, user_id=call.from_user.id)
+            display_config(
+                call.message.chat.id,
+                username,
+                user_data,
+                api_client,
+                is_callback=True,
+                message_id=call.message.message_id,
+                user_id=call.from_user.id,
+                show_cache_notice=True,
+            )
         else:
             bot.edit_message_text(
                 f"⚠️ Error: User '{username}' not found or API error.",
@@ -125,7 +158,7 @@ def handle_show_config(call):
             message_id=call.message.message_id
         )
 
-def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None, user_id=None):
+def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None, user_id=None, show_cache_notice=False):
     """Display user configuration details and QR code"""
     
     # Check if the user is blocked/expired
@@ -203,6 +236,8 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
                     )
             except Exception as renewal_error:
                 print(f"Error building renewal offer for {username}: {renewal_error}")
+
+            message = _append_my_configs_cache_notice(message, language, show_cache_notice)
             
             if is_callback:
                 bot.edit_message_text(message, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=renewal_markup)
@@ -240,6 +275,11 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
             caption += f"IPv4 URL: `{ipv4_url}`\n\n"
             
         caption += f"Subscription URL:\n{sub_url}"
+        caption = _append_my_configs_cache_notice(
+            caption,
+            get_user_language(user_id or chat_id),
+            show_cache_notice,
+        )
         
         # Send QR code with details
         if is_callback:
