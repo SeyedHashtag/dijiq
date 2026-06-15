@@ -365,6 +365,7 @@ def load_serverinfo_module():
     for name in list(sys.modules):
         if name == "utils" or name.startswith("utils."):
             sys.modules.pop(name, None)
+    sys.modules.pop("cli_api", None)
 
     bot = DummyBot()
     telebot_stub = types.ModuleType("telebot")
@@ -393,21 +394,36 @@ def load_serverinfo_module():
     command_stub.run_cli_command = run_cli_command
     sys.modules["utils.command"] = command_stub
 
+    cli_api_stub = types.ModuleType("cli_api")
+    cli_api_stub.build_count = 0
+
+    def build_server_info_snapshot():
+        cli_api_stub.build_count += 1
+        return {"snapshot_id": cli_api_stub.build_count, "generated_at": datetime(2026, 6, 4, 12, 0, 0)}
+
+    def format_server_info_section(snapshot, section):
+        return f"{section} dashboard text {snapshot['snapshot_id']}"
+
+    cli_api_stub.build_server_info_snapshot = build_server_info_snapshot
+    cli_api_stub.format_server_info_section = format_server_info_section
+    sys.modules["cli_api"] = cli_api_stub
+
     spec = importlib.util.spec_from_file_location("serverinfo_under_test", SERVERINFO_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module, bot
+    return module, bot, cli_api_stub
 
 
 class ServerInfoTelegramTests(unittest.TestCase):
     def test_server_info_reply_includes_category_markup(self):
-        module, bot = load_serverinfo_module()
+        module, bot, cli_api = load_serverinfo_module()
         message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
 
         module.server_info(message)
 
-        self.assertEqual(bot.replies[0][0][1], "overview dashboard text")
+        self.assertEqual(bot.replies[0][0][1], "overview dashboard text 1")
+        self.assertEqual(cli_api.build_count, 1)
         markup = bot.replies[0][1]["reply_markup"]
         callbacks = [button.callback_data for button in markup.buttons]
         self.assertIn("server_info:view:overview", callbacks)
@@ -419,7 +435,10 @@ class ServerInfoTelegramTests(unittest.TestCase):
         self.assertIn("server_info:refresh:overview", callbacks)
 
     def test_category_callbacks_and_refresh_edit_existing_message(self):
-        module, bot = load_serverinfo_module()
+        module, bot, cli_api = load_serverinfo_module()
+        message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
+        module.server_info(message)
+
         call = types.SimpleNamespace(
             id="ok",
             data="server_info:view:customers",
@@ -429,7 +448,8 @@ class ServerInfoTelegramTests(unittest.TestCase):
 
         module.handle_server_info_callback(call)
 
-        self.assertEqual(bot.edits[0][0][0], "customers dashboard text")
+        self.assertEqual(bot.edits[0][0][0], "customers dashboard text 1")
+        self.assertEqual(cli_api.build_count, 1)
         self.assertEqual(bot.edits[0][1]["chat_id"], 10)
         self.assertEqual(bot.edits[0][1]["message_id"], 77)
         callbacks = [button.callback_data for button in bot.edits[0][1]["reply_markup"].buttons]
@@ -441,14 +461,32 @@ class ServerInfoTelegramTests(unittest.TestCase):
             from_user=types.SimpleNamespace(id=1),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
         )
+        module.SERVER_INFO_MIN_REFRESH_SECONDS = 0
         module.handle_server_info_callback(refresh_call)
 
-        self.assertEqual(bot.edits[1][0][0], "traffic dashboard text")
+        self.assertEqual(bot.edits[1][0][0], "traffic dashboard text 2")
+        self.assertEqual(cli_api.build_count, 2)
         callbacks = [button.callback_data for button in bot.edits[1][1]["reply_markup"].buttons]
         self.assertIn("server_info:refresh:traffic", callbacks)
 
+    def test_refresh_uses_recent_cache_to_prevent_repeated_heavy_scans(self):
+        module, bot, cli_api = load_serverinfo_module()
+        message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
+        module.server_info(message)
+
+        refresh_call = types.SimpleNamespace(
+            id="refresh",
+            data="server_info:refresh:overview",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
+        )
+        module.handle_server_info_callback(refresh_call)
+
+        self.assertEqual(bot.edits[0][0][0], "overview dashboard text 1")
+        self.assertEqual(cli_api.build_count, 1)
+
     def test_server_info_callback_blocks_unauthorized_users(self):
-        module, bot = load_serverinfo_module()
+        module, bot, _cli_api = load_serverinfo_module()
 
         blocked_call = types.SimpleNamespace(
             id="blocked",

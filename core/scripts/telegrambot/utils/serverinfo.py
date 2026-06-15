@@ -1,4 +1,8 @@
 from dotenv import load_dotenv
+import os
+import sys
+import threading
+import time
 from telebot import types
 from utils.command import *
 
@@ -12,6 +16,18 @@ SERVER_INFO_SECTIONS = (
     ("traffic", "🚦 Traffic"),
     ("alerts", "⚠️ Alerts"),
 )
+SERVER_INFO_CACHE_LOCK = threading.RLock()
+SERVER_INFO_REFRESH_LOCK = threading.Lock()
+SERVER_INFO_MIN_REFRESH_SECONDS = 60
+SERVER_INFO_SNAPSHOT_CACHE = {"snapshot": None, "cached_at": 0.0}
+
+
+def _load_cli_api_module():
+    core_path = os.path.dirname(CLI_PATH)
+    if core_path and core_path not in sys.path:
+        sys.path.append(core_path)
+    import cli_api
+    return cli_api
 
 
 def _normalize_server_info_section(section):
@@ -32,10 +48,47 @@ def _build_server_info_markup(section=SERVER_INFO_DEFAULT_SECTION):
     return markup
 
 
-def _build_server_info_text(section=SERVER_INFO_DEFAULT_SECTION):
+def _get_server_info_snapshot(force_refresh=False):
+    now = time.monotonic()
+    with SERVER_INFO_CACHE_LOCK:
+        snapshot = SERVER_INFO_SNAPSHOT_CACHE.get("snapshot")
+        cached_at = SERVER_INFO_SNAPSHOT_CACHE.get("cached_at", 0.0)
+        recently_built = now - cached_at < SERVER_INFO_MIN_REFRESH_SECONDS
+        if snapshot is not None and (not force_refresh or recently_built):
+            return snapshot
+
+    has_snapshot = snapshot is not None
+    refresh_acquired = SERVER_INFO_REFRESH_LOCK.acquire(blocking=not has_snapshot)
+    if not refresh_acquired:
+        return snapshot
+
+    try:
+        now = time.monotonic()
+        with SERVER_INFO_CACHE_LOCK:
+            snapshot = SERVER_INFO_SNAPSHOT_CACHE.get("snapshot")
+            cached_at = SERVER_INFO_SNAPSHOT_CACHE.get("cached_at", 0.0)
+            recently_built = now - cached_at < SERVER_INFO_MIN_REFRESH_SECONDS
+            if snapshot is not None and (not force_refresh or recently_built):
+                return snapshot
+
+        cli_api = _load_cli_api_module()
+        snapshot = cli_api.build_server_info_snapshot()
+        with SERVER_INFO_CACHE_LOCK:
+            SERVER_INFO_SNAPSHOT_CACHE["snapshot"] = snapshot
+            SERVER_INFO_SNAPSHOT_CACHE["cached_at"] = time.monotonic()
+        return snapshot
+    finally:
+        SERVER_INFO_REFRESH_LOCK.release()
+
+
+def _build_server_info_text(section=SERVER_INFO_DEFAULT_SECTION, force_refresh=False):
     section = _normalize_server_info_section(section)
-    command = f"python3 {CLI_PATH} server-info --section {section}"
-    return run_cli_command(command)
+    try:
+        cli_api = _load_cli_api_module()
+        snapshot = _get_server_info_snapshot(force_refresh=force_refresh)
+        return cli_api.format_server_info_section(snapshot, section)
+    except Exception as e:
+        return f"Error generating server info: {e}"
 
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📊 Server Info')
@@ -54,11 +107,12 @@ def handle_server_info_callback(call):
     parts = call.data.split(":")
     action = parts[1] if len(parts) > 1 else "view"
     section = _normalize_server_info_section(parts[2] if len(parts) > 2 else SERVER_INFO_DEFAULT_SECTION)
-    answer = "Refreshed." if action == "refresh" else "Opened."
+    force_refresh = action == "refresh"
+    answer = "Refreshed." if force_refresh else "Opened."
 
     bot.answer_callback_query(call.id, answer)
     bot.edit_message_text(
-        _build_server_info_text(section),
+        _build_server_info_text(section, force_refresh=force_refresh),
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         reply_markup=_build_server_info_markup(section),
