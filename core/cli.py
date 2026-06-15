@@ -45,9 +45,16 @@ def restore_dijiq(backup_file_path):
 
 
 @cli.command('server-info')
-def server_info():
+@click.option(
+    '--section',
+    type=click.Choice(['overview', 'business', 'customers', 'tech', 'traffic', 'alerts', 'full'], case_sensitive=False),
+    default='full',
+    show_default=True,
+    help='Render a specific server info dashboard section.',
+)
+def server_info(section):
     try:
-        res = cli_api.server_info()
+        res = cli_api.server_info(section=section)
         if res:
             pretty_print(res)
         else:

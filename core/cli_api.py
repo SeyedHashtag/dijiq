@@ -31,6 +31,7 @@ PAID_STATUSES = {'completed', 'paid', 'success', 'succeeded'}
 FAILED_STATUSES = {'rejected', 'failed', 'canceled', 'cancelled', 'error'}
 EXPIRED_STATUSES = {'expired'}
 PENDING_STATUSES = {'pending', 'pending_approval', 'processing', 'waiting', 'unpaid'}
+SERVER_INFO_SECTIONS = {'overview', 'business', 'customers', 'tech', 'traffic', 'alerts', 'full'}
 
 # region Custom Exceptions
 
@@ -534,6 +535,58 @@ def _collect_sold_traffic_stats(payments: dict, live_users: dict, reseller_modul
     return traffic
 
 
+def _collect_customer_growth_stats(payments: dict, now: datetime) -> dict:
+    today = now.date()
+    seven_day_start = today - timedelta(days=6)
+    last_30_days_start = now - timedelta(days=30)
+    first_purchase_by_user = {}
+    purchase_dates_by_user = {}
+    last30_purchase_users = set()
+    returning_30d_users = set()
+    paid_orders_without_user_id = 0
+    regular_paid_orders = 0
+
+    for record in (payments or {}).values():
+        if not _is_regular_paid_payment(record):
+            continue
+        regular_paid_orders += 1
+        payment_dt = _parse_datetime(record.get('updated_at') or record.get('created_at'))
+        user_id = str(record.get('user_id') or '').strip()
+        if not user_id:
+            paid_orders_without_user_id += 1
+            continue
+        if not payment_dt:
+            continue
+        current_first = first_purchase_by_user.get(user_id)
+        if current_first is None or payment_dt < current_first:
+            first_purchase_by_user[user_id] = payment_dt
+        purchase_dates_by_user.setdefault(user_id, []).append(payment_dt)
+
+    for user_id, dates in purchase_dates_by_user.items():
+        sorted_dates = sorted(dates)
+        for index, payment_dt in enumerate(sorted_dates):
+            if payment_dt >= last_30_days_start:
+                last30_purchase_users.add(user_id)
+                if index > 0:
+                    returning_30d_users.add(user_id)
+
+    first_purchase_dates = [value.date() for value in first_purchase_by_user.values()]
+    new_today = sum(1 for value in first_purchase_dates if value == today)
+    new_7d = sum(1 for value in first_purchase_dates if seven_day_start <= value <= today)
+    new_30d = sum(1 for value in first_purchase_by_user.values() if value >= last_30_days_start)
+
+    return {
+        "all_time_paying_customers": len(first_purchase_by_user),
+        "regular_paid_orders": regular_paid_orders,
+        "paid_orders_without_user_id": paid_orders_without_user_id,
+        "new_today": new_today,
+        "new_7d": new_7d,
+        "new_30d": new_30d,
+        "active_30d": len(last30_purchase_users),
+        "returning_30d": len(returning_30d_users),
+    }
+
+
 def _collect_referral_stats(referral_module) -> dict:
     try:
         referral_data = referral_module.load_referrals()
@@ -580,6 +633,7 @@ def build_server_info_snapshot(now=None) -> dict:
     vpn, live_users = _collect_vpn_and_live_users(api_client)
     traffic = _collect_sold_traffic_stats(payments, live_users, reseller)
     sales = _collect_payment_stats(payments, now)
+    customers = _collect_customer_growth_stats(payments, now)
     online = build_online_users_from_userlist(vpn)
     referrals = _collect_referral_stats(referral)
     languages = _collect_language_stats(language, translations)
@@ -599,6 +653,7 @@ def build_server_info_snapshot(now=None) -> dict:
         "vpn": vpn,
         "traffic": traffic,
         "sales": sales,
+        "customers": customers,
         "referrals": referrals,
         "languages": languages,
     }
@@ -625,6 +680,235 @@ def _format_orders(bucket: dict) -> str:
     )
 
 
+def _online_text(online: dict) -> str:
+    return str(online.get("count")) if online.get("count") is not None else "N/A"
+
+
+def _traffic_usage_text(total_traffic: dict) -> str:
+    usage_percent = total_traffic.get("usage_percent")
+    return f" ({usage_percent:.1f}%)" if usage_percent is not None else ""
+
+
+def _notable_servers(vpn: dict, limit: int = 3) -> list:
+    return sorted(
+        vpn.get("servers", []),
+        key=lambda item: (item.get("healthy", True), -(item.get("load_ratio") or 0)),
+    )[:limit]
+
+
+def _build_server_info_alerts(snapshot: dict) -> list[str]:
+    system = snapshot.get("system", {})
+    online = snapshot.get("online", {})
+    vpn = snapshot.get("vpn", {})
+    traffic = snapshot.get("traffic", {})
+    sales = snapshot.get("sales", {})
+    customers = snapshot.get("customers", {})
+    buckets = sales.get("buckets", {})
+    alerts = []
+
+    disk_percent = _safe_float(system.get("disk_percent", 0))
+    if disk_percent >= 95:
+        alerts.append(f"🔴 Disk critical: {disk_percent}% used")
+    elif disk_percent >= 85:
+        alerts.append(f"🟡 Disk high: {disk_percent}% used")
+
+    if vpn.get("configured", 0) and vpn.get("healthy", 0) == 0:
+        alerts.append("🔴 No healthy enabled VPN userlist is available")
+    elif vpn.get("unhealthy", 0):
+        alerts.append(f"🟡 Unhealthy VPN servers: {vpn.get('unhealthy', 0)}")
+    if vpn.get("error"):
+        alerts.append(f"🟡 VPN check error: {vpn.get('error')}")
+
+    if online.get("status") not in (None, "ok"):
+        alerts.append(f"🟡 Online users unavailable: {online.get('status')} ({online.get('error')})")
+
+    pending = buckets.get("all", {}).get("pending", 0)
+    if pending:
+        alerts.append(f"🟡 Pending payments: {pending}")
+    if traffic.get("missing_configs"):
+        alerts.append(f"🟡 Missing sold configs: {traffic.get('missing_configs')}")
+    if traffic.get("unavailable_servers"):
+        alerts.append(f"🟡 Servers unavailable for traffic matching: {traffic.get('unavailable_servers')}")
+    if customers.get("paid_orders_without_user_id"):
+        alerts.append(f"🟡 Paid orders without user ID: {customers.get('paid_orders_without_user_id')}")
+
+    return alerts
+
+
+def _format_business_section(snapshot: dict) -> list[str]:
+    sales = snapshot.get("sales", {})
+    buckets = sales.get("buckets", {})
+    referrals = snapshot.get("referrals", {})
+    output = ["💰 **Business**"]
+    output.append(f"Today: {_format_orders(buckets.get('today', _empty_order_bucket()))}")
+    output.append(f"This Month: {_format_orders(buckets.get('month', _empty_order_bucket()))}")
+    output.append(f"Last 30 Days: {_format_orders(buckets.get('last30', _empty_order_bucket()))}")
+    output.append(f"All Time: {_format_orders(buckets.get('all', _empty_order_bucket()))}")
+    output.append(f"AOV: ${sales.get('aov', {}).get('all', 0):,.2f} all • ${sales.get('aov', {}).get('last30', 0):,.2f} 30d")
+    pending = buckets.get('all', {}).get('pending', 0)
+    if pending:
+        output.append(f"⚠️ Pending Payments: {pending}")
+    output.append(f"Referral Rewards: ${referrals.get('total_rewards', 0):,.2f}")
+    all_revenue = buckets.get('all', {}).get('revenue', 0)
+    if all_revenue > 0:
+        output.append(f"Referral Share: {(referrals.get('total_rewards', 0) / all_revenue) * 100:.1f}%")
+
+    output.append("")
+    output.append("📆 **Last 7 Days Sales**")
+    for day in sales.get("daily_sales", []):
+        output.append(f"{day['label']}: ${day['revenue']:,.2f} • {day['paid']} paid")
+
+    if sales.get("top_plans_revenue") or sales.get("top_plans_orders"):
+        output.append("")
+        output.append("🏷️ **Top Plans**")
+        if sales.get("top_plans_revenue"):
+            revenue_parts = [f"{plan}: ${amount:,.2f}" for plan, amount in sales.get("top_plans_revenue", [])]
+            output.append("Revenue: " + " • ".join(revenue_parts))
+        if sales.get("top_plans_orders"):
+            order_parts = [f"{plan}: {count}" for plan, count in sales.get("top_plans_orders", [])]
+            output.append("Orders: " + " • ".join(order_parts))
+    return output
+
+
+def _format_customers_section(snapshot: dict) -> list[str]:
+    customers = snapshot.get("customers", {})
+    traffic = snapshot.get("traffic", {})
+    languages = snapshot.get("languages", {})
+    direct_traffic = traffic.get("direct", {})
+    reseller_traffic = traffic.get("reseller", {})
+    output = ["📈 **Customers**"]
+    output.append(f"New Paying Customers: {customers.get('new_today', 0)} today • {customers.get('new_7d', 0)} 7d • {customers.get('new_30d', 0)} 30d")
+    output.append(f"Active Paying Customers 30d: {customers.get('active_30d', 0)}")
+    output.append(f"Returning Customers 30d: {customers.get('returning_30d', 0)}")
+    output.append(f"All-Time Paying Customers: {customers.get('all_time_paying_customers', 0)}")
+    output.append(f"Regular Paid Orders: {customers.get('regular_paid_orders', 0)}")
+    if customers.get("paid_orders_without_user_id"):
+        output.append(f"Paid Orders Without User ID: {customers.get('paid_orders_without_user_id')}")
+    output.append("")
+    output.append("👥 **Segments**")
+    output.append(f"Direct Sold Configs: {direct_traffic.get('sold_configs', 0)} sold • {direct_traffic.get('matched_configs', 0)} live")
+    output.append(f"Reseller Sold Configs: {reseller_traffic.get('sold_configs', 0)} sold • {reseller_traffic.get('matched_configs', 0)} live")
+    output.append("")
+    output.append("🌐 **Languages**")
+    if languages.get("languages"):
+        for lang in languages["languages"][:5]:
+            output.append(f"{lang['name']}: {lang['percent']:.1f}% ({lang['count']})")
+    else:
+        output.append("No language data available.")
+    return output
+
+
+def _format_tech_section(snapshot: dict) -> list[str]:
+    system = snapshot.get("system", {})
+    online = snapshot.get("online", {})
+    vpn = snapshot.get("vpn", {})
+    output = ["🖥️ **Tech**"]
+    output.append(f"CPU: {system.get('cpu_percent', 0)}%")
+    output.append(f"RAM: {system.get('ram_percent', 0)}% ({system.get('ram_used_mb', 0)}MB/{system.get('ram_total_mb', 0)}MB)")
+    output.append(f"Disk: {system.get('disk_percent', 0)}% ({system.get('disk_used_gb', 0)}GB/{system.get('disk_total_gb', 0)}GB)")
+    output.append(f"Online Users: {_online_text(online)}")
+    if online.get("status") not in (None, "ok"):
+        output.append(f"Online Check: {online.get('status')} ({online.get('error')})")
+    output.append("")
+    output.append("⚖️ **VPN**")
+    output.append(
+        f"Servers: {vpn.get('configured', 0)} configured • {vpn.get('enabled', 0)} enabled • "
+        f"{vpn.get('healthy', 0)} healthy • {vpn.get('unhealthy', 0)} unhealthy"
+    )
+    output.append(f"Active Configs: {vpn.get('active_configs', 0)}")
+    for server in _notable_servers(vpn):
+        health = "healthy" if server.get("healthy") else "unhealthy"
+        load_ratio = server.get("load_ratio")
+        load_text = f"{load_ratio:.2f}" if load_ratio is not None else "N/A"
+        output.append(f"- {server.get('name')}: {health} • active {server.get('active_count', 'N/A')} • load {load_text}")
+    if vpn.get("error"):
+        output.append(f"VPN Check: error ({vpn.get('error')})")
+    return output
+
+
+def _format_traffic_section(snapshot: dict) -> list[str]:
+    traffic = snapshot.get("traffic", {})
+    total_traffic = traffic.get("total", {})
+    direct_traffic = traffic.get("direct", {})
+    reseller_traffic = traffic.get("reseller", {})
+    output = ["🚦 **Traffic**"]
+    output.append(
+        f"Total Sold: {_format_bytes(total_traffic.get('used_bytes', 0))} served / "
+        f"{_format_bytes(total_traffic.get('sold_bytes', 0))} sold{_traffic_usage_text(total_traffic)}"
+    )
+    output.append(
+        f"Direct: {_format_bytes(direct_traffic.get('used_bytes', 0))} / "
+        f"{_format_bytes(direct_traffic.get('sold_bytes', 0))} • "
+        f"{direct_traffic.get('matched_configs', 0)} configs"
+    )
+    output.append(
+        f"Reseller: {_format_bytes(reseller_traffic.get('used_bytes', 0))} / "
+        f"{_format_bytes(reseller_traffic.get('sold_bytes', 0))} • "
+        f"{reseller_traffic.get('matched_configs', 0)} configs"
+    )
+    if traffic.get("missing_configs"):
+        output.append(f"Missing Sold Configs: {traffic.get('missing_configs')}")
+    if traffic.get("skipped_no_username"):
+        output.append(f"Sold Records Without Username: {traffic.get('skipped_no_username')}")
+    if traffic.get("unavailable_servers"):
+        output.append(f"Unavailable Servers For Traffic: {traffic.get('unavailable_servers')}")
+    return output
+
+
+def _format_alerts_section(snapshot: dict) -> list[str]:
+    output = ["⚠️ **Alerts**"]
+    alerts = _build_server_info_alerts(snapshot)
+    if alerts:
+        output.extend(alerts)
+    else:
+        output.append("No active alerts.")
+    return output
+
+
+def _format_overview_section(snapshot: dict) -> list[str]:
+    sales = snapshot.get("sales", {})
+    buckets = sales.get("buckets", {})
+    customers = snapshot.get("customers", {})
+    online = snapshot.get("online", {})
+    vpn = snapshot.get("vpn", {})
+    alerts = _build_server_info_alerts(snapshot)
+    today_bucket = buckets.get("today", _empty_order_bucket())
+    last30_bucket = buckets.get("last30", _empty_order_bucket())
+    output = ["📌 **Overview**"]
+    output.append(f"Status: {_dashboard_status(snapshot)}")
+    output.append(f"Today Revenue: ${today_bucket.get('revenue', 0):,.2f} • {today_bucket.get('paid', 0)} paid")
+    output.append(f"30d Revenue: ${last30_bucket.get('revenue', 0):,.2f} • {last30_bucket.get('paid', 0)} paid")
+    output.append(f"Online Users: {_online_text(online)}")
+    output.append(f"Active Configs: {vpn.get('active_configs', 0)}")
+    output.append(f"New Customers: {customers.get('new_today', 0)} today • {customers.get('new_7d', 0)} 7d • {customers.get('new_30d', 0)} 30d")
+    output.append(f"Returning Customers 30d: {customers.get('returning_30d', 0)}")
+    output.append(f"Top Alert: {alerts[0] if alerts else 'No active alerts.'}")
+    return output
+
+
+def format_server_info_section(snapshot: dict, section: str = "overview") -> str:
+    normalized = str(section or "overview").lower()
+    if normalized not in SERVER_INFO_SECTIONS:
+        normalized = "overview"
+    if normalized == "full":
+        return format_server_info(snapshot)
+
+    formatters = {
+        "overview": _format_overview_section,
+        "business": _format_business_section,
+        "customers": _format_customers_section,
+        "tech": _format_tech_section,
+        "traffic": _format_traffic_section,
+        "alerts": _format_alerts_section,
+    }
+    output = formatters[normalized](snapshot)
+    generated_at = snapshot.get("generated_at")
+    if isinstance(generated_at, datetime):
+        output.append("")
+        output.append(f"Updated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    return "\n".join(output)
+
+
 def format_server_info(snapshot: dict) -> str:
     '''Formats a server information snapshot for Telegram/CLI output.'''
     system = snapshot.get("system", {})
@@ -636,12 +920,11 @@ def format_server_info(snapshot: dict) -> str:
     referrals = snapshot.get("referrals", {})
     languages = snapshot.get("languages", {})
 
-    online_text = str(online.get("count")) if online.get("count") is not None else "N/A"
+    online_text = _online_text(online)
     total_traffic = traffic.get("total", {})
     direct_traffic = traffic.get("direct", {})
     reseller_traffic = traffic.get("reseller", {})
-    usage_percent = total_traffic.get("usage_percent")
-    usage_text = f" ({usage_percent:.1f}%)" if usage_percent is not None else ""
+    usage_text = _traffic_usage_text(total_traffic)
 
     output = []
     output.append("📊 **Server Info**")
@@ -660,11 +943,7 @@ def format_server_info(snapshot: dict) -> str:
         f"{vpn.get('healthy', 0)} healthy • {vpn.get('unhealthy', 0)} unhealthy"
     )
     output.append(f"Active Configs: {vpn.get('active_configs', 0)}")
-    notable_servers = sorted(
-        vpn.get("servers", []),
-        key=lambda item: (item.get("healthy", True), -(item.get("load_ratio") or 0)),
-    )[:3]
-    for server in notable_servers:
+    for server in _notable_servers(vpn):
         health = "healthy" if server.get("healthy") else "unhealthy"
         load_ratio = server.get("load_ratio")
         load_text = f"{load_ratio:.2f}" if load_ratio is not None else "N/A"
@@ -733,10 +1012,13 @@ def format_server_info(snapshot: dict) -> str:
     return "\n".join(output)
 
 
-def server_info() -> str | None:
+def server_info(section: str = "full") -> str | None:
     '''Retrieves server information.'''
     try:
-        return format_server_info(build_server_info_snapshot())
+        snapshot = build_server_info_snapshot()
+        if str(section or "full").lower() == "full":
+            return format_server_info(snapshot)
+        return format_server_info_section(snapshot, section)
     except Exception as e:
         return f"Error generating server info: {str(e)}"
 

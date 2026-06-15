@@ -192,6 +192,56 @@ class ServerInfoDashboardTests(unittest.TestCase):
         self.assertIn("Missing Sold Configs: 2", text)
         self.assertNotIn("200.00GB", text)
 
+    def test_customer_growth_counts_unique_regular_paid_customers(self):
+        payments = {
+            "old-first": {"status": "completed", "price": 10, "updated_at": "2026-05-01", "plan_gb": 10, "user_id": 1},
+            "returning": {"status": "completed", "price": 10, "updated_at": "2026-06-04", "plan_gb": 10, "user_id": "1"},
+            "new-today": {"status": "paid", "price": 20, "updated_at": "2026-06-04", "plan_gb": 20, "user_id": 2},
+            "new-7d": {"status": "succeeded", "price": 30, "updated_at": "2026-06-01", "plan_gb": 30, "user_id": 3},
+            "new-30d": {"status": "success", "price": 40, "updated_at": "2026-05-20", "plan_gb": 40, "user_id": 4},
+            "repeat-window-first": {"status": "completed", "price": 10, "updated_at": "2026-05-25", "plan_gb": 10, "user_id": 7},
+            "repeat-window-second": {"status": "completed", "price": 10, "updated_at": "2026-06-02", "plan_gb": 10, "user_id": 7},
+            "pending": {"status": "pending", "price": 50, "updated_at": "2026-06-04", "plan_gb": 50, "user_id": 5},
+            "settlement": {"status": "completed", "price": 60, "updated_at": "2026-06-04", "plan_gb": "Settlement", "type": "settlement", "user_id": 6},
+            "missing-user": {"status": "completed", "price": 70, "updated_at": "2026-06-03", "plan_gb": 70},
+        }
+        cli_api = load_cli_api(payments=payments)
+
+        snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
+        customers = snapshot["customers"]
+        customer_text = cli_api.format_server_info_section(snapshot, "customers")
+        overview_text = cli_api.format_server_info_section(snapshot, "overview")
+
+        self.assertEqual(customers["all_time_paying_customers"], 5)
+        self.assertEqual(customers["regular_paid_orders"], 8)
+        self.assertEqual(customers["paid_orders_without_user_id"], 1)
+        self.assertEqual(customers["new_today"], 1)
+        self.assertEqual(customers["new_7d"], 2)
+        self.assertEqual(customers["new_30d"], 4)
+        self.assertEqual(customers["active_30d"], 5)
+        self.assertEqual(customers["returning_30d"], 2)
+        self.assertIn("New Paying Customers: 1 today • 2 7d • 4 30d", customer_text)
+        self.assertIn("Returning Customers 30d: 2", customer_text)
+        self.assertIn("Paid Orders Without User ID: 1", customer_text)
+        self.assertIn("New Customers: 1 today • 2 7d • 4 30d", overview_text)
+
+    def test_section_formatters_render_category_specific_reports(self):
+        payments = {
+            "today-paid": {"status": "completed", "price": 10, "updated_at": "2026-06-04", "plan_gb": 10, "user_id": 1, "username": "a"},
+            "pending": {"status": "pending", "price": 99, "updated_at": "2026-06-04", "plan_gb": 10, "user_id": 2},
+        }
+        cli_api = load_cli_api(payments=payments)
+        snapshot = cli_api.build_server_info_snapshot(now=datetime(2026, 6, 4, 12, 0, 0))
+
+        self.assertIn("📌 **Overview**", cli_api.format_server_info_section(snapshot, "overview"))
+        self.assertIn("💰 **Business**", cli_api.format_server_info_section(snapshot, "business"))
+        self.assertIn("📈 **Customers**", cli_api.format_server_info_section(snapshot, "customers"))
+        self.assertIn("🖥️ **Tech**", cli_api.format_server_info_section(snapshot, "tech"))
+        self.assertIn("🚦 **Traffic**", cli_api.format_server_info_section(snapshot, "traffic"))
+        self.assertIn("⚠️ **Alerts**", cli_api.format_server_info_section(snapshot, "alerts"))
+        self.assertIn("📊 **Server Info**", cli_api.format_server_info_section(snapshot, "full"))
+        self.assertIn("Pending payments: 1", cli_api.format_server_info_section(snapshot, "alerts"))
+
     def test_online_payload_parser_supports_nested_shapes(self):
         cli_api = load_cli_api()
 
@@ -330,7 +380,17 @@ def load_serverinfo_module():
     command_stub.bot = bot
     command_stub.CLI_PATH = "/fake/cli.py"
     command_stub.is_admin = lambda user_id: user_id == 1
-    command_stub.run_cli_command = lambda command: "dashboard text"
+    command_stub.commands = []
+
+    def run_cli_command(command):
+        command_stub.commands.append(command)
+        if "--section customers" in command:
+            return "customers dashboard text"
+        if "--section traffic" in command:
+            return "traffic dashboard text"
+        return "overview dashboard text"
+
+    command_stub.run_cli_command = run_cli_command
     sys.modules["utils.command"] = command_stub
 
     spec = importlib.util.spec_from_file_location("serverinfo_under_test", SERVERINFO_PATH)
@@ -341,38 +401,62 @@ def load_serverinfo_module():
 
 
 class ServerInfoTelegramTests(unittest.TestCase):
-    def test_server_info_reply_includes_refresh_markup(self):
+    def test_server_info_reply_includes_category_markup(self):
         module, bot = load_serverinfo_module()
         message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
 
         module.server_info(message)
 
-        self.assertEqual(bot.replies[0][0][1], "dashboard text")
+        self.assertEqual(bot.replies[0][0][1], "overview dashboard text")
         markup = bot.replies[0][1]["reply_markup"]
-        self.assertEqual(markup.buttons[0].callback_data, "server_info:refresh")
+        callbacks = [button.callback_data for button in markup.buttons]
+        self.assertIn("server_info:view:overview", callbacks)
+        self.assertIn("server_info:view:business", callbacks)
+        self.assertIn("server_info:view:customers", callbacks)
+        self.assertIn("server_info:view:tech", callbacks)
+        self.assertIn("server_info:view:traffic", callbacks)
+        self.assertIn("server_info:view:alerts", callbacks)
+        self.assertIn("server_info:refresh:overview", callbacks)
 
-    def test_refresh_edits_existing_message_and_blocks_unauthorized_users(self):
+    def test_category_callbacks_and_refresh_edit_existing_message(self):
         module, bot = load_serverinfo_module()
         call = types.SimpleNamespace(
             id="ok",
-            data="server_info:refresh",
+            data="server_info:view:customers",
             from_user=types.SimpleNamespace(id=1),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
         )
 
-        module.handle_server_info_refresh(call)
+        module.handle_server_info_callback(call)
 
-        self.assertEqual(bot.edits[0][0][0], "dashboard text")
+        self.assertEqual(bot.edits[0][0][0], "customers dashboard text")
         self.assertEqual(bot.edits[0][1]["chat_id"], 10)
         self.assertEqual(bot.edits[0][1]["message_id"], 77)
+        callbacks = [button.callback_data for button in bot.edits[0][1]["reply_markup"].buttons]
+        self.assertIn("server_info:refresh:customers", callbacks)
+
+        refresh_call = types.SimpleNamespace(
+            id="refresh",
+            data="server_info:refresh:traffic",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
+        )
+        module.handle_server_info_callback(refresh_call)
+
+        self.assertEqual(bot.edits[1][0][0], "traffic dashboard text")
+        callbacks = [button.callback_data for button in bot.edits[1][1]["reply_markup"].buttons]
+        self.assertIn("server_info:refresh:traffic", callbacks)
+
+    def test_server_info_callback_blocks_unauthorized_users(self):
+        module, bot = load_serverinfo_module()
 
         blocked_call = types.SimpleNamespace(
             id="blocked",
-            data="server_info:refresh",
+            data="server_info:refresh:overview",
             from_user=types.SimpleNamespace(id=2),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
         )
-        module.handle_server_info_refresh(blocked_call)
+        module.handle_server_info_callback(blocked_call)
 
         self.assertEqual(bot.answers[-1][0][1], "Unauthorized.")
 
