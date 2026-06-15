@@ -7,11 +7,13 @@ from utils.receipt_checker import (
     RECEIPT_TYPE_SETTLEMENT,
     add_checker_settlement,
     build_receipt_checker_stats,
+    calculate_checker_share_amount_toman,
     get_checker_settlements,
     get_receipt_checker_types,
     get_receipt_checker_user_id,
     get_receipt_checker_share_percent,
     get_receipt_type_label,
+    normalize_toman_amount,
     normalize_receipt_types,
     parse_receipt_checker_share_percent,
 )
@@ -395,13 +397,14 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
     checker_types = stats.get('checker_types') or []
     type_label = ", ".join(get_receipt_type_label(t) for t in checker_types) if checker_types else "None"
     checker_label = checker_id if checker_id is not None else "Not configured"
+    share_percent_label = _format_share_percent(stats.get('share_percent'))
     text = f"{title}\n\n"
 
     if not include_checker_details:
         text += (
             f"Paid (30 days): {_format_toman(stats.get('paid_last_30_days'))} T\n"
             f"Open Account: {_format_toman(stats.get('open_account_total'))} T\n"
-            f"Balance ({_format_share_percent(stats.get('share_percent'))}%): {_format_toman(stats.get('unpaid_total'))} T\n\n"
+            f"Balance ({share_percent_label}%): {_format_toman(stats.get('unpaid_total'))} T\n\n"
         )
     else:
         text += (
@@ -410,6 +413,16 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
             f"Share: {stats.get('share_percent', 0):.2f}%\n\n"
         )
 
+        text += (
+            "Financial Summary\n"
+            f"Open Account Base: {_format_toman(stats.get('open_account_total'))} Tomans\n"
+            f"Checker Balance ({share_percent_label}%): {_format_toman(stats.get('unpaid_total'))} Tomans\n"
+            f"Paid to Checker: {_format_toman(stats.get('paid_total'))} Tomans\n"
+            f"Paid Last 30 Days: {_format_toman(stats.get('paid_last_30_days'))} Tomans\n"
+            f"Approved Total: {_format_toman(stats.get('approved_total'))} Tomans\n\n"
+        )
+
+        text += "Receipt Types\n"
         for receipt_type in (RECEIPT_TYPE_REGULAR, RECEIPT_TYPE_SETTLEMENT):
             item = stats['types'][receipt_type]
             text += (
@@ -420,17 +433,9 @@ def _format_checker_stats_text(stats, title="📊 Receipt Checker Stats", includ
                 f"Checker Share: {_format_toman(item['checker_owed_total'])} Tomans\n\n"
             )
 
-        text += (
-            "Settlement\n"
-            f"Approved Total: {_format_toman(stats.get('approved_total'))} Tomans\n"
-        )
-        text += (
-            f"Checker Owed: {_format_toman(stats.get('owed_total'))} Tomans\n"
-            f"Paid to Checker: {_format_toman(stats.get('paid_total'))} Tomans\n"
-            f"Unpaid Balance: {_format_toman(stats.get('unpaid_total'))} Tomans\n"
-        )
         if stats.get('approved_total_usd') or stats.get('owed_total_usd') or stats.get('paid_total_usd'):
             text += (
+                "Legacy USD\n"
                 f"Legacy USD Approved: ${_format_usd(stats.get('approved_total_usd'))}\n"
                 f"Legacy USD Owed: ${_format_usd(stats.get('owed_total_usd'))}\n"
                 f"Legacy USD Paid: ${_format_usd(stats.get('paid_total_usd'))}\n"
@@ -519,9 +524,16 @@ def handle_checker_settlement_callback(call):
         text = "📜 Checker Settlement History\n\n"
         for item in settlements[-10:][::-1]:
             amount_toman = item.get('amount_toman')
+            open_account_amount_toman = item.get('open_account_amount_toman')
             unpaid_after_toman = item.get('unpaid_after_toman')
             if amount_toman is not None:
-                amount_line = f"Amount: {_format_toman(amount_toman)} Tomans\n"
+                if open_account_amount_toman is not None:
+                    amount_line = (
+                        f"Open Account Base: {_format_toman(open_account_amount_toman)} Tomans\n"
+                        f"Checker Payout: {_format_toman(amount_toman)} Tomans\n"
+                    )
+                else:
+                    amount_line = f"Checker Payout: {_format_toman(amount_toman)} Tomans\n"
             else:
                 amount_line = f"Amount: ${_format_usd(item.get('amount'))} (legacy USD)\n"
             if unpaid_after_toman is not None:
@@ -540,37 +552,55 @@ def handle_checker_settlement_callback(call):
 
     if action == 'start':
         unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
+        open_account_total = float(stats.get('open_account_total', 0.0) or 0.0)
         if unpaid_total <= 0:
             bot.answer_callback_query(call.id, text="No unpaid checker balance.")
             return
+        if open_account_total <= 0:
+            bot.answer_callback_query(call.id, text="No open account base available.")
+            return
         CHECKER_SETTLEMENT_INPUT_STATE[call.from_user.id] = {
-            'state': 'waiting_amount',
+            'state': 'waiting_open_account_amount',
             'checker_id': stats.get('checker_id'),
             'unpaid_total': unpaid_total,
+            'open_account_total': open_account_total,
         }
         bot.send_message(
             call.message.chat.id,
-            f"Enter checker payout amount up to {_format_toman(unpaid_total)} Tomans:",
+            f"Enter Open Account base amount up to {_format_toman(open_account_total)} Tomans:",
             reply_markup=create_cancel_markup()
         )
         return
 
     if action.startswith('confirm:'):
-        raw_amount = action.split(':', 1)[1]
-        amount = _parse_toman_amount(raw_amount)
-        if amount is None:
-            bot.answer_callback_query(call.id, text="Invalid amount.")
+        raw_base_amount = action.split(':', 1)[1]
+        base_amount = _parse_toman_amount(raw_base_amount)
+        if base_amount is None:
+            bot.answer_callback_query(call.id, text="Invalid Open Account amount.")
             return
+        base_amount = normalize_toman_amount(base_amount)
         unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
-        if amount <= 0 or amount > unpaid_total:
-            bot.answer_callback_query(call.id, text="Amount is outside the unpaid balance.")
+        open_account_total = float(stats.get('open_account_total', 0.0) or 0.0)
+        if base_amount <= 0 or base_amount > open_account_total:
+            bot.answer_callback_query(call.id, text="Open Account amount is outside the available base.")
             return
-        checkpoint = add_checker_settlement(amount, call.from_user.id, stats, checker_id=stats.get('checker_id'))
+        payout_amount = calculate_checker_share_amount_toman(base_amount, stats.get('share_percent'))
+        if payout_amount <= 0 or payout_amount > unpaid_total:
+            bot.answer_callback_query(call.id, text="Calculated checker payout is outside the unpaid balance.")
+            return
+        checkpoint = add_checker_settlement(
+            payout_amount,
+            call.from_user.id,
+            stats,
+            checker_id=stats.get('checker_id'),
+            open_account_amount=base_amount,
+        )
         CHECKER_SETTLEMENT_INPUT_STATE.pop(call.from_user.id, None)
         bot.edit_message_text(
             (
                 "✅ Checker settlement checkpoint saved.\n\n"
-                f"Amount: {_format_toman(checkpoint.get('amount_toman'))} Tomans\n"
+                f"Open Account Base: {_format_toman(checkpoint.get('open_account_amount_toman'))} Tomans\n"
+                f"Checker Payout: {_format_toman(checkpoint.get('amount_toman'))} Tomans\n"
                 f"Unpaid Before: {_format_toman(checkpoint.get('unpaid_before_toman'))} Tomans\n"
                 f"Unpaid After: {_format_toman(checkpoint.get('unpaid_after_toman'))} Tomans\n"
                 f"Checkpoint ID: {checkpoint.get('id')}"
@@ -580,39 +610,50 @@ def handle_checker_settlement_callback(call):
         )
 
 
-@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and CHECKER_SETTLEMENT_INPUT_STATE.get(message.from_user.id, {}).get('state') == 'waiting_amount')
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and CHECKER_SETTLEMENT_INPUT_STATE.get(message.from_user.id, {}).get('state') == 'waiting_open_account_amount')
 def process_checker_settlement_amount(message):
     if message.text == "❌ Cancel":
         CHECKER_SETTLEMENT_INPUT_STATE.pop(message.from_user.id, None)
         bot.reply_to(message, "Operation canceled.", reply_markup=create_main_markup(is_admin=True))
         return
 
-    amount = _parse_toman_amount(message.text)
-    if amount is None:
-        bot.reply_to(message, "Invalid amount. Please enter a numeric payout amount:", reply_markup=create_cancel_markup())
+    base_amount = _parse_toman_amount(message.text)
+    if base_amount is None:
+        bot.reply_to(message, "Invalid amount. Please enter a numeric Open Account base amount:", reply_markup=create_cancel_markup())
         return
+    base_amount = normalize_toman_amount(base_amount)
 
     stats = build_receipt_checker_stats(load_payments())
     unpaid_total = float(stats.get('unpaid_total', 0.0) or 0.0)
-    if amount <= 0 or amount > unpaid_total:
+    open_account_total = float(stats.get('open_account_total', 0.0) or 0.0)
+    if base_amount <= 0 or base_amount > open_account_total:
         bot.reply_to(
             message,
-            f"Amount must be greater than 0 and no more than {_format_toman(unpaid_total)} Tomans.",
+            f"Open Account base must be greater than 0 and no more than {_format_toman(open_account_total)} Tomans.",
+            reply_markup=create_cancel_markup()
+        )
+        return
+    payout_amount = calculate_checker_share_amount_toman(base_amount, stats.get('share_percent'))
+    if payout_amount <= 0 or payout_amount > unpaid_total:
+        bot.reply_to(
+            message,
+            "Calculated checker payout must be greater than 0 and no more than the current checker balance.",
             reply_markup=create_cancel_markup()
         )
         return
 
-    unpaid_after = max(0.0, unpaid_total - amount)
+    unpaid_after = max(0.0, unpaid_total - payout_amount)
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("✅ Confirm", callback_data=f"checker_settlement:confirm:{amount:.0f}"),
+        types.InlineKeyboardButton("✅ Confirm", callback_data=f"checker_settlement:confirm:{base_amount:.0f}"),
         types.InlineKeyboardButton("❌ Cancel", callback_data="checker_settlement:cancel"),
     )
     bot.reply_to(
         message,
         (
             "Confirm checker settlement checkpoint:\n\n"
-            f"Amount: {_format_toman(amount)} Tomans\n"
+            f"Open Account Base: {_format_toman(base_amount)} Tomans\n"
+            f"Checker Payout ({_format_share_percent(stats.get('share_percent'))}%): {_format_toman(payout_amount)} Tomans\n"
             f"Approved Total Snapshot: {_format_toman(stats.get('approved_total'))} Tomans\n"
             f"Unpaid Before: {_format_toman(unpaid_total)} Tomans\n"
             f"Unpaid After: {_format_toman(unpaid_after)} Tomans"

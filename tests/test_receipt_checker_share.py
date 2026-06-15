@@ -175,6 +175,27 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         self.assertEqual(checkpoint["unpaid_after_toman"], 70000.0)
         self.assertEqual(len(settlements), 1)
 
+    def test_add_checker_settlement_can_store_open_account_base(self):
+        snapshot = {
+            "share_percent": 10.0,
+            "approved_total": 2000000.0,
+            "owed_total": 200000.0,
+            "paid_total": 50000.0,
+            "unpaid_total": 150000.0,
+        }
+
+        checkpoint = self.module.add_checker_settlement(
+            80000,
+            123,
+            snapshot,
+            checker_id=42,
+            open_account_amount=800000,
+        )
+
+        self.assertEqual(checkpoint["open_account_amount_toman"], 800000.0)
+        self.assertEqual(checkpoint["amount_toman"], 80000.0)
+        self.assertEqual(checkpoint["unpaid_after_toman"], 70000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -165,7 +165,7 @@ def save_checker_settlements(settlements):
             json.dump(settlements, f, indent=4)
 
 
-def add_checker_settlement(amount, admin_user_id, stats_snapshot, checker_id=None):
+def add_checker_settlement(amount, admin_user_id, stats_snapshot, checker_id=None, open_account_amount=None):
     amount_value = normalize_toman_amount(amount)
     checker_id = checker_id if checker_id is not None else get_receipt_checker_user_id()
     checkpoint = {
@@ -182,6 +182,8 @@ def add_checker_settlement(amount, admin_user_id, stats_snapshot, checker_id=Non
         'unpaid_before_toman': normalize_toman_amount(stats_snapshot.get('unpaid_total', 0.0)),
         'unpaid_after_toman': max(0.0, normalize_toman_amount(stats_snapshot.get('unpaid_total', 0.0)) - amount_value),
     }
+    if open_account_amount is not None:
+        checkpoint['open_account_amount_toman'] = normalize_toman_amount(open_account_amount)
     with checker_settlement_lock:
         settlements = load_checker_settlements()
         settlements.append(checkpoint)
