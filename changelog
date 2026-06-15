@@ -1,3 +1,8 @@
+## v1.15.9
+✨ Cache Telegram bot server-info snapshots and render sections through the shared CLI API formatter
+⚡ Reuse recent server-info snapshots during refreshes to avoid repeated heavy server scans
+✅ Add tests for server-info cache reuse and forced refresh behavior
+
 ## v1.15.8
 ✨ Add server-info section handling with customer growth statistics in the CLI and Telegram bot dashboard
 ⚡ Reuse cached user snapshots in My Configs responses and show cache timing notices
