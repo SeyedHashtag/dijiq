@@ -307,6 +307,7 @@ class MultiServerAPI:
 
     _creation_cache_lock = threading.RLock()
     _creation_cache = None
+    _user_snapshot_cache = {}
 
     def __init__(self):
         self.servers = get_server_configs()
@@ -369,6 +370,40 @@ class MultiServerAPI:
 
         return results
 
+    def _build_user_snapshot(self, include_disabled: bool = False) -> dict:
+        return {
+            "created_at": time.monotonic(),
+            "signature": (bool(include_disabled), self._servers_signature(self.servers)),
+            "include_disabled": bool(include_disabled),
+            "entries": self._fetch_users_for_servers(include_disabled=include_disabled),
+        }
+
+    def _get_user_snapshot(self, include_disabled: bool = False, force_refresh: bool = False) -> dict:
+        signature = (bool(include_disabled), self._servers_signature(self.servers))
+        ttl = self._creation_cache_ttl_seconds()
+        now = time.monotonic()
+
+        with self._creation_cache_lock:
+            cached = self.__class__._user_snapshot_cache.get(bool(include_disabled))
+            if (
+                not force_refresh
+                and cached is not None
+                and cached.get("signature") == signature
+                and ttl > 0
+                and now - cached.get("created_at", 0) < ttl
+            ):
+                self.last_user_snapshot_cache_hit = True
+                return cached
+
+            snapshot = self._build_user_snapshot(include_disabled=include_disabled)
+            self.__class__._user_snapshot_cache[bool(include_disabled)] = snapshot
+            self.last_user_snapshot_cache_hit = False
+            return snapshot
+
+    def invalidate_user_snapshot_cache(self):
+        with self._creation_cache_lock:
+            self.__class__._user_snapshot_cache = {}
+
     @staticmethod
     def active_user_count(users) -> int:
         count = 0
@@ -416,11 +451,11 @@ class MultiServerAPI:
             for server in servers
         )
 
-    def _build_creation_snapshot(self) -> dict:
+    def _build_creation_snapshot(self, force_refresh: bool = False) -> dict:
         usernames = set()
         server_states = []
 
-        for entry in self._fetch_users_for_servers(include_disabled=False):
+        for entry in self._get_user_snapshot(include_disabled=False, force_refresh=force_refresh).get("entries", []):
             server = entry["server"]
             client = entry["client"]
             users = entry["users"]
@@ -462,13 +497,14 @@ class MultiServerAPI:
             ):
                 return cached
 
-            snapshot = self._build_creation_snapshot()
+            snapshot = self._build_creation_snapshot(force_refresh=force_refresh)
             self.__class__._creation_cache = snapshot
             return snapshot
 
     def invalidate_creation_cache(self):
         with self._creation_cache_lock:
             self.__class__._creation_cache = None
+            self.__class__._user_snapshot_cache = {}
 
     def prepare_new_user_creation(self, force_refresh: bool = False) -> dict:
         snapshot = self._get_creation_snapshot(force_refresh=force_refresh)
@@ -493,6 +529,7 @@ class MultiServerAPI:
         if not username:
             return
         with self._creation_cache_lock:
+            self.__class__._user_snapshot_cache = {}
             cached = self.__class__._creation_cache
             if cached is None:
                 return
@@ -557,7 +594,7 @@ class MultiServerAPI:
 
     def get_all_usernames(self) -> set[str]:
         usernames = set()
-        for entry in self._fetch_users_for_servers(include_disabled=True):
+        for entry in self._get_user_snapshot(include_disabled=True).get("entries", []):
             users = entry["users"]
             if users is not None:
                 usernames.update(self.extract_usernames(users))
@@ -578,8 +615,8 @@ class MultiServerAPI:
                 return client, user
         return None, None
 
-    def iter_all_users(self, include_disabled: bool = True):
-        for entry in self._fetch_users_for_servers(include_disabled=include_disabled):
+    def iter_all_users(self, include_disabled: bool = True, force_refresh: bool = False):
+        for entry in self._get_user_snapshot(include_disabled=include_disabled, force_refresh=force_refresh).get("entries", []):
             client = entry["client"]
             users = entry["users"]
             if users is None:

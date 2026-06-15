@@ -4,6 +4,7 @@ import json
 import os
 import requests
 import re
+import time
 from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
@@ -19,6 +20,7 @@ from utils.language import get_user_language
 def my_configs(message):
     """Handle the My Configs button click"""
     user_id = message.from_user.id
+    started_at = time.monotonic()
     bot.send_chat_action(message.chat.id, 'typing')
     
     multi_api = MultiServerAPI()
@@ -41,14 +43,22 @@ def my_configs(message):
             re.compile(rf"^test{user_id}t"),
         )
 
-        for api_client, username, config_data in multi_api.iter_all_users():
+        paid_configs = []
+        test_configs = []
+        for api_client, username, config_data in multi_api.iter_all_users(include_disabled=False):
             if username and any(pattern.match(username) for pattern in paid_patterns):
-                user_configs.append((username, config_data, api_client))
+                paid_configs.append((username, config_data, api_client))
+            elif username and any(pattern.match(username) for pattern in test_patterns):
+                test_configs.append((username, config_data, api_client))
 
-        if not user_configs:
-            for api_client, username, config_data in multi_api.iter_all_users():
-                if username and any(pattern.match(username) for pattern in test_patterns):
-                    user_configs.append((username, config_data, api_client))
+        user_configs = paid_configs or test_configs
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        cache_hit = getattr(multi_api, "last_user_snapshot_cache_hit", None)
+        cache_state = "hit" if cache_hit is True else "miss" if cache_hit is False else "unknown"
+        print(
+            f"[MyConfigs] user_id={user_id} configs={len(user_configs)} "
+            f"servers={len(multi_api.servers)} cache={cache_state} elapsed_ms={elapsed_ms}"
+        )
 
         if not user_configs:
             language = get_user_language(user_id)
@@ -58,6 +68,8 @@ def my_configs(message):
             )
             return
     except Exception as e:
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        print(f"[MyConfigs] user_id={user_id} error={type(e).__name__} elapsed_ms={elapsed_ms}")
         bot.reply_to(message, f"⚠️ Error processing user data: {str(e)}")
         return
     

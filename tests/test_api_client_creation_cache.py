@@ -66,12 +66,14 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.original_workers = os.environ.get("SERVER_FETCH_WORKERS")
         os.environ["SERVER_USERS_CACHE_TTL_SECONDS"] = "30"
         api_client.MultiServerAPI._creation_cache = None
+        api_client.MultiServerAPI._user_snapshot_cache = {}
 
     def tearDown(self):
         api_client.APIClient = self.original_api_client
         api_client.get_server_configs = self.original_get_server_configs
         api_client.time.monotonic = self.original_monotonic
         api_client.MultiServerAPI._creation_cache = None
+        api_client.MultiServerAPI._user_snapshot_cache = {}
         if self.original_ttl is None:
             os.environ.pop("SERVER_USERS_CACHE_TTL_SECONDS", None)
         else:
@@ -143,6 +145,19 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertEqual(clients["s1"].get_users_calls, 2)
         self.assertEqual(clients["s2"].get_users_calls, 2)
 
+    def test_force_refresh_creation_snapshot_bypasses_user_snapshot_cache(self):
+        clients = {
+            "s1": FakeClient("s1", {"a": {"blocked": False}}),
+            "s2": FakeClient("s2", {}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        multi_api.prepare_new_user_creation()
+        multi_api.prepare_new_user_creation(force_refresh=True)
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
+
     def test_record_created_user_updates_cached_usernames_and_load(self):
         clients = {
             "s1": FakeClient("s1", {"a": {"blocked": False}}),
@@ -196,6 +211,55 @@ class MultiServerCreationCacheTests(unittest.TestCase):
 
         self.assertEqual(default_usernames, ["active", "disabled"])
         self.assertEqual(enabled_usernames, ["active"])
+
+    def test_iter_all_users_reuses_cached_snapshot_inside_ttl(self):
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        first = [username for _, username, _ in multi_api.iter_all_users()]
+        second = [username for _, username, _ in multi_api.iter_all_users()]
+
+        self.assertEqual(first, ["active", "backup"])
+        self.assertEqual(second, ["active", "backup"])
+        self.assertEqual(clients["s1"].get_users_calls, 1)
+        self.assertEqual(clients["s2"].get_users_calls, 1)
+        self.assertTrue(multi_api.last_user_snapshot_cache_hit)
+
+    def test_iter_all_users_force_refresh_bypasses_cached_snapshot(self):
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        multi_api = self.make_multi_api(clients)
+
+        list(multi_api.iter_all_users())
+        list(multi_api.iter_all_users(force_refresh=True))
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
+        self.assertFalse(multi_api.last_user_snapshot_cache_hit)
+
+    def test_iter_all_users_cache_signature_changes_when_server_enabled_changes(self):
+        clients = {
+            "s1": FakeClient("s1", {"active": {"blocked": False}}),
+            "s2": FakeClient("s2", {"backup": {"blocked": False}}),
+        }
+        servers = [
+            {"id": "s1", "name": "s1", "url": "https://s1.test", "token": "token", "enabled": True, "weight": 1},
+            {"id": "s2", "name": "s2", "url": "https://s2.test", "token": "token", "enabled": True, "weight": 1},
+        ]
+        api_client.get_server_configs = lambda: servers
+        api_client.APIClient = lambda server: clients[server["id"]]
+
+        list(api_client.MultiServerAPI().iter_all_users())
+        servers[1]["enabled"] = False
+        list(api_client.MultiServerAPI().iter_all_users())
+
+        self.assertEqual(clients["s1"].get_users_calls, 2)
+        self.assertEqual(clients["s2"].get_users_calls, 2)
 
     def test_get_all_usernames_fetches_servers_in_parallel(self):
         os.environ["SERVER_FETCH_WORKERS"] = "3"
