@@ -1,3 +1,8 @@
+## v1.15.5
+✨ Add thread-local pooled HTTP sessions for Telegram bot API clients
+⚡ Fetch multi-server user lists in parallel while preserving server order and failure handling
+✅ Add tests for parallel user fetching, worker limits, disabled-server inclusion, and thread-local session isolation
+
 ## v1.15.4
 ♻️ Shorten manual review callback data format to fit Telegram 64-byte callback limit
 ✨ Add backward compatibility for legacy callback data formats
