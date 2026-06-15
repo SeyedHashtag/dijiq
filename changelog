@@ -1,3 +1,9 @@
+## v1.15.8
+✨ Add server-info section handling with customer growth statistics in the CLI and Telegram bot dashboard
+⚡ Reuse cached user snapshots in My Configs responses and show cache timing notices
+✨ Include open account base amounts in checker settlement totals and related payment calculations
+✅ Add tests for server-info dashboards, My Configs cache behavior, checker settlement stats, and receipt checker sharing
+
 ## v1.15.7
 ✨ Add shared MultiServerAPI user snapshot caching for username scans and config iteration
 ⚡ Make My Configs scan enabled servers once, prefer paid configs over test configs, and log cache timing
