@@ -1,3 +1,8 @@
+## v1.15.7
+✨ Add shared MultiServerAPI user snapshot caching for username scans and config iteration
+⚡ Make My Configs scan enabled servers once, prefer paid configs over test configs, and log cache timing
+✅ Add tests for user snapshot cache refresh/invalidation and My Configs lookup behavior
+
 ## v1.15.6
 ⚡ Reuse bulk server scan results during expired cleanup lookups to avoid redundant per-user VPN API calls
 🐛 Keep cleanup renewal, missing-user, and unavailable-server handling aligned with the shared server lookup context
