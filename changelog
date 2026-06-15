@@ -1,3 +1,8 @@
+## v1.15.6
+⚡ Reuse bulk server scan results during expired cleanup lookups to avoid redundant per-user VPN API calls
+🐛 Keep cleanup renewal, missing-user, and unavailable-server handling aligned with the shared server lookup context
+✅ Add tests for bulk-scan renewal paths and per-user lookup avoidance
+
 ## v1.15.5
 ✨ Add thread-local pooled HTTP sessions for Telegram bot API clients
 ⚡ Fetch multi-server user lists in parallel while preserving server order and failure handling
