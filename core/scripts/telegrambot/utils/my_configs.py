@@ -6,6 +6,7 @@ import requests
 import re
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
@@ -21,6 +22,20 @@ MY_CONFIGS_INFLIGHT = set()
 SHOW_CONFIG_INFLIGHT = set()
 MY_CONFIGS_REFRESH_LOCK = threading.Lock()
 MY_CONFIGS_REFRESH_INFLIGHT = set()
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+SHOW_CONFIG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_SHOW_CONFIG_WORKERS", 2),
+    thread_name_prefix="dijiq-show-config",
+)
 
 
 def _my_configs_cache_notice(language):
@@ -207,8 +222,23 @@ def handle_show_config(call):
             safe_answer_callback_query(bot, call.id)
             return
         SHOW_CONFIG_INFLIGHT.add(key)
+    safe_answer_callback_query(bot, call.id)
     try:
-        safe_answer_callback_query(bot, call.id)
+        SHOW_CONFIG_EXECUTOR.submit(_show_config_job, call, key)
+    except Exception as e:
+        with MY_CONFIGS_INFLIGHT_LOCK:
+            SHOW_CONFIG_INFLIGHT.discard(key)
+        print(f"Error enqueueing handle_show_config: {str(e)}")
+        safe_edit_message_text(
+            bot,
+            f"⚠️ Error processing your request: {str(e)}",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+
+
+def _show_config_job(call, key):
+    try:
         parts = call.data.split(':')
         if len(parts) >= 3:
             server_id, username = parts[1], parts[2]

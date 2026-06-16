@@ -829,6 +829,7 @@ def _handle_customer_renewal_crypto(call, offer):
     language = get_user_language(user_id)
     discount_metadata = build_crypto_discount_metadata(offer['price'])
     discounted_price = discount_metadata['price']
+    safe_answer_callback_query(bot, call.id)
     payment_handler = CryptoPayment()
     payment_response = payment_handler.create_payment(discounted_price, offer['plan_gb'], user_id)
     if "error" in payment_response:
@@ -980,6 +981,7 @@ def handle_crypto_payment(call, plan_gb):
                 return
             discount_metadata = build_crypto_discount_metadata(plan['price'])
             discounted_price = discount_metadata['price']
+            safe_answer_callback_query(bot, call.id)
             payment_handler = CryptoPayment()
             payment_response = payment_handler.create_payment(
                 discounted_price, plan_gb, user_id

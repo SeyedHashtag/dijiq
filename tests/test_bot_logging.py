@@ -267,6 +267,39 @@ class TelegramSafeTests(unittest.TestCase):
         self.assertIs(telegram_safe.install_safe_telegram_methods(bot), bot)
         self.assertTrue(getattr(bot, "_dijiq_safe_telegram_installed"))
 
+    def test_installed_callback_answer_runs_in_background_executor(self):
+        telegram_safe = load_telegram_safe()
+
+        class ImmediateExecutor:
+            def __init__(self):
+                self.submissions = []
+
+            def submit(self, fn, *args, **kwargs):
+                self.submissions.append((fn, args, kwargs))
+                return types.SimpleNamespace(result=lambda timeout=None: fn(*args, **kwargs))
+
+        original_executor = telegram_safe.CALLBACK_ANSWER_EXECUTOR
+        telegram_safe.CALLBACK_ANSWER_EXECUTOR = ImmediateExecutor()
+
+        class Bot:
+            def __init__(self):
+                self.calls = []
+
+            def answer_callback_query(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                return "answered"
+
+        try:
+            bot = telegram_safe.install_safe_telegram_methods(Bot())
+            future = bot.answer_callback_query("callback-1")
+
+            self.assertEqual(len(telegram_safe.CALLBACK_ANSWER_EXECUTOR.submissions), 1)
+            self.assertEqual(future.result(), "answered")
+            self.assertEqual(bot.calls[0][0], ("callback-1",))
+            self.assertIn("timeout", bot.calls[0][1])
+        finally:
+            telegram_safe.CALLBACK_ANSWER_EXECUTOR = original_executor
+
     def test_wrapped_reply_to_can_call_wrapped_send_message_with_timeout_kwarg(self):
         telegram_safe = load_telegram_safe()
 

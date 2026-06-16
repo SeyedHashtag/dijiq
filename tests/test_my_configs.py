@@ -117,6 +117,12 @@ class FakeMultiServerAPI:
         return None, None
 
 
+class ImmediateExecutor:
+    def submit(self, fn, *args, **kwargs):
+        fn(*args, **kwargs)
+        return types.SimpleNamespace()
+
+
 def install_stubs():
     telebot_stub = types.ModuleType("telebot")
     telebot_stub.types = types.SimpleNamespace(
@@ -184,6 +190,8 @@ class MyConfigsTests(unittest.TestCase):
         my_configs_module.bot.replies = []
         my_configs_module.bot.chat_actions = []
         my_configs_module.MY_CONFIGS_REFRESH_INFLIGHT.clear()
+        my_configs_module.MY_CONFIGS_INFLIGHT.clear()
+        my_configs_module.SHOW_CONFIG_INFLIGHT.clear()
         self.displayed_configs = []
         my_configs_module.display_config = lambda *args, **kwargs: self.displayed_configs.append((args, kwargs))
 
@@ -252,6 +260,33 @@ class MyConfigsTests(unittest.TestCase):
             "📱 Select a configuration to view:\n\nThis list may take a few minutes to update.",
         )
         self.assertEqual(len(my_configs_module.bot.replies[0][1]["reply_markup"].buttons), 2)
+
+    def test_show_config_callback_queues_display_job_and_releases_inflight(self):
+        original_executor = my_configs_module.SHOW_CONFIG_EXECUTOR
+        original_find_user = FakeMultiServerAPI.find_user
+        client = FakeClient("server3")
+
+        def find_user(self, username, preferred_server_id=None):
+            return client, {"max_download_bytes": 20, "blocked": False}
+
+        FakeMultiServerAPI.find_user = find_user
+        my_configs_module.SHOW_CONFIG_EXECUTOR = ImmediateExecutor()
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data="show_config:server3:s123a",
+            from_user=types.SimpleNamespace(id=123),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=456), message_id=789),
+        )
+
+        try:
+            my_configs_module.handle_show_config(call)
+        finally:
+            my_configs_module.SHOW_CONFIG_EXECUTOR = original_executor
+            FakeMultiServerAPI.find_user = original_find_user
+
+        self.assertEqual(len(self.displayed_configs), 1)
+        self.assertEqual(self.displayed_configs[0][0][1], "s123a")
+        self.assertEqual(my_configs_module.SHOW_CONFIG_INFLIGHT, set())
 
     def test_my_configs_uses_stale_cached_snapshot_and_refreshes_in_background(self):
         enabled_client = FakeClient("enabled")

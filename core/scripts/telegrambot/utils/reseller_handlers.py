@@ -731,6 +731,7 @@ def handle_reseller_payment(call):
     if method == 'crypto':
         discount_metadata = build_crypto_discount_metadata(amount_to_pay)
         discounted_amount_to_pay = discount_metadata['price']
+        safe_answer_callback_query(bot, call.id)
         payment_handler = CryptoPayment()
         payment_response = payment_handler.create_payment(
             discounted_amount_to_pay, "Settlement", user_id

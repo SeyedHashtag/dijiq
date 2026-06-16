@@ -1,10 +1,12 @@
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 
 
 DEFAULT_TELEGRAM_TIMEOUT_SECONDS = 5
 DEFAULT_CALLBACK_TIMEOUT_SECONDS = 3
+DEFAULT_CALLBACK_WORKERS = 4
 EXPECTED_TELEGRAM_ERROR_MARKERS = (
     "query is too old",
     "response timeout expired",
@@ -29,6 +31,16 @@ def get_telegram_timeout_seconds():
 
 def get_callback_timeout_seconds():
     return _int_env("DIJIQ_CALLBACK_TIMEOUT_SECONDS", DEFAULT_CALLBACK_TIMEOUT_SECONDS)
+
+
+def get_callback_worker_count():
+    return _int_env("DIJIQ_CALLBACK_WORKERS", DEFAULT_CALLBACK_WORKERS)
+
+
+CALLBACK_ANSWER_EXECUTOR = ThreadPoolExecutor(
+    max_workers=get_callback_worker_count(),
+    thread_name_prefix="dijiq-callback-answer",
+)
 
 
 def is_expected_telegram_error(error):
@@ -98,7 +110,6 @@ def install_safe_telegram_methods(bot):
         return bot
 
     methods = {
-        "answer_callback_query": get_callback_timeout_seconds,
         "edit_message_text": get_telegram_timeout_seconds,
         "edit_message_caption": get_telegram_timeout_seconds,
         "edit_message_reply_markup": get_telegram_timeout_seconds,
@@ -108,6 +119,21 @@ def install_safe_telegram_methods(bot):
         "reply_to": get_telegram_timeout_seconds,
         "send_chat_action": get_telegram_timeout_seconds,
     }
+
+    answer_callback_query = getattr(bot, "answer_callback_query", None)
+    if answer_callback_query is not None:
+        @wraps(answer_callback_query)
+        def wrapped_answer_callback_query(*args, __original=answer_callback_query, **kwargs):
+            return CALLBACK_ANSWER_EXECUTOR.submit(
+                _call_with_timeout,
+                __original,
+                get_callback_timeout_seconds(),
+                *args,
+                **kwargs,
+            )
+
+        setattr(bot, "_dijiq_original_answer_callback_query", answer_callback_query)
+        setattr(bot, "answer_callback_query", wrapped_answer_callback_query)
 
     for method_name, timeout_getter in methods.items():
         original = getattr(bot, method_name, None)

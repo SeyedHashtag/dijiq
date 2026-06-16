@@ -8,6 +8,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _float_env(name, default, minimum=0.1):
+    try:
+        value = float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+    return value if value >= minimum else float(default)
+
+
+def get_crypto_api_timeout_seconds():
+    return _float_env("DIJIQ_CRYPTO_API_TIMEOUT_SECONDS", 10)
+
+
 class CryptoPayment:
     def __init__(self):
         self.merchant_id = os.getenv('CRYPTO_MERCHANT_ID')
@@ -83,7 +96,8 @@ class CryptoPayment:
             response = requests.post(
                 self.base_url,  # Fixed endpoint
                 json=payload,
-                headers=headers
+                headers=headers,
+                timeout=get_crypto_api_timeout_seconds(),
             )
 
             if response.status_code == 200:
@@ -113,7 +127,8 @@ class CryptoPayment:
             response = requests.post(
                 info_url,
                 json=payload,
-                headers=headers
+                headers=headers,
+                timeout=get_crypto_api_timeout_seconds(),
             )
 
             # Return full response for easier debugging when not 200
