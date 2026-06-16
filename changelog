@@ -1,3 +1,9 @@
+## v1.15.15
+✨ Serve My Configs from cached user snapshots and refresh stale snapshots in the background
+⚡ Run expired-cleanup manual review actions asynchronously with duplicate-action protection
+🐛 Add safe Telegram timeout wrapping for send_chat_action calls
+✅ Add tests for stale My Configs cache refreshes and async expired-cleanup review handling
+
 ## v1.15.14
 🐛 Prevent wrapped Telegram reply_to calls from passing duplicate timeout arguments through wrapped send_message
 ✅ Add regression coverage for reply_to timeout handling with installed safe Telegram wrappers
