@@ -76,10 +76,12 @@ class FakeMultiServerAPI:
     users_by_include_disabled = {True: [], False: []}
     iter_calls = []
     instances = []
+    cached_entries = None
 
     def __init__(self):
         self.servers = list(self.__class__.servers)
         self.last_user_snapshot_cache_hit = True
+        self.last_user_snapshot_cache_stale = False
         self.__class__.instances.append(self)
 
     def iter_all_users(self, include_disabled=True, force_refresh=False, cache_ttl_seconds=None):
@@ -89,6 +91,27 @@ class FakeMultiServerAPI:
             "cache_ttl_seconds": cache_ttl_seconds,
         })
         yield from self.__class__.users_by_include_disabled[bool(include_disabled)]
+
+    def get_cached_user_snapshot_entries(self, include_disabled=True, cache_ttl_seconds=None, allow_expired=True):
+        self.__class__.iter_calls.append({
+            "method": "cached",
+            "include_disabled": include_disabled,
+            "cache_ttl_seconds": cache_ttl_seconds,
+            "allow_expired": allow_expired,
+        })
+        return self.__class__.cached_entries
+
+    def get_user_snapshot_entries(self, include_disabled=True, force_refresh=False, cache_ttl_seconds=None):
+        self.__class__.iter_calls.append({
+            "method": "snapshot",
+            "include_disabled": include_disabled,
+            "force_refresh": force_refresh,
+            "cache_ttl_seconds": cache_ttl_seconds,
+        })
+        return [
+            {"client": client, "users": {username: data}}
+            for client, username, data in self.__class__.users_by_include_disabled[bool(include_disabled)]
+        ]
 
     def find_user(self, username, preferred_server_id=None):
         return None, None
@@ -157,8 +180,10 @@ class MyConfigsTests(unittest.TestCase):
         FakeMultiServerAPI.users_by_include_disabled = {True: [], False: []}
         FakeMultiServerAPI.iter_calls = []
         FakeMultiServerAPI.instances = []
+        FakeMultiServerAPI.cached_entries = None
         my_configs_module.bot.replies = []
         my_configs_module.bot.chat_actions = []
+        my_configs_module.MY_CONFIGS_REFRESH_INFLIGHT.clear()
         self.displayed_configs = []
         my_configs_module.display_config = lambda *args, **kwargs: self.displayed_configs.append((args, kwargs))
 
@@ -180,12 +205,17 @@ class MyConfigsTests(unittest.TestCase):
 
         self.assertEqual(
             FakeMultiServerAPI.iter_calls,
-            [{"include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300}],
+            [
+                {"method": "cached", "include_disabled": False, "cache_ttl_seconds": 300, "allow_expired": True},
+                {"method": "snapshot", "include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300},
+            ],
         )
-        self.assertEqual(len(self.displayed_configs), 1)
-        self.assertEqual(self.displayed_configs[0][0][1], "s123a")
-        self.assertTrue(self.displayed_configs[0][1]["show_cache_notice"])
-        self.assertEqual(my_configs_module.bot.replies, [])
+        self.assertEqual(self.displayed_configs, [])
+        self.assertEqual(
+            my_configs_module.bot.replies[0][0][1],
+            "📱 Select a configuration to view:\n\nThis list may take a few minutes to update.",
+        )
+        self.assertEqual(my_configs_module.bot.replies[0][1]["reply_markup"].buttons[0].callback_data, "show_config:enabled:s123a")
 
     def test_my_configs_excludes_disabled_servers_for_customer_lookup(self):
         disabled_client = FakeClient("disabled")
@@ -197,7 +227,10 @@ class MyConfigsTests(unittest.TestCase):
 
         self.assertEqual(
             FakeMultiServerAPI.iter_calls,
-            [{"include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300}],
+            [
+                {"method": "cached", "include_disabled": False, "cache_ttl_seconds": 300, "allow_expired": True},
+                {"method": "snapshot", "include_disabled": False, "force_refresh": False, "cache_ttl_seconds": 300},
+            ],
         )
         self.assertEqual(self.displayed_configs, [])
         self.assertEqual(
@@ -219,6 +252,36 @@ class MyConfigsTests(unittest.TestCase):
             "📱 Select a configuration to view:\n\nThis list may take a few minutes to update.",
         )
         self.assertEqual(len(my_configs_module.bot.replies[0][1]["reply_markup"].buttons), 2)
+
+    def test_my_configs_uses_stale_cached_snapshot_and_refreshes_in_background(self):
+        enabled_client = FakeClient("enabled")
+        FakeMultiServerAPI.cached_entries = [
+            {"client": enabled_client, "users": {"s123a": {"max_download_bytes": 20}}},
+        ]
+
+        class StaleFakeMultiServerAPI(FakeMultiServerAPI):
+            def __init__(self):
+                super().__init__()
+                self.last_user_snapshot_cache_stale = True
+
+        original_multi_api = my_configs_module.MultiServerAPI
+        original_refresh = my_configs_module._refresh_my_configs_snapshot_async
+        refresh_calls = []
+        try:
+            my_configs_module.MultiServerAPI = StaleFakeMultiServerAPI
+            my_configs_module._refresh_my_configs_snapshot_async = lambda include_disabled=False: refresh_calls.append(include_disabled)
+
+            my_configs_module.my_configs(self.make_message())
+
+            self.assertEqual(refresh_calls, [False])
+            self.assertEqual(
+                StaleFakeMultiServerAPI.iter_calls,
+                [{"method": "cached", "include_disabled": False, "cache_ttl_seconds": 300, "allow_expired": True}],
+            )
+            self.assertEqual(len(my_configs_module.bot.replies[0][1]["reply_markup"].buttons), 1)
+        finally:
+            my_configs_module.MultiServerAPI = original_multi_api
+            my_configs_module._refresh_my_configs_snapshot_async = original_refresh
 
 
 if __name__ == "__main__":

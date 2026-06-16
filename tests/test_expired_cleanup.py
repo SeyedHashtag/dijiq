@@ -101,10 +101,17 @@ class FakeMultiAPI:
             yield {"id": server_id, "enabled": True}, client
 
 
+class ImmediateExecutor:
+    def submit(self, fn, *args, **kwargs):
+        fn(*args, **kwargs)
+        return types.SimpleNamespace()
+
+
 def load_module():
     for name in list(sys.modules):
         if name == "utils" or name.startswith("utils."):
             sys.modules.pop(name, None)
+    sys.modules.pop("telebot", None)
 
     bot = DummyBot()
     utils_pkg = types.ModuleType("utils")
@@ -1158,6 +1165,7 @@ class ExpiredCleanupTests(unittest.TestCase):
 
     def test_manual_review_keep_updates_metadata_but_keeps_record_visible(self):
         self.write_default_files()
+        self.cleanup.ADMIN_CLEANUP_REVIEW_EXECUTOR = ImmediateExecutor()
         state_key = "s1:orphan"
         self.write_json(self.cleanup.STATE_FILE, {
             state_key: {
@@ -1182,13 +1190,15 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(state[state_key]["cleanup_status"], "manual_review")
         self.assertEqual(state[state_key]["review_status"], "kept")
         self.assertEqual(state[state_key]["reviewed_by"], "1")
-        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Review action started.")
+        self.assertEqual(self.cleanup._test_bot.sent_messages[-1][1], "Expired cleanup review: Kept for later review.")
         text = self.cleanup._test_bot.edited_messages[-1][0]
         self.assertIn("`orphan`", text)
         self.assertIn("Review: `kept`", text)
 
     def test_manual_review_delete_rechecks_and_deletes_expired_user(self):
         self.write_default_files()
+        self.cleanup.ADMIN_CLEANUP_REVIEW_EXECUTOR = ImmediateExecutor()
         state_key = "s1:orphan"
         self.write_json(self.cleanup.STATE_FILE, {
             state_key: {
@@ -1217,10 +1227,50 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(client.deleted, ["orphan"])
         self.assertEqual(state[state_key]["cleanup_status"], "deleted")
         self.assertEqual(state[state_key]["delete_result"], "deleted")
-        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "User deleted.")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Review action started.")
+        self.assertEqual(self.cleanup._test_bot.sent_messages[-1][1], "Expired cleanup review: User deleted.")
+
+    def test_manual_review_action_dedupes_inflight_record(self):
+        self.write_default_files()
+
+        class HoldingExecutor:
+            def __init__(self):
+                self.submissions = []
+
+            def submit(self, fn, *args, **kwargs):
+                self.submissions.append((fn, args, kwargs))
+                return types.SimpleNamespace()
+
+        executor = HoldingExecutor()
+        self.cleanup.ADMIN_CLEANUP_REVIEW_EXECUTOR = executor
+        state_key = "s1:orphan"
+        self.write_json(self.cleanup.STATE_FILE, {
+            state_key: {
+                "username": "orphan",
+                "server_id": "s1",
+                "source": "server_user",
+                "cleanup_status": "manual_review",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+        record_id = self.cleanup._state_record_id(state_key)
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data=f"aec:rd:mr:{record_id}",
+            from_user=types.SimpleNamespace(id=1),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=20),
+        )
+
+        self.cleanup.handle_admin_expired_cleanup(call)
+        self.cleanup.handle_admin_expired_cleanup(call)
+
+        self.assertEqual(len(executor.submissions), 1)
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-2][1], "Review action started.")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Review action is already running.")
 
     def test_legacy_manual_review_callback_formats_still_work(self):
         self.write_default_files()
+        self.cleanup.ADMIN_CLEANUP_REVIEW_EXECUTOR = ImmediateExecutor()
         state_key = "s1:orphan"
         self.write_json(self.cleanup.STATE_FILE, {
             state_key: {
@@ -1243,7 +1293,8 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(state[state_key]["review_status"], "kept")
-        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Review action started.")
+        self.assertEqual(self.cleanup._test_bot.sent_messages[-1][1], "Expired cleanup review: Kept for later review.")
 
         legacy_four_part = types.SimpleNamespace(
             id="callback-2",
@@ -1255,7 +1306,8 @@ class ExpiredCleanupTests(unittest.TestCase):
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(state[state_key]["review_status"], "kept")
-        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Kept for later review.")
+        self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][1], "Review action started.")
+        self.assertEqual(self.cleanup._test_bot.sent_messages[-1][1], "Expired cleanup review: Kept for later review.")
 
     def test_admin_cleanup_pagination_and_callback_route(self):
         self.write_default_files()

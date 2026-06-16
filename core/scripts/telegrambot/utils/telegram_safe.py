@@ -89,6 +89,10 @@ def safe_reply_to(bot, *args, **kwargs):
     return _call_with_timeout(bot.reply_to, get_telegram_timeout_seconds(), *args, **kwargs)
 
 
+def safe_send_chat_action(bot, *args, **kwargs):
+    return _call_with_timeout(bot.send_chat_action, get_telegram_timeout_seconds(), *args, **kwargs)
+
+
 def install_safe_telegram_methods(bot):
     if getattr(bot, "_dijiq_safe_telegram_installed", False):
         return bot
@@ -102,6 +106,7 @@ def install_safe_telegram_methods(bot):
         "send_message": get_telegram_timeout_seconds,
         "send_photo": get_telegram_timeout_seconds,
         "reply_to": get_telegram_timeout_seconds,
+        "send_chat_action": get_telegram_timeout_seconds,
     }
 
     for method_name, timeout_getter in methods.items():

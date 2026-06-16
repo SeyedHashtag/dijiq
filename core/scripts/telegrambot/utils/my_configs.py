@@ -19,6 +19,8 @@ MY_CONFIGS_CACHE_TTL_SECONDS = 300
 MY_CONFIGS_INFLIGHT_LOCK = threading.Lock()
 MY_CONFIGS_INFLIGHT = set()
 SHOW_CONFIG_INFLIGHT = set()
+MY_CONFIGS_REFRESH_LOCK = threading.Lock()
+MY_CONFIGS_REFRESH_INFLIGHT = set()
 
 
 def _my_configs_cache_notice(language):
@@ -30,6 +32,99 @@ def _append_my_configs_cache_notice(text, language, show_cache_notice=True):
         return text
     notice = _my_configs_cache_notice(language)
     return f"{text}\n\n{notice}" if notice else text
+
+
+def _refresh_my_configs_snapshot_async(include_disabled=False):
+    key = bool(include_disabled)
+    with MY_CONFIGS_REFRESH_LOCK:
+        if key in MY_CONFIGS_REFRESH_INFLIGHT:
+            return
+        MY_CONFIGS_REFRESH_INFLIGHT.add(key)
+
+    def refresh():
+        try:
+            MultiServerAPI().get_user_snapshot_entries(
+                include_disabled=include_disabled,
+                force_refresh=True,
+                cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
+            )
+        except Exception as e:
+            print(f"[MyConfigs] background refresh failed: {e}")
+        finally:
+            with MY_CONFIGS_REFRESH_LOCK:
+                MY_CONFIGS_REFRESH_INFLIGHT.discard(key)
+
+    threading.Thread(target=refresh, daemon=True, name="my-configs-refresh").start()
+
+
+def _get_my_configs_snapshot_entries(multi_api, include_disabled=False):
+    cached_entries = multi_api.get_cached_user_snapshot_entries(
+        include_disabled=include_disabled,
+        cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
+        allow_expired=True,
+    )
+    if cached_entries is not None:
+        if getattr(multi_api, "last_user_snapshot_cache_stale", False):
+            _refresh_my_configs_snapshot_async(include_disabled=include_disabled)
+        return cached_entries
+
+    return multi_api.get_user_snapshot_entries(
+        include_disabled=include_disabled,
+        cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
+    )
+
+
+def _iter_users_from_snapshot_entries(entries):
+    for entry in entries:
+        client = entry["client"]
+        users = entry["users"]
+        if users is None:
+            continue
+        if isinstance(users, dict):
+            for username, data in users.items():
+                yield client, username, data
+        elif isinstance(users, list):
+            for data in users:
+                if isinstance(data, dict):
+                    yield client, data.get("username"), data
+
+
+def _find_cached_user(multi_api, username, preferred_server_id=None):
+    for include_disabled in (False, True):
+        entries = multi_api.get_cached_user_snapshot_entries(
+            include_disabled=include_disabled,
+            cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
+            allow_expired=True,
+        )
+        if entries is None:
+            continue
+
+        fallback = None
+        for api_client, cached_username, user_data in _iter_users_from_snapshot_entries(entries):
+            if str(cached_username) != str(username):
+                continue
+            if preferred_server_id and api_client.server_id == preferred_server_id:
+                return api_client, user_data
+            if fallback is None:
+                fallback = (api_client, user_data)
+        if fallback is not None:
+            return fallback
+    return None, None
+
+
+def _reply_config_selection(message, user_configs, language):
+    markup = types.InlineKeyboardMarkup()
+
+    for username, user_data, api_client in user_configs:
+        max_traffic_gb = user_data.get('max_download_bytes', 0) / (1024 ** 3)
+        button_text = f"{username} - {max_traffic_gb:.2f} GB"
+        markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{api_client.server_id}:{username}"))
+
+    bot.reply_to(
+        message,
+        _append_my_configs_cache_notice("📱 Select a configuration to view:", language),
+        reply_markup=markup
+    )
 
 
 @bot.message_handler(func=lambda message: any(
@@ -70,10 +165,8 @@ def my_configs(message):
 
         paid_configs = []
         test_configs = []
-        for api_client, username, config_data in multi_api.iter_all_users(
-            include_disabled=False,
-            cache_ttl_seconds=MY_CONFIGS_CACHE_TTL_SECONDS,
-        ):
+        entries = _get_my_configs_snapshot_entries(multi_api, include_disabled=False)
+        for api_client, username, config_data in _iter_users_from_snapshot_entries(entries):
             if username and any(pattern.match(username) for pattern in paid_patterns):
                 paid_configs.append((username, config_data, api_client))
             elif username and any(pattern.match(username) for pattern in test_patterns):
@@ -95,31 +188,7 @@ def my_configs(message):
             )
             return
 
-        # Process and display configs
-        if len(user_configs) == 1:
-            # Only one config found, display it directly
-            display_config(
-                message.chat.id,
-                user_configs[0][0],
-                user_configs[0][1],
-                user_configs[0][2],
-                user_id=user_id,
-                show_cache_notice=True,
-            )
-        else:
-            # Multiple configs found, create a selection menu
-            markup = types.InlineKeyboardMarkup()
-
-            for username, user_data, api_client in user_configs:
-                max_traffic_gb = user_data.get('max_download_bytes', 0) / (1024 ** 3)
-                button_text = f"{username} - {max_traffic_gb:.2f} GB"
-                markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{api_client.server_id}:{username}"))
-
-            bot.reply_to(
-                message,
-                _append_my_configs_cache_notice("📱 Select a configuration to view:", language),
-                reply_markup=markup
-            )
+        _reply_config_selection(message, user_configs, language)
     except Exception as e:
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         print(f"[MyConfigs] user_id={user_id} error={type(e).__name__} elapsed_ms={elapsed_ms}")
@@ -147,7 +216,9 @@ def handle_show_config(call):
             server_id, username = None, parts[1]
 
         multi_api = MultiServerAPI()
-        api_client, user_data = multi_api.find_user(username, preferred_server_id=server_id)
+        api_client, user_data = _find_cached_user(multi_api, username, preferred_server_id=server_id)
+        if user_data is None:
+            api_client, user_data = multi_api.find_user(username, preferred_server_id=server_id)
         
         if user_data:
             # Show the config

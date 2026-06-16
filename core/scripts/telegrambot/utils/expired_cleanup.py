@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 try:
@@ -98,6 +99,22 @@ ADMIN_CLEANUP_STATUS_LABELS = {
     'renewed': 'Renewed',
     'unknown': 'Unknown',
 }
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+ADMIN_CLEANUP_REVIEW_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_EXPIRED_CLEANUP_REVIEW_WORKERS", 2),
+    thread_name_prefix="dijiq-expired-review",
+)
+ADMIN_CLEANUP_REVIEW_INFLIGHT_LOCK = threading.Lock()
+ADMIN_CLEANUP_REVIEW_INFLIGHT = set()
 ADMIN_CLEANUP_FILTER_DESCRIPTIONS = {
     'pending': 'Notified users waiting for the grace period before automatic cleanup.',
     'due': 'Notified users whose grace period has passed and are ready for automatic cleanup.',
@@ -1943,6 +1960,55 @@ def _handle_manual_review_delete(record_id):
         return "User deleted."
 
 
+def _manual_review_inflight_key(record_id):
+    return str(record_id or "")
+
+
+def _discard_manual_review_inflight(key):
+    with ADMIN_CLEANUP_REVIEW_INFLIGHT_LOCK:
+        ADMIN_CLEANUP_REVIEW_INFLIGHT.discard(key)
+
+
+def _run_manual_review_action(chat_id, message_id, admin_id, review_action, return_filter, record_id, inflight_key):
+    try:
+        if review_action == "review_keep":
+            message = _handle_manual_review_keep(record_id, admin_id)
+        else:
+            message = _handle_manual_review_delete(record_id)
+
+        _render_admin_expired_cleanup(chat_id, message_id, admin_id, return_filter, 0)
+        bot.send_message(chat_id, f"Expired cleanup review: {message}")
+    except Exception as e:
+        print(f"Expired cleanup review action failed for {record_id}: {e}")
+        bot.send_message(chat_id, f"Expired cleanup review failed: {e}")
+    finally:
+        _discard_manual_review_inflight(inflight_key)
+
+
+def _submit_manual_review_action(chat_id, message_id, admin_id, review_action, return_filter, record_id):
+    inflight_key = _manual_review_inflight_key(record_id)
+    with ADMIN_CLEANUP_REVIEW_INFLIGHT_LOCK:
+        if inflight_key in ADMIN_CLEANUP_REVIEW_INFLIGHT:
+            return False
+        ADMIN_CLEANUP_REVIEW_INFLIGHT.add(inflight_key)
+
+    try:
+        ADMIN_CLEANUP_REVIEW_EXECUTOR.submit(
+            _run_manual_review_action,
+            chat_id,
+            message_id,
+            admin_id,
+            review_action,
+            return_filter,
+            record_id,
+            inflight_key,
+        )
+    except Exception:
+        _discard_manual_review_inflight(inflight_key)
+        raise
+    return True
+
+
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
 def admin_expired_cleanup_menu(message):
     language = get_user_language(message.from_user.id)
@@ -1966,12 +2032,23 @@ def handle_admin_expired_cleanup(call):
     review_callback = _parse_manual_review_callback_data(call.data)
     if review_callback:
         review_action, return_filter, record_id = review_callback
-        if review_action == "review_keep":
-            message = _handle_manual_review_keep(record_id, call.from_user.id)
-        else:
-            message = _handle_manual_review_delete(record_id)
-        _render_admin_expired_cleanup(call.message.chat.id, call.message.message_id, call.from_user.id, return_filter, 0)
-        bot.answer_callback_query(call.id, message)
+        try:
+            queued = _submit_manual_review_action(
+                call.message.chat.id,
+                call.message.message_id,
+                call.from_user.id,
+                review_action,
+                return_filter,
+                record_id,
+            )
+        except Exception as e:
+            bot.answer_callback_query(call.id, f"Failed to start review action: {e}", show_alert=True)
+            return
+
+        bot.answer_callback_query(
+            call.id,
+            "Review action started." if queued else "Review action is already running.",
+        )
         return
 
     if action == "noop":

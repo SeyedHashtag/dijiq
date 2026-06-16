@@ -706,6 +706,34 @@ class MultiServerAPI:
             ).get("entries", [])
         )
 
+    def get_cached_user_snapshot_entries(
+        self,
+        include_disabled: bool = True,
+        cache_ttl_seconds: float | None = None,
+        allow_expired: bool = True,
+    ) -> list[dict] | None:
+        signature = (bool(include_disabled), self._servers_signature(self.servers))
+        ttl = self._user_snapshot_cache_ttl_seconds(cache_ttl_seconds)
+        now = time.monotonic()
+        cache_key = bool(include_disabled)
+
+        with self._creation_cache_lock:
+            cached = self.__class__._user_snapshot_cache.get(cache_key)
+            if cached is None or cached.get("signature") != signature:
+                self.last_user_snapshot_cache_hit = False
+                self.last_user_snapshot_cache_stale = None
+                return None
+
+            fresh = ttl > 0 and now - cached.get("created_at", 0) < ttl
+            if not fresh and not allow_expired:
+                self.last_user_snapshot_cache_hit = False
+                self.last_user_snapshot_cache_stale = True
+                return None
+
+            self.last_user_snapshot_cache_hit = True
+            self.last_user_snapshot_cache_stale = not fresh
+            return list(cached.get("entries", []))
+
     def find_user(self, username: str, preferred_server_id: str | None = None):
         if preferred_server_id:
             client = self.get_client(preferred_server_id)
