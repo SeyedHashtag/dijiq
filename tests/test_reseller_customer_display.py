@@ -58,6 +58,19 @@ class DummyButton:
         self.callback_data = kwargs.get("callback_data")
 
 
+class HoldingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+        return types.SimpleNamespace(done=lambda: False)
+
+    def run_next(self):
+        fn, args, kwargs = self.jobs.pop(0)
+        return fn(*args, **kwargs)
+
+
 def install_stubs():
     telebot_stub = types.ModuleType("telebot")
     telebot_stub.types = types.SimpleNamespace(
@@ -88,6 +101,10 @@ def install_stubs():
         "reseller_customer_category_expired": "Expired",
         "reseller_customer_category_deleted": "Deleted",
         "reseller_customer_status_unavailable": "Status unavailable",
+        "reseller_customers_overview": "Customers {total}\n{categories}",
+        "reseller_customer_category_count": "{icon} {label}: {count}",
+        "reseller_customers_category_header": "{category} Customers\n{entries}",
+        "reseller_customers_empty_category": "No customers in {category}",
         "admin_reseller_section_button": "{status_icon} {status_label} ({count})",
         "admin_reseller_row_compact": "{status_icon} {user_id} ({username_display}) - Debt: ${debt:.2f} | Paid: ${total_paid:.2f} | Limit: ${trust_limit:.2f}",
         "admin_status_approved": "Approved",
@@ -259,6 +276,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         reseller_handlers.bot.edits.clear()
         reseller_handlers.bot.answers.clear()
         reseller_handlers.bot.sent_messages.clear()
+        reseller_handlers.RESELLER_CUSTOMERS_INFLIGHT.clear()
 
     def test_customer_name_displays_above_generated_username(self):
         entry = reseller_handlers._format_reseller_customer_entry(
@@ -445,6 +463,72 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
                 os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
             else:
                 os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
+
+    def test_reseller_my_customers_queues_live_status_render(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def get_user_snapshot_entries(self, **kwargs):
+                self.__class__.calls.append(kwargs)
+                return [
+                    {
+                        "server": {"id": "s1"},
+                        "client": types.SimpleNamespace(server_id="s1"),
+                        "users": {"r1988a": {"expiration_days": 20}},
+                    }
+                ]
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "configs": [
+                    {
+                        "username": "r1988a",
+                        "customer_name": "ali",
+                        "gb": 20,
+                        "days": 30,
+                        "price": 1.0,
+                        "timestamp": "2026-06-01 12:00:00",
+                    }
+                ],
+            }
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:my_customers:active:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(
+                    photo=None,
+                    document=None,
+                    sticker=None,
+                    chat=types.SimpleNamespace(id=100),
+                    message_id=200,
+                ),
+            )
+
+            reseller_handlers.handle_reseller_my_customers(call)
+
+            self.assertEqual(len(executor.jobs), 1)
+            self.assertEqual(FakeMultiServerAPI.calls, [])
+
+            reseller_handlers.handle_reseller_my_customers(call)
+            self.assertEqual(len(executor.jobs), 1)
+
+            executor.run_next()
+
+            self.assertEqual(FakeMultiServerAPI.calls[0]["include_disabled"], True)
+            self.assertEqual(FakeMultiServerAPI.calls[0]["cache_ttl_seconds"], 60)
+            self.assertIn("ali", reseller_handlers.bot.edits[-1][0][0])
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR = original_executor
 
     def test_reseller_customer_overview_and_empty_category_include_refresh(self):
         call = types.SimpleNamespace(

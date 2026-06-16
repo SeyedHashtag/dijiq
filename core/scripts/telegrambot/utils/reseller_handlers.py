@@ -68,6 +68,12 @@ RESELLER_CREATE_EXECUTOR = ThreadPoolExecutor(
     max_workers=_int_env("DIJIQ_RESELLER_CREATE_WORKERS", 2),
     thread_name_prefix="dijiq-reseller-create",
 )
+RESELLER_CUSTOMERS_LOCK = threading.Lock()
+RESELLER_CUSTOMERS_INFLIGHT = set()
+RESELLER_CUSTOMERS_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_RESELLER_CUSTOMERS_WORKERS", 2),
+    thread_name_prefix="dijiq-reseller-customers",
+)
 
 
 def _get_approved_reseller_data(user_id):
@@ -1256,6 +1262,47 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     _render_reseller_customer_message(call, msg, markup)
 
+
+def _render_reseller_customers_job(call, language, configs, total, category, page, force_refresh):
+    categorized = _categorize_reseller_customers(configs, force_refresh=force_refresh)
+
+    if category == "overview" or category.isdigit():
+        _render_reseller_customer_overview(call, language, categorized, total)
+        return
+
+    _render_reseller_customer_category(call, language, categorized, category, page)
+
+
+def _queue_reseller_customers_render(call, language, configs, total, category, page, force_refresh):
+    message = call.message
+    key = (
+        call.from_user.id,
+        getattr(getattr(message, "chat", None), "id", None),
+        getattr(message, "message_id", None),
+        category,
+        page,
+        bool(force_refresh),
+    )
+    with RESELLER_CUSTOMERS_LOCK:
+        if key in RESELLER_CUSTOMERS_INFLIGHT:
+            return False
+        RESELLER_CUSTOMERS_INFLIGHT.add(key)
+
+    def run():
+        try:
+            _render_reseller_customers_job(call, language, configs, total, category, page, force_refresh)
+        finally:
+            with RESELLER_CUSTOMERS_LOCK:
+                RESELLER_CUSTOMERS_INFLIGHT.discard(key)
+
+    try:
+        RESELLER_CUSTOMERS_EXECUTOR.submit(run)
+    except Exception:
+        with RESELLER_CUSTOMERS_LOCK:
+            RESELLER_CUSTOMERS_INFLIGHT.discard(key)
+        raise
+    return True
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("reseller:my_customers:", "reseller:my_customers_refresh:")))
 def handle_reseller_my_customers(call):
     user_id = call.from_user.id
@@ -1288,10 +1335,8 @@ def handle_reseller_my_customers(call):
     force_refresh = len(parts) > 1 and parts[1] == "my_customers_refresh"
     category = parts[2] if len(parts) > 2 else "overview"
 
-    categorized = _categorize_reseller_customers(configs, force_refresh=force_refresh)
-
     if category == "overview" or category.isdigit():
-        _render_reseller_customer_overview(call, language, categorized, total)
+        _queue_reseller_customers_render(call, language, configs, total, category, 0, force_refresh)
         return
 
     if category not in RESELLER_CUSTOMER_CATEGORY_ORDER:
@@ -1303,7 +1348,7 @@ def handle_reseller_my_customers(call):
     except (IndexError, ValueError):
         page = 0
 
-    _render_reseller_customer_category(call, language, categorized, category, page)
+    _queue_reseller_customers_render(call, language, configs, total, category, page, force_refresh)
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
 def handle_reseller_customers_noop(call):

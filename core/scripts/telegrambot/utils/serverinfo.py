@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from telebot import types
 from utils.command import *
+from utils.telegram_safe import safe_answer_callback_query, safe_edit_message_text, safe_reply_to
 
 
 SERVER_INFO_DEFAULT_SECTION = "overview"
@@ -128,7 +129,17 @@ def _submit_server_info_render(chat_id, message_id, section, force_refresh=False
 
     def run():
         try:
-            bot.edit_message_text(
+            if force_refresh or not _has_server_info_snapshot():
+                safe_edit_message_text(
+                    bot,
+                    _server_info_placeholder(force_refresh=force_refresh),
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=_build_server_info_markup(section),
+                    parse_mode='Markdown',
+                )
+            safe_edit_message_text(
+                bot,
                 _build_server_info_text(section, force_refresh=force_refresh),
                 chat_id=chat_id,
                 message_id=message_id,
@@ -148,24 +159,73 @@ def _submit_server_info_render(chat_id, message_id, section, force_refresh=False
     return True
 
 
+def _submit_server_info_reply(message, section):
+    key = ("reply", getattr(getattr(message, "chat", None), "id", None), getattr(message, "message_id", id(message)), section)
+    with SERVER_INFO_JOB_LOCK:
+        if key in SERVER_INFO_RENDER_INFLIGHT:
+            return False
+        SERVER_INFO_RENDER_INFLIGHT.add(key)
+
+    def run():
+        try:
+            if _has_server_info_snapshot():
+                safe_reply_to(
+                    bot,
+                    message,
+                    _build_server_info_text(section),
+                    reply_markup=_build_server_info_markup(section),
+                    parse_mode='Markdown',
+                )
+                return
+
+            reply = safe_reply_to(
+                bot,
+                message,
+                _server_info_placeholder(),
+                reply_markup=_build_server_info_markup(section),
+                parse_mode='Markdown',
+            )
+            text = _build_server_info_text(section)
+            if reply is not None:
+                safe_edit_message_text(
+                    bot,
+                    text,
+                    chat_id=reply.chat.id,
+                    message_id=reply.message_id,
+                    reply_markup=_build_server_info_markup(section),
+                    parse_mode='Markdown',
+                )
+            else:
+                safe_reply_to(
+                    bot,
+                    message,
+                    text,
+                    reply_markup=_build_server_info_markup(section),
+                    parse_mode='Markdown',
+                )
+        finally:
+            with SERVER_INFO_JOB_LOCK:
+                SERVER_INFO_RENDER_INFLIGHT.discard(key)
+
+    try:
+        SERVER_INFO_JOB_EXECUTOR.submit(run)
+    except Exception:
+        with SERVER_INFO_JOB_LOCK:
+            SERVER_INFO_RENDER_INFLIGHT.discard(key)
+        raise
+    return True
+
+
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📊 Server Info')
 def server_info(message):
-    bot.send_chat_action(message.chat.id, 'typing')
     section = SERVER_INFO_DEFAULT_SECTION
-    markup = _build_server_info_markup(section)
-    if _has_server_info_snapshot():
-        bot.reply_to(message, _build_server_info_text(section), reply_markup=markup, parse_mode='Markdown')
-        return
-
-    reply = bot.reply_to(message, _server_info_placeholder(), reply_markup=markup, parse_mode='Markdown')
-    if reply is not None:
-        _submit_server_info_render(reply.chat.id, reply.message_id, section)
+    _submit_server_info_reply(message, section)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("server_info:"))
 def handle_server_info_callback(call):
     if not is_admin(call.from_user.id):
-        bot.answer_callback_query(call.id, "Unauthorized.")
+        safe_answer_callback_query(bot, call.id, "Unauthorized.")
         return
 
     parts = call.data.split(":")
@@ -174,25 +234,8 @@ def handle_server_info_callback(call):
     force_refresh = action == "refresh"
     answer = "Refreshed." if force_refresh else "Opened."
 
-    bot.answer_callback_query(call.id, answer)
-    if force_refresh or not _has_server_info_snapshot():
-        bot.edit_message_text(
-            _server_info_placeholder(force_refresh=force_refresh),
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=_build_server_info_markup(section),
-            parse_mode='Markdown',
-        )
-        _submit_server_info_render(call.message.chat.id, call.message.message_id, section, force_refresh=force_refresh)
-        return
-
-    bot.edit_message_text(
-        _build_server_info_text(section, force_refresh=force_refresh),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=_build_server_info_markup(section),
-        parse_mode='Markdown',
-    )
+    safe_answer_callback_query(bot, call.id, answer)
+    _submit_server_info_render(call.message.chat.id, call.message.message_id, section, force_refresh=force_refresh)
 
 
 def handle_server_info_refresh(call):
