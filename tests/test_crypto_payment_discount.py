@@ -363,6 +363,15 @@ class FakeRenewalAPIClient:
         return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
 
 
+class HoldingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+        return types.SimpleNamespace(done=lambda: False)
+
+
 def install_renewal_success_stub(calls):
     renewal_stub = types.ModuleType("utils.renewal")
 
@@ -491,6 +500,27 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertIn("Original price: $100.00", caption)
         self.assertIn("Discount: -$5.00", caption)
         self.assertIn("Final crypto price: $95.00", caption)
+
+    def test_customer_crypto_payment_method_queues_background_job_once(self):
+        bot = DummyBot()
+        payment_records = []
+        purchase_plan = load_purchase_plan(bot, payment_records)
+        executor = HoldingExecutor()
+        purchase_plan.PAYMENT_JOB_EXECUTOR = executor
+
+        purchase_plan.handle_payment_method_selection(make_call("payment_method:crypto:40"))
+        purchase_plan.handle_payment_method_selection(make_call("payment_method:crypto:40"))
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(FakeCryptoPayment.calls, [])
+        self.assertEqual(len(bot.callback_answers), 2)
+
+        fn, args, kwargs = executor.jobs[0]
+        fn(*args, **kwargs)
+
+        self.assertEqual(FakeCryptoPayment.calls[0]["amount"], 95.0)
+        self.assertEqual(payment_records[0][0], "payment-uuid")
+        self.assertNotIn(("customer_crypto", 1988, "40"), purchase_plan.PAYMENT_JOB_INFLIGHT)
 
     def test_customer_plan_screen_advertises_crypto_discount(self):
         bot = DummyBot()

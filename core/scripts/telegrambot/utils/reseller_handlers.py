@@ -84,6 +84,45 @@ def _debt_state_label(debt_state):
     return "debt_state_active"
 
 
+def _iter_users_from_snapshot_entries(entries):
+    for entry in entries:
+        client = entry.get("client")
+        users = entry.get("users")
+        if users is None:
+            continue
+        if isinstance(users, dict):
+            for username, data in users.items():
+                yield client, username, data
+        elif isinstance(users, list):
+            for data in users:
+                if isinstance(data, dict):
+                    yield client, data.get("username"), data
+
+
+def _iter_active_reseller_request_users(multi_api):
+    ttl = _reseller_customers_cache_ttl_seconds()
+    cached_entries = None
+    if hasattr(multi_api, "get_cached_user_snapshot_entries"):
+        cached_entries = multi_api.get_cached_user_snapshot_entries(
+            include_disabled=False,
+            cache_ttl_seconds=ttl,
+            allow_expired=False,
+        )
+
+    if cached_entries is not None:
+        return _iter_users_from_snapshot_entries(cached_entries)
+
+    if hasattr(multi_api, "get_user_snapshot_entries"):
+        return _iter_users_from_snapshot_entries(
+            multi_api.get_user_snapshot_entries(
+                include_disabled=False,
+                cache_ttl_seconds=ttl,
+            )
+        )
+
+    return multi_api.iter_all_users()
+
+
 def _has_active_purchased_config(user_id):
     multi_api = MultiServerAPI()
 
@@ -103,7 +142,7 @@ def _has_active_purchased_config(user_id):
         except (TypeError, ValueError):
             return False
 
-    for _, username, config_data in multi_api.iter_all_users():
+    for _, username, config_data in _iter_active_reseller_request_users(multi_api):
         if _is_active_paid(username, config_data or {}):
             return True
 

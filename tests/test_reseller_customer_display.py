@@ -408,6 +408,44 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             else:
                 os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
 
+    def test_reseller_request_eligibility_uses_fresh_cached_snapshot(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_ttl = os.environ.get("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS")
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def get_cached_user_snapshot_entries(self, **kwargs):
+                self.__class__.calls.append(("cached", kwargs))
+                return [
+                    {
+                        "client": types.SimpleNamespace(server_id="s1"),
+                        "users": {"s1988a": {"expiration_days": 10, "blocked": False}},
+                    }
+                ]
+
+            def get_user_snapshot_entries(self, **_kwargs):
+                raise AssertionError("fresh cache should avoid live snapshot")
+
+            def iter_all_users(self):
+                raise AssertionError("fresh cache should avoid live iteration")
+
+        try:
+            os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+
+            self.assertTrue(reseller_handlers._has_active_purchased_config(1988))
+            self.assertEqual(FakeMultiServerAPI.calls[0][0], "cached")
+            self.assertEqual(FakeMultiServerAPI.calls[0][1]["include_disabled"], False)
+            self.assertEqual(FakeMultiServerAPI.calls[0][1]["allow_expired"], False)
+            self.assertEqual(FakeMultiServerAPI.calls[0][1]["cache_ttl_seconds"], 60)
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            if original_ttl is None:
+                os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
+            else:
+                os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
+
     def test_reseller_customer_overview_and_empty_category_include_refresh(self):
         call = types.SimpleNamespace(
             message=types.SimpleNamespace(

@@ -37,6 +37,8 @@ from utils.receipt_checker import (
 import qrcode
 import io
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
 from dotenv import load_dotenv
 import uuid
@@ -54,6 +56,22 @@ user_data = {}
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 CRYPTO_PAYMENT_DISCOUNT_PERCENT = 5
+PAYMENT_JOB_INFLIGHT = set()
+PAYMENT_JOB_LOCK = threading.Lock()
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+PAYMENT_JOB_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_PAYMENT_JOB_WORKERS", 2),
+    thread_name_prefix="dijiq-payment",
+)
 
 
 def apply_crypto_discount(amount):
@@ -104,6 +122,34 @@ def get_exchange_rate():
         return float(os.getenv('EXCHANGE_RATE', '1'))
     except (TypeError, ValueError):
         return 1.0
+
+
+def _queue_payment_job(job_key, target, *args, **kwargs):
+    with PAYMENT_JOB_LOCK:
+        if job_key in PAYMENT_JOB_INFLIGHT:
+            return False
+        PAYMENT_JOB_INFLIGHT.add(job_key)
+
+    def run():
+        try:
+            target(*args, **kwargs)
+        finally:
+            with PAYMENT_JOB_LOCK:
+                PAYMENT_JOB_INFLIGHT.discard(job_key)
+
+    try:
+        PAYMENT_JOB_EXECUTOR.submit(run)
+    except Exception:
+        with PAYMENT_JOB_LOCK:
+            PAYMENT_JOB_INFLIGHT.discard(job_key)
+        raise
+    return True
+
+
+def _queue_customer_crypto_payment(call, plan_gb):
+    user_id = getattr(getattr(call, "from_user", None), "id", None)
+    job_key = ("customer_crypto", user_id, str(plan_gb))
+    return _queue_payment_job(job_key, handle_crypto_payment, call, plan_gb, False)
 
 
 def _debt_state_label_key(debt_state):
@@ -944,7 +990,15 @@ def handle_payment_method_selection(call, data=None):
         callback_data = data if data else call.data
         _, method, plan_gb = callback_data.split(':')
         if method == 'crypto':
-            handle_crypto_payment(call, plan_gb)
+            queued = _queue_customer_crypto_payment(call, plan_gb)
+            safe_answer_callback_query(bot, call.id)
+            if not queued:
+                logging.getLogger('dijiq.payments').info(
+                    "Skipped duplicate crypto payment job for user %s plan %s",
+                    user_id,
+                    plan_gb,
+                )
+            return
         elif method == 'card_to_card':
             load_dotenv(TELEGRAM_ENV_PATH, override=True)
             card_to_card_mode = os.getenv('CARD_TO_CARD_MODE', 'on')
@@ -969,7 +1023,7 @@ def handle_payment_method_selection(call, data=None):
         language = get_user_language(user_id)
         bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
-def handle_crypto_payment(call, plan_gb):
+def handle_crypto_payment(call, plan_gb, answer_callback=True):
     try:
         user_id = call.from_user.id
         language = get_user_language(user_id)
@@ -981,7 +1035,8 @@ def handle_crypto_payment(call, plan_gb):
                 return
             discount_metadata = build_crypto_discount_metadata(plan['price'])
             discounted_price = discount_metadata['price']
-            safe_answer_callback_query(bot, call.id)
+            if answer_callback:
+                safe_answer_callback_query(bot, call.id)
             payment_handler = CryptoPayment()
             payment_response = payment_handler.create_payment(
                 discounted_price, plan_gb, user_id
