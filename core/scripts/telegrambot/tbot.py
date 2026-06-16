@@ -1,47 +1,91 @@
 from telebot import types
 from utils import *
+import os
 import threading
 import time
 import traceback
 
 EXPIRED_CLEANUP_INTERVAL_SECONDS = 3600
 
+
+def _env_int(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, value)
+
+
+BOT_POLL_TIMEOUT_SECONDS = _env_int("BOT_POLL_TIMEOUT_SECONDS", 10)
+BOT_LONG_POLLING_TIMEOUT_SECONDS = _env_int("BOT_LONG_POLLING_TIMEOUT_SECONDS", 10)
+BOT_MAX_RETRY_DELAY_SECONDS = _env_int("BOT_MAX_RETRY_DELAY_SECONDS", 30)
+
+
+def _process_start_referral(message, user_id):
+    args = message.text.split()
+    if len(args) <= 1:
+        return
+    referral_code = args[1]
+    try:
+        success, result = process_referral(
+            user_id,
+            referral_code,
+            telegram_username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name
+        )
+        lang = get_user_language(user_id)
+        if success:
+            bot.send_message(user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
+    except Exception as e:
+        print(f"Error processing referral: {e}")
+
+
+def _create_test_config_background(user_id, chat_id, language, telegram_username):
+    def runner():
+        try:
+            create_test_config(
+                user_id,
+                chat_id,
+                is_automatic=True,
+                language=language,
+                telegram_username=telegram_username,
+            )
+        except Exception as e:
+            print(f"Error creating automatic test config for {user_id}: {e}")
+
+    thread = threading.Thread(
+        target=runner,
+        name=f"test-config-{user_id}",
+        daemon=True,
+    )
+    thread.start()
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
-    
-    # Check for referral
-    args = message.text.split()
-    if len(args) > 1:
-        referral_code = args[1]
-        try:
-            success, result = process_referral(
-                user_id,
-                referral_code,
-                telegram_username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name
-            )
-            lang = get_user_language(user_id)
-            if success:
-                 bot.send_message(user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
-        except Exception as e:
-            print(f"Error processing referral: {e}")
 
     if is_admin(user_id):
         markup = create_main_markup(is_admin=True)
         bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
+        _process_start_referral(message, user_id)
     else:
         language = get_user_language(user_id)
+        markup = create_main_markup(is_admin=False, user_id=user_id)
+        bot.reply_to(message, "Welcome!", reply_markup=markup)
+        _process_start_referral(message, user_id)
+
         # Automatically create a test config when enabled; otherwise preserve interest silently.
         if not has_used_test_config(user_id):
             if is_test_creation_disabled():
                 add_to_waiting_list(user_id, message.from_user.username, language)
             else:
-                create_test_config(user_id, message.chat.id, is_automatic=True, language=language, telegram_username=message.from_user.username)
-            
-        markup = create_main_markup(is_admin=False, user_id=user_id)
-        bot.reply_to(message, "Welcome!", reply_markup=markup)
+                _create_test_config_background(
+                    user_id,
+                    message.chat.id,
+                    language,
+                    message.from_user.username,
+                )
 
 def monitoring_thread():
     while True:
@@ -102,17 +146,20 @@ def automated_backup_thread():
 def run_polling_forever():
     """Keep polling alive across transient Telegram/network failures."""
     retry_delay_seconds = 3
-    max_retry_delay_seconds = 60
 
     while True:
         try:
-            bot.polling(none_stop=True, timeout=25, long_polling_timeout=25)
+            bot.polling(
+                none_stop=True,
+                timeout=BOT_POLL_TIMEOUT_SECONDS,
+                long_polling_timeout=BOT_LONG_POLLING_TIMEOUT_SECONDS,
+            )
             retry_delay_seconds = 3
         except Exception as e:
             print(f"Telegram polling crashed: {e}")
             traceback.print_exc()
             time.sleep(retry_delay_seconds)
-            retry_delay_seconds = min(max_retry_delay_seconds, retry_delay_seconds * 2)
+            retry_delay_seconds = min(BOT_MAX_RETRY_DELAY_SECONDS, retry_delay_seconds * 2)
 
 if __name__ == '__main__':
     monitor_thread = threading.Thread(target=monitoring_thread, daemon=True)

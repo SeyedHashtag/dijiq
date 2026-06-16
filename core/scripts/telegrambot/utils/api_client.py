@@ -26,6 +26,29 @@ _HTTP_POOL_MAXSIZE = 16
 _thread_local = threading.local()
 
 
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, value)
+
+
+def _api_request_timeout() -> tuple[float, float]:
+    return (
+        _env_float("API_CONNECT_TIMEOUT_SECONDS", 2.0, minimum=0.1),
+        _env_float("API_READ_TIMEOUT_SECONDS", 5.0, minimum=0.1),
+    )
+
+
+def _slow_api_log_ms() -> float:
+    return _env_float("SLOW_API_LOG_MS", 2000.0, minimum=0.0)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.monotonic() - started_at) * 1000)
+
+
 def _get_thread_session(session_key) -> requests.Session:
     """Return a per-thread pooled HTTP session for a server/auth pair."""
     sessions = getattr(_thread_local, "api_sessions", None)
@@ -181,15 +204,26 @@ class APIClient:
     def session(self) -> requests.Session:
         return _get_thread_session(self._session_key)
 
-    def _request(self, method: str, url: str, *, data: dict | None = None, headers: dict | None = None, timeout: int = 10):
+    def _request(self, method: str, url: str, *, data: dict | None = None, headers: dict | None = None, timeout=None):
         request_headers = {**self.headers}
         if headers:
             request_headers.update(headers)
-        return self.session.request(method, url, headers=request_headers, json=data, timeout=timeout)
+        request_timeout = _api_request_timeout() if timeout is None else timeout
+        started_at = time.monotonic()
+        try:
+            return self.session.request(method, url, headers=request_headers, json=data, timeout=request_timeout)
+        finally:
+            elapsed = _elapsed_ms(started_at)
+            threshold = _slow_api_log_ms()
+            if threshold and elapsed >= threshold:
+                print(
+                    f"[APIClient] slow_request method={method} server={self.server_id} "
+                    f"elapsed_ms={elapsed} url={url}"
+                )
 
     def _get(self, url: str):
         try:
-            response = self._request("GET", url, timeout=10)
+            response = self._request("GET", url)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -198,7 +232,7 @@ class APIClient:
 
     def _post(self, url: str, data: dict):
         try:
-            response = self._request("POST", url, data=data, headers={'Content-Type': 'application/json'}, timeout=10)
+            response = self._request("POST", url, data=data, headers={'Content-Type': 'application/json'})
             response.raise_for_status()
             try:
                 return response.json()
@@ -210,7 +244,7 @@ class APIClient:
 
     def _patch(self, url: str, data: dict):
         try:
-            response = self._request("PATCH", url, data=data, headers={'Content-Type': 'application/json'}, timeout=10)
+            response = self._request("PATCH", url, data=data, headers={'Content-Type': 'application/json'})
             response.raise_for_status()
             try:
                 return response.json()
@@ -222,7 +256,7 @@ class APIClient:
 
     def _delete(self, url: str):
         try:
-            response = self._request("DELETE", url, timeout=10)
+            response = self._request("DELETE", url)
             response.raise_for_status()
             try:
                 return response.json()
@@ -306,8 +340,10 @@ class MultiServerAPI:
     """Coordinates API operations across configured VPN servers."""
 
     _creation_cache_lock = threading.RLock()
+    _creation_refresh_lock = threading.Lock()
     _creation_cache = None
     _user_snapshot_cache = {}
+    _user_snapshot_refresh_locks = {}
 
     def __init__(self):
         self.servers = get_server_configs()
@@ -370,6 +406,25 @@ class MultiServerAPI:
 
         return results
 
+    @classmethod
+    def _snapshot_refresh_lock(cls, include_disabled: bool) -> threading.Lock:
+        key = bool(include_disabled)
+        with cls._creation_cache_lock:
+            lock = cls._user_snapshot_refresh_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                cls._user_snapshot_refresh_locks[key] = lock
+            return lock
+
+    @staticmethod
+    def _log_user_snapshot(cache_state: str, include_disabled: bool, started_at: float, entries_count: int | None = None):
+        elapsed = _elapsed_ms(started_at)
+        suffix = "" if entries_count is None else f" entries={entries_count}"
+        print(
+            f"[MultiServerAPI] user_snapshot cache={cache_state} "
+            f"include_disabled={bool(include_disabled)} elapsed_ms={elapsed}{suffix}"
+        )
+
     def _build_user_snapshot(self, include_disabled: bool = False) -> dict:
         return {
             "created_at": time.monotonic(),
@@ -384,26 +439,64 @@ class MultiServerAPI:
         force_refresh: bool = False,
         cache_ttl_seconds: float | None = None,
     ) -> dict:
+        started_at = time.monotonic()
+        cache_key = bool(include_disabled)
         signature = (bool(include_disabled), self._servers_signature(self.servers))
         ttl = self._user_snapshot_cache_ttl_seconds(cache_ttl_seconds)
-        now = time.monotonic()
+        refresh_lock = self._snapshot_refresh_lock(cache_key)
+        acquired_refresh = False
 
         with self._creation_cache_lock:
-            cached = self.__class__._user_snapshot_cache.get(bool(include_disabled))
+            cached = self.__class__._user_snapshot_cache.get(cache_key)
             if (
                 not force_refresh
                 and cached is not None
                 and cached.get("signature") == signature
                 and ttl > 0
-                and now - cached.get("created_at", 0) < ttl
+                and time.monotonic() - cached.get("created_at", 0) < ttl
             ):
                 self.last_user_snapshot_cache_hit = True
+                self._log_user_snapshot("hit", include_disabled, started_at, len(cached.get("entries", [])))
                 return cached
+            if (
+                not force_refresh
+                and cached is not None
+                and cached.get("signature") == signature
+                and ttl > 0
+            ):
+                if not refresh_lock.acquire(blocking=False):
+                    self.last_user_snapshot_cache_hit = True
+                    self._log_user_snapshot("stale", include_disabled, started_at, len(cached.get("entries", [])))
+                    return cached
+                acquired_refresh = True
+
+        if not acquired_refresh:
+            refresh_lock.acquire()
+            acquired_refresh = True
+
+        try:
+            with self._creation_cache_lock:
+                cached = self.__class__._user_snapshot_cache.get(cache_key)
+                if (
+                    not force_refresh
+                    and cached is not None
+                    and cached.get("signature") == signature
+                    and ttl > 0
+                    and time.monotonic() - cached.get("created_at", 0) < ttl
+                ):
+                    self.last_user_snapshot_cache_hit = True
+                    self._log_user_snapshot("hit", include_disabled, started_at, len(cached.get("entries", [])))
+                    return cached
 
             snapshot = self._build_user_snapshot(include_disabled=include_disabled)
-            self.__class__._user_snapshot_cache[bool(include_disabled)] = snapshot
+            with self._creation_cache_lock:
+                self.__class__._user_snapshot_cache[cache_key] = snapshot
             self.last_user_snapshot_cache_hit = False
+            self._log_user_snapshot("miss", include_disabled, started_at, len(snapshot.get("entries", [])))
             return snapshot
+        finally:
+            if acquired_refresh:
+                refresh_lock.release()
 
     def invalidate_user_snapshot_cache(self):
         with self._creation_cache_lock:
@@ -499,7 +592,6 @@ class MultiServerAPI:
     def _get_creation_snapshot(self, force_refresh: bool = False) -> dict:
         signature = self._servers_signature(self.servers)
         ttl = self._creation_cache_ttl_seconds()
-        now = time.monotonic()
 
         with self._creation_cache_lock:
             cached = self.__class__._creation_cache
@@ -508,12 +600,25 @@ class MultiServerAPI:
                 and cached is not None
                 and cached.get("signature") == signature
                 and ttl > 0
-                and now - cached.get("created_at", 0) < ttl
+                and time.monotonic() - cached.get("created_at", 0) < ttl
             ):
                 return cached
 
+        with self.__class__._creation_refresh_lock:
+            with self._creation_cache_lock:
+                cached = self.__class__._creation_cache
+                if (
+                    not force_refresh
+                    and cached is not None
+                    and cached.get("signature") == signature
+                    and ttl > 0
+                    and time.monotonic() - cached.get("created_at", 0) < ttl
+                ):
+                    return cached
+
             snapshot = self._build_creation_snapshot(force_refresh=force_refresh)
-            self.__class__._creation_cache = snapshot
+            with self._creation_cache_lock:
+                self.__class__._creation_cache = snapshot
             return snapshot
 
     def invalidate_creation_cache(self):
@@ -622,12 +727,47 @@ class MultiServerAPI:
                 user = client.get_user(username)
                 if user is not None:
                     return client, user
-        for _, client in self.iter_clients(include_disabled=True):
-            if preferred_server_id and client.server_id == preferred_server_id:
-                continue
-            user = client.get_user(username)
-            if user is not None:
-                return client, user
+
+        entries = [
+            entry
+            for entry in self._client_entries(include_disabled=True)
+            if not preferred_server_id or entry["client"].server_id != preferred_server_id
+        ]
+        if len(entries) <= 1 or self._max_parallel_workers(len(entries)) == 1:
+            for entry in entries:
+                client = entry["client"]
+                user = client.get_user(username)
+                if user is not None:
+                    return client, user
+            return None, None
+
+        def fetch_user(entry):
+            client = entry["client"]
+            return client, client.get_user(username)
+
+        executor = ThreadPoolExecutor(
+            max_workers=self._max_parallel_workers(len(entries)),
+            thread_name_prefix="dijiq-find-user",
+        )
+        shutdown_done = False
+        try:
+            futures = [executor.submit(fetch_user, entry) for entry in entries]
+            for future in as_completed(futures):
+                try:
+                    client, user = future.result()
+                except Exception as e:
+                    print(f"[MultiServerAPI] Find user on server failed: {e}")
+                    continue
+                if user is not None:
+                    for pending in futures:
+                        if pending is not future:
+                            pending.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    shutdown_done = True
+                    return client, user
+        finally:
+            if not shutdown_done:
+                executor.shutdown(wait=True)
         return None, None
 
     def iter_all_users(

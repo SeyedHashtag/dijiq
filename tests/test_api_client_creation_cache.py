@@ -36,6 +36,7 @@ class FakeClient:
         self.add_results = list(add_results or [])
         self.delay = delay
         self.get_users_calls = 0
+        self.get_user_calls = []
         self.add_user_calls = []
 
     def get_users(self):
@@ -43,6 +44,16 @@ class FakeClient:
         if self.delay:
             time.sleep(self.delay)
         return self.users
+
+    def get_user(self, username):
+        self.get_user_calls.append(username)
+        if isinstance(self.users, dict):
+            return self.users.get(username)
+        if isinstance(self.users, list):
+            for item in self.users:
+                if isinstance(item, dict) and item.get("username") == username:
+                    return item
+        return None
 
     def add_user(self, username, traffic_limit, expiration_days, unlimited=False, note=None):
         self.add_user_calls.append({
@@ -67,6 +78,7 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         os.environ["SERVER_USERS_CACHE_TTL_SECONDS"] = "30"
         api_client.MultiServerAPI._creation_cache = None
         api_client.MultiServerAPI._user_snapshot_cache = {}
+        api_client.MultiServerAPI._user_snapshot_refresh_locks = {}
 
     def tearDown(self):
         api_client.APIClient = self.original_api_client
@@ -74,6 +86,7 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         api_client.time.monotonic = self.original_monotonic
         api_client.MultiServerAPI._creation_cache = None
         api_client.MultiServerAPI._user_snapshot_cache = {}
+        api_client.MultiServerAPI._user_snapshot_refresh_locks = {}
         if self.original_ttl is None:
             os.environ.pop("SERVER_USERS_CACHE_TTL_SECONDS", None)
         else:
@@ -366,15 +379,178 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(result["usernames"], {"a", "b", "c"})
 
+    def test_snapshot_refresh_does_not_hold_cache_lock_during_network_calls(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingClient(FakeClient):
+            def get_users(inner_self):
+                inner_self.get_users_calls += 1
+                started.set()
+                release.wait(timeout=1)
+                return inner_self.users
+
+        clients = {"s1": BlockingClient("s1", {"a": {"blocked": False}})}
+        multi_api = self.make_multi_api(clients)
+        result = {}
+
+        worker = threading.Thread(target=lambda: result.setdefault("users", multi_api.get_all_usernames()))
+        worker.start()
+
+        acquired = False
+        try:
+            self.assertTrue(started.wait(timeout=0.5))
+            acquired = api_client.MultiServerAPI._creation_cache_lock.acquire(timeout=0.2)
+            self.assertTrue(acquired)
+        finally:
+            if acquired:
+                api_client.MultiServerAPI._creation_cache_lock.release()
+            release.set()
+            worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(result["users"], {"a"})
+
+    def test_stale_snapshot_returns_while_refresh_is_in_progress(self):
+        current_time = [100.0]
+        api_client.time.monotonic = lambda: current_time[0]
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingClient(FakeClient):
+            def get_users(inner_self):
+                inner_self.get_users_calls += 1
+                started.set()
+                release.wait(timeout=1)
+                return inner_self.users
+
+        clients = {"s1": BlockingClient("s1", {"fresh": {"blocked": False}})}
+        multi_api = self.make_multi_api(clients)
+        stale_client = FakeClient("s1", {"old": {"blocked": False}})
+        signature = (True, multi_api._servers_signature(multi_api.servers))
+        api_client.MultiServerAPI._user_snapshot_cache = {
+            True: {
+                "created_at": 0.0,
+                "signature": signature,
+                "include_disabled": True,
+                "entries": [{
+                    "server": multi_api.servers[0],
+                    "client": stale_client,
+                    "index": 0,
+                    "users": stale_client.users,
+                }],
+            }
+        }
+        result = {}
+
+        worker = threading.Thread(target=lambda: result.setdefault("fresh", list(multi_api.iter_all_users())))
+        worker.start()
+
+        try:
+            self.assertTrue(started.wait(timeout=0.5))
+            stale = list(api_client.MultiServerAPI().iter_all_users())
+        finally:
+            release.set()
+            worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual([username for _, username, _ in stale], ["old"])
+        self.assertEqual([username for _, username, _ in result["fresh"]], ["fresh"])
+        self.assertEqual(clients["s1"].get_users_calls, 1)
+
+    def test_no_cached_snapshot_waits_for_single_refresh(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        class BlockingClient(FakeClient):
+            def get_users(inner_self):
+                inner_self.get_users_calls += 1
+                started.set()
+                release.wait(timeout=1)
+                return inner_self.users
+
+        clients = {"s1": BlockingClient("s1", {"a": {"blocked": False}})}
+        multi_api = self.make_multi_api(clients)
+        results = []
+
+        workers = [
+            threading.Thread(target=lambda: results.append(multi_api.get_all_usernames()))
+            for _ in range(2)
+        ]
+        workers[0].start()
+        self.assertTrue(started.wait(timeout=0.5))
+        workers[1].start()
+
+        release.set()
+        for worker in workers:
+            worker.join(timeout=1)
+
+        self.assertTrue(all(not worker.is_alive() for worker in workers))
+        self.assertEqual(clients["s1"].get_users_calls, 1)
+        self.assertEqual(results, [{"a"}, {"a"}])
+
+    def test_find_user_fetches_servers_in_parallel(self):
+        os.environ["SERVER_FETCH_WORKERS"] = "3"
+        started_count = 0
+        lock = threading.Lock()
+        all_started = threading.Event()
+        release = threading.Event()
+
+        class BlockingFindClient(FakeClient):
+            def get_user(inner_self, username):
+                nonlocal started_count
+                inner_self.get_user_calls.append(username)
+                with lock:
+                    started_count += 1
+                    if started_count == 3:
+                        all_started.set()
+                release.wait(timeout=1)
+                return inner_self.users.get(username)
+
+        clients = {
+            "s1": BlockingFindClient("s1", {}),
+            "s2": BlockingFindClient("s2", {}),
+            "s3": BlockingFindClient("s3", {"needle": {"username": "needle"}}),
+        }
+        multi_api = self.make_multi_api(clients)
+        result = {}
+
+        worker = threading.Thread(target=lambda: result.setdefault("found", multi_api.find_user("needle")))
+        worker.start()
+
+        try:
+            self.assertTrue(all_started.wait(timeout=0.5))
+        finally:
+            release.set()
+            worker.join(timeout=1)
+
+        self.assertFalse(worker.is_alive())
+        found_client, found_user = result["found"]
+        self.assertEqual(found_client.server_id, "s3")
+        self.assertEqual(found_user, {"username": "needle"})
+        self.assertEqual([len(client.get_user_calls) for client in clients.values()], [1, 1, 1])
+
 
 class APIClientPoolingTests(unittest.TestCase):
     def setUp(self):
         self.original_session_factory = api_client.requests.Session
         self.original_thread_sessions = getattr(api_client._thread_local, "api_sessions", None)
+        self.original_timeout_env = {
+            key: os.environ.get(key)
+            for key in ("API_CONNECT_TIMEOUT_SECONDS", "API_READ_TIMEOUT_SECONDS", "SLOW_API_LOG_MS")
+        }
+        os.environ["API_CONNECT_TIMEOUT_SECONDS"] = "2"
+        os.environ["API_READ_TIMEOUT_SECONDS"] = "5"
+        os.environ["SLOW_API_LOG_MS"] = "0"
         api_client._thread_local.api_sessions = {}
 
     def tearDown(self):
         api_client.requests.Session = self.original_session_factory
+        for key, value in self.original_timeout_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         if self.original_thread_sessions is None:
             try:
                 del api_client._thread_local.api_sessions
@@ -420,6 +596,7 @@ class APIClientPoolingTests(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertIs(first.session, second.session)
         self.assertEqual([call[0] for call in sessions[0].request_calls], ["GET", "GET"])
+        self.assertEqual(sessions[0].request_calls[0][2]["timeout"], (2.0, 5.0))
 
 
 class ServerConfigPersistenceTests(unittest.TestCase):
