@@ -1,3 +1,7 @@
+## v1.15.14
+🐛 Prevent wrapped Telegram reply_to calls from passing duplicate timeout arguments through wrapped send_message
+✅ Add regression coverage for reply_to timeout handling with installed safe Telegram wrappers
+
 ## v1.15.13
 ✨ Add safe Telegram API wrappers for callback answers, message edits, sends, photos, and deletes
 🐛 Prevent Telegram API timeouts and callback errors from crashing bot handlers
