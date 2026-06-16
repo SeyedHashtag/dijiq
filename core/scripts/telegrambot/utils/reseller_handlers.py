@@ -6,6 +6,7 @@ import io
 import os
 import re
 import logging
+import threading
 from dotenv import load_dotenv
 
 from utils.command import bot, ADMIN_USER_IDS, is_admin
@@ -40,6 +41,7 @@ from utils.username_utils import (
 )
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+reseller_username_state_lock = threading.Lock()
 
 
 def _get_approved_reseller_data(user_id):
@@ -512,27 +514,30 @@ def handle_reseller_confirm_buy(call):
 def handle_reseller_username_input(message):
     user_id = message.from_user.id
     language = get_user_language(user_id)
+    chosen_username = (message.text or "").strip()
+
+    # Validate username: alphanumeric and max 8 chars
+    if not re.match(r'^[a-zA-Z0-9]{1,8}$', chosen_username):
+        bot.reply_to(message, get_message_text(language, "invalid_username_format"))
+        return
+
+    with reseller_username_state_lock:
+        data = user_data.get(user_id)
+        if not data or data.get('state') != 'waiting_reseller_username':
+            return
+        data = dict(data)
+        user_data.pop(user_id, None)
+
     reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
-        if user_id in user_data:
-            del user_data[user_id]
         bot.reply_to(message, "Your reseller access is not active.")
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
         unlock_amount = get_reseller_unlock_amount(debt)
-        if user_id in user_data:
-            del user_data[user_id]
         bot.reply_to(message, get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount))
         return
-    chosen_username = message.text.strip()
-    
-    # Validate username: alphanumeric and max 8 chars
-    if not re.match(r'^[a-zA-Z0-9]{1,8}$', chosen_username):
-        bot.reply_to(message, get_message_text(language, "invalid_username_format"))
-        return
-        
-    data = user_data[user_id]
+
     gb = data['gb']
     days = data['days']
     price = data['price']
@@ -567,8 +572,7 @@ def handle_reseller_username_input(message):
                 except:
                     pass
             bot.reply_to(message, "Config was created, but accounting failed. Admins have been notified.")
-            if user_id in user_data:
-                del user_data[user_id]
+            user_data.pop(user_id, None)
             return
         
         # Get subscription URL
@@ -595,11 +599,10 @@ def handle_reseller_username_input(message):
         else:
             bot.send_message(message.chat.id, msg, parse_mode="Markdown")
             
-        # Clear state
-        del user_data[user_id]
+        user_data.pop(user_id, None)
     else:
         bot.reply_to(message, "Failed to create config. Please try again or contact support.")
-        del user_data[user_id]
+        user_data.pop(user_id, None)
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:debt")
 def handle_reseller_debt(call):

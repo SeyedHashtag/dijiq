@@ -1169,6 +1169,57 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertIn("unlock $14.36", bot.callback_answers[-1][0][1])
         self.assertNotIn("unlock $0.00", bot.callback_answers[-1][0][1])
 
+    def test_rapid_second_reseller_customer_name_does_not_create_duplicate_config(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        purchase_plan.user_data[1988] = {
+            "state": "waiting_reseller_username",
+            "gb": "5",
+            "days": 30,
+            "price": 2.0,
+            "unlimited": False,
+        }
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 0.0,
+            "configs": [],
+        }
+
+        create_calls = []
+        debt_calls = []
+
+        class FakeCreatedClient:
+            server_id = "s1"
+
+            def get_user_uri(self, username):
+                return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
+
+        def make_message(text):
+            return types.SimpleNamespace(
+                text=text,
+                from_user=types.SimpleNamespace(id=1988),
+                chat=types.SimpleNamespace(id=555),
+            )
+
+        def fake_create(api_client, user_id, gb, days, chosen_username, unlimited=False):
+            create_calls.append(chosen_username)
+            if len(create_calls) == 1:
+                reseller_handlers.handle_reseller_username_input(make_message("second"))
+            return "r1988", True, FakeCreatedClient()
+
+        reseller_handlers._create_reseller_user_with_note = fake_create
+        reseller_handlers.add_reseller_debt = (
+            lambda user_id, amount, config_data:
+            debt_calls.append((user_id, amount, dict(config_data))) or True
+        )
+
+        reseller_handlers.handle_reseller_username_input(make_message("first"))
+
+        self.assertEqual(create_calls, ["first"])
+        self.assertEqual(len(debt_calls), 1)
+        self.assertNotIn(1988, purchase_plan.user_data)
+
     def test_checker_no_pending_confirmations_shows_my_stats_button(self):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
