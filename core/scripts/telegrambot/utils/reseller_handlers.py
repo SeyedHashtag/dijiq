@@ -19,6 +19,7 @@ from utils.reseller import (
     get_banned_reseller_cleanup_candidates, cleanup_banned_reseller_users,
     can_reseller_add_debt, get_reseller_total_paid, get_reseller_trust_limit,
     apply_reseller_payment, validate_reseller_manual_payment_amount,
+    reseller_config_is_recorded,
 )
 from utils.edit_plans import load_plans
 from utils.api_client import APIClient, MultiServerAPI
@@ -194,6 +195,38 @@ def _show_reseller_trust_limit_block(call, language, current_debt, purchase_adds
         message_id=call.message.message_id,
         reply_markup=markup
     )
+
+
+def _rollback_unaccounted_reseller_user(api_client, username):
+    try:
+        if api_client is not None and username:
+            return api_client.delete_user(username)
+    except Exception as e:
+        logging.getLogger("dijiq.reseller").exception(
+            "Failed to roll back unaccounted reseller user username=%s error=%s",
+            username,
+            e,
+        )
+    return None
+
+
+def _notify_reseller_accounting_failure(user_id, username, price, rollback_result):
+    rollback_text = "rolled back" if rollback_result is not None else "rollback failed"
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            bot.send_message(
+                admin_id,
+                (
+                    "⚠️ Reseller accounting failed after config creation.\n"
+                    f"Reseller: {user_id}\n"
+                    f"Username: {username}\n"
+                    f"Amount: ${format_usd_amount(price)}\n"
+                    f"VPN user rollback: {rollback_text}"
+                ),
+            )
+        except:
+            pass
+
 
 # Reseller Menu Handler
 @bot.message_handler(func=lambda message: any(
@@ -565,13 +598,10 @@ def handle_reseller_username_input(message):
             "server_id": api_client.server_id,
         }
         debt_added = add_reseller_debt(user_id, price, config_data)
-        if not debt_added:
-            for admin_id in ADMIN_USER_IDS:
-                try:
-                    bot.send_message(admin_id, f"⚠️ Reseller debt write failed for user {user_id} after config creation: {username}")
-                except:
-                    pass
-            bot.reply_to(message, "Config was created, but accounting failed. Admins have been notified.")
+        if not debt_added or not reseller_config_is_recorded(user_id, username, api_client.server_id):
+            rollback_result = _rollback_unaccounted_reseller_user(api_client, username)
+            _notify_reseller_accounting_failure(user_id, username, price, rollback_result)
+            bot.reply_to(message, "Config creation could not be accounted for, so it was cancelled. Admins have been notified.")
             user_data.pop(user_id, None)
             return
         

@@ -254,6 +254,7 @@ def install_common_stubs(bot, payment_records):
     )
     reseller_stub.update_reseller_status = lambda *args, **kwargs: True
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.reseller_config_is_recorded = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.apply_reseller_payment = lambda user_id, amount: (True, max(0.0, 100.0 - float(amount or 0.0)))
@@ -1218,6 +1219,56 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         self.assertEqual(create_calls, ["first"])
         self.assertEqual(len(debt_calls), 1)
+        self.assertNotIn(1988, purchase_plan.user_data)
+
+    def test_reseller_customer_creation_rolls_back_when_accounting_is_not_verified(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        reseller_handlers = load_reseller_handlers(purchase_plan)
+        purchase_plan.user_data[1988] = {
+            "state": "waiting_reseller_username",
+            "gb": "5",
+            "days": 30,
+            "price": 2.0,
+            "unlimited": False,
+        }
+        reseller_handlers.get_reseller_data = lambda _user_id: {
+            "status": "approved",
+            "debt": 0.0,
+            "configs": [],
+        }
+
+        class FakeCreatedClient:
+            server_id = "s1"
+
+            def __init__(self):
+                self.deleted = []
+
+            def delete_user(self, username):
+                self.deleted.append(username)
+                return {"ok": True}
+
+        fake_client = FakeCreatedClient()
+        reseller_handlers._create_reseller_user_with_note = (
+            lambda *_args, **_kwargs: ("r1988", True, fake_client)
+        )
+        reseller_handlers.add_reseller_debt = lambda *_args, **_kwargs: True
+        reseller_handlers.reseller_config_is_recorded = lambda *_args, **_kwargs: False
+        reseller_handlers.ADMIN_USER_IDS = [99]
+
+        message = types.SimpleNamespace(
+            text="first",
+            from_user=types.SimpleNamespace(id=1988),
+            chat=types.SimpleNamespace(id=555),
+        )
+
+        reseller_handlers.handle_reseller_username_input(message)
+
+        self.assertEqual(fake_client.deleted, ["r1988"])
+        self.assertIn("could not be accounted", bot.replies[-1][0][1])
+        self.assertIn("Reseller accounting failed", bot.sent_messages[-1][0][1])
+        self.assertEqual(bot.sent_messages[-1][0][0], 99)
+        self.assertEqual(bot.sent_photos, [])
         self.assertNotIn(1988, purchase_plan.user_data)
 
     def test_checker_no_pending_confirmations_shows_my_stats_button(self):

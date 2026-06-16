@@ -129,6 +129,15 @@ ADMIN_CLEANUP_REVIEW_ACTIONS = {
     'rk': 'review_keep',
     'rd': 'review_delete',
 }
+RESELLER_CLEANUP_METADATA_FIELDS = (
+    'cleanup_status',
+    'cleanup_error',
+    'cleanup_notified_at',
+    'cleanup_deleted_at',
+    'cleanup_delete_result',
+    'cleanup_notification_error',
+    'cleanup_last_state',
+)
 
 _cleanup_lock = threading.RLock()
 _cleanup_refresh_lock = threading.Lock()
@@ -246,6 +255,105 @@ def _save_json_file(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(data, f, indent=4)
+
+
+def _load_current_resellers_for_cleanup_save():
+    try:
+        from utils import reseller as reseller_store
+
+        original_path = reseller_store.RESELLERS_FILE
+        reseller_store.RESELLERS_FILE = RESELLERS_FILE
+        try:
+            return reseller_store.load_resellers()
+        finally:
+            reseller_store.RESELLERS_FILE = original_path
+    except Exception:
+        data = _load_json_file(RESELLERS_FILE, {})
+        return data if isinstance(data, dict) else {}
+
+
+def _save_current_resellers_for_cleanup_save(resellers):
+    try:
+        from utils import reseller as reseller_store
+
+        original_path = reseller_store.RESELLERS_FILE
+        reseller_store.RESELLERS_FILE = RESELLERS_FILE
+        try:
+            reseller_store.save_resellers(resellers if isinstance(resellers, dict) else {})
+            return
+        finally:
+            reseller_store.RESELLERS_FILE = original_path
+    except Exception:
+        _save_json_file(RESELLERS_FILE, resellers if isinstance(resellers, dict) else {})
+
+
+def _get_reseller_config_by_ref(resellers, ref):
+    if not isinstance(resellers, dict) or len(ref) < 3:
+        return None
+    reseller = resellers.get(str(ref[1]))
+    configs = reseller.get('configs', []) if isinstance(reseller, dict) else []
+    if not isinstance(configs, list):
+        return None
+    try:
+        index = int(ref[2])
+    except (TypeError, ValueError):
+        return None
+    if 0 <= index < len(configs) and isinstance(configs[index], dict):
+        return configs[index]
+    return None
+
+
+def _find_latest_reseller_config(latest_resellers, ref, source_config):
+    if not isinstance(latest_resellers, dict) or len(ref) < 3:
+        return None
+    reseller = latest_resellers.get(str(ref[1]))
+    configs = reseller.get('configs', []) if isinstance(reseller, dict) else []
+    if not isinstance(configs, list):
+        return None
+
+    try:
+        index = int(ref[2])
+    except (TypeError, ValueError):
+        index = -1
+
+    source_username = str((source_config or {}).get('username') or '').strip().lower()
+    source_server_id = str((source_config or {}).get('server_id') or '').strip()
+    if 0 <= index < len(configs) and isinstance(configs[index], dict):
+        indexed = configs[index]
+        indexed_username = str(indexed.get('username') or '').strip().lower()
+        indexed_server_id = str(indexed.get('server_id') or '').strip()
+        if indexed_username == source_username and (not source_server_id or indexed_server_id == source_server_id):
+            return indexed
+
+    for config in configs:
+        if not isinstance(config, dict):
+            continue
+        username = str(config.get('username') or '').strip().lower()
+        server_id = str(config.get('server_id') or '').strip()
+        if username == source_username and (not source_server_id or server_id == source_server_id):
+            return config
+    return None
+
+
+def _save_reseller_cleanup_metadata(stale_resellers, dirty_refs):
+    refs = set(dirty_refs or set())
+    if not refs:
+        _save_current_resellers_for_cleanup_save(stale_resellers if isinstance(stale_resellers, dict) else {})
+        return
+
+    latest_resellers = _load_current_resellers_for_cleanup_save()
+    for ref in refs:
+        source_config = _get_reseller_config_by_ref(stale_resellers, ref)
+        target_config = _find_latest_reseller_config(latest_resellers, ref, source_config)
+        if source_config is None or target_config is None:
+            continue
+        for field in RESELLER_CLEANUP_METADATA_FIELDS:
+            if field in source_config:
+                target_config[field] = source_config[field]
+            else:
+                target_config.pop(field, None)
+
+    _save_current_resellers_for_cleanup_save(latest_resellers)
 
 
 def _load_cleanup_schedule_metadata():
@@ -623,6 +731,7 @@ def _load_cleanup_record_stores():
         'payments': _load_json_file(PAYMENTS_FILE, {}),
         'resellers': _load_json_file(RESELLERS_FILE, {}),
         '_dirty': set(),
+        '_reseller_dirty_refs': set(),
     }
 
 
@@ -635,13 +744,29 @@ def _save_dirty_cleanup_record_stores(stores):
     if 'payments' in dirty:
         _save_json_file(PAYMENTS_FILE, stores.get('payments') if isinstance(stores.get('payments'), dict) else {})
     if 'resellers' in dirty:
-        _save_json_file(RESELLERS_FILE, stores.get('resellers') if isinstance(stores.get('resellers'), dict) else {})
+        _save_reseller_cleanup_metadata(
+            stores.get('resellers') if isinstance(stores.get('resellers'), dict) else {},
+            stores.get('_reseller_dirty_refs') or set(),
+        )
     dirty.clear()
+    if isinstance(stores.get('_reseller_dirty_refs'), set):
+        stores['_reseller_dirty_refs'].clear()
 
 
 def _mark_store_dirty(stores, key):
     if isinstance(stores, dict):
         stores.setdefault('_dirty', set()).add(key)
+
+
+def _mark_reseller_ref_dirty(stores, ref):
+    if not isinstance(stores, dict) or len(ref) < 3:
+        return
+    try:
+        config_index = int(ref[2])
+    except (TypeError, ValueError):
+        return
+    stores.setdefault('_reseller_dirty_refs', set()).add(('reseller', str(ref[1]), config_index))
+    _mark_store_dirty(stores, 'resellers')
 
 
 def _clear_candidate_delete_metadata(candidate, stores=None):
@@ -682,9 +807,9 @@ def _clear_candidate_delete_metadata(candidate, stores=None):
             for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
                 configs[ref[2]].pop(key, None)
             if stores is not None:
-                _mark_store_dirty(stores, 'resellers')
+                _mark_reseller_ref_dirty(stores, ref)
             else:
-                _save_json_file(RESELLERS_FILE, data)
+                _save_reseller_cleanup_metadata(data, {ref})
 
 
 def _completed_payment(record):
@@ -1086,9 +1211,9 @@ def _update_candidate_record(candidate, fields, stores=None):
         if isinstance(configs, list) and 0 <= ref[2] < len(configs) and isinstance(configs[ref[2]], dict):
             _apply_fields(configs[ref[2]], fields)
             if stores is not None:
-                _mark_store_dirty(stores, 'resellers')
+                _mark_reseller_ref_dirty(stores, ref)
             else:
-                _save_json_file(RESELLERS_FILE, data)
+                _save_reseller_cleanup_metadata(data, {ref})
 
 
 def _get_user_lookup(multi_api, username, preferred_server_id=None):

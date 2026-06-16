@@ -300,6 +300,39 @@ class ExpiredCleanupTests(unittest.TestCase):
             {("test", "t101"), ("customer", "s202"), ("reseller_customer", "r303")},
         )
 
+    def test_reseller_cleanup_metadata_save_preserves_new_configs_added_during_scan(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {})
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {
+            "303": {
+                "status": "approved",
+                "debt": 1.0,
+                "configs": [
+                    {"username": "r303", "server_id": "s1", "price": 1.0}
+                ],
+            }
+        })
+        client = FakeClient("s1", {"r303": self.expired_user()})
+
+        def append_new_config(*_args, **_kwargs):
+            resellers = self.read_json(self.cleanup.RESELLERS_FILE)
+            resellers["303"]["configs"].append({
+                "username": "r303a",
+                "server_id": "s1",
+                "price": 1.0,
+            })
+            self.write_json(self.cleanup.RESELLERS_FILE, resellers)
+            return None
+
+        self.cleanup._notify_candidate = append_new_config
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        saved_configs = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"]
+        self.assertEqual([config["username"] for config in saved_configs], ["r303", "r303a"])
+        self.assertEqual(saved_configs[0]["cleanup_status"], "notified")
+        self.assertNotIn("cleanup_status", saved_configs[1])
+
     def test_first_expired_detection_notifies_and_waits_to_delete(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
             "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}

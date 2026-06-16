@@ -145,6 +145,21 @@ class ResellerDebtPolicyTests(unittest.TestCase):
         self.assertEqual(saved["configs"][0]["cleanup_status"], "renewed")
         self.assertEqual(saved["configs"][0]["cleanup_last_state"], {"status": "active"})
 
+    def test_reseller_config_is_recorded_matches_username_and_server(self):
+        self.write_resellers({
+            "1988": {
+                "status": "approved",
+                "debt": 1.0,
+                "configs": [
+                    {"username": "r1988", "server_id": "s1", "price": 1.0},
+                ],
+            }
+        })
+
+        self.assertTrue(self.reseller.reseller_config_is_recorded("1988", "r1988", "s1"))
+        self.assertFalse(self.reseller.reseller_config_is_recorded("1988", "r1988", "s2"))
+        self.assertFalse(self.reseller.reseller_config_is_recorded("1988", "missing", "s1"))
+
     def test_successful_payment_increments_total_paid_by_debt_credit(self):
         self.write_resellers({
             "1988": {

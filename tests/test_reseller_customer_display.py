@@ -142,6 +142,7 @@ def install_stubs():
     reseller_stub.get_reseller_data = lambda user_id: None
     reseller_stub.update_reseller_status = lambda *args, **kwargs: True
     reseller_stub.add_reseller_debt = lambda *args, **kwargs: True
+    reseller_stub.reseller_config_is_recorded = lambda *args, **kwargs: True
     reseller_stub.get_all_resellers = lambda: {}
     reseller_stub.set_reseller_debt = lambda *args, **kwargs: True
     reseller_stub.get_banned_reseller_cleanup_candidates = lambda reseller_data: []
