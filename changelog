@@ -1,3 +1,8 @@
+## v1.15.16
+⚡ Run Telegram callback answers and My Configs show-config actions in background workers
+🐛 Add configurable timeouts for crypto payment API create/status requests via DIJIQ_CRYPTO_API_TIMEOUT_SECONDS
+✅ Add tests for background callback execution, show-config queueing, and crypto payment request timeouts
+
 ## v1.15.15
 ✨ Serve My Configs from cached user snapshots and refresh stale snapshots in the background
 ⚡ Run expired-cleanup manual review actions asynchronously with duplicate-action protection
