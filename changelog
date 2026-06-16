@@ -1,3 +1,8 @@
+## v1.15.12
+✨ Add rotating Telegram bot log files with configurable path, level, slow-handler threshold, and worker count
+✨ Add an admin Bot Logs menu action to download the current bot log file from Telegram
+✅ Add tests for bot logging setup, handler instrumentation, admin log delivery, and menu visibility
+
 ## v1.15.10
 ✨ Add scheduled background expired-user cleanup with run metadata and startup-delay tracking
 ⚡ Batch expired-cleanup local record writes across test configs, payments, and reseller configs
