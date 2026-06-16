@@ -1,3 +1,8 @@
+## v1.15.18
+⚡ Run reseller customer config creation in background workers with duplicate-job protection
+⚡ Render Telegram server-info dashboards asynchronously with generating/refreshing placeholders
+✅ Add tests for queued reseller config creation and asynchronous server-info dashboard updates
+
 ## v1.15.17
 ⚡ Queue customer crypto payment creation in background workers with duplicate-job protection
 ✨ Use fresh cached VPN user snapshots when checking reseller request eligibility
