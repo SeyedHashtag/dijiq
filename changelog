@@ -1,3 +1,8 @@
+## v1.15.17
+⚡ Queue customer crypto payment creation in background workers with duplicate-job protection
+✨ Use fresh cached VPN user snapshots when checking reseller request eligibility
+✅ Add tests for queued crypto payment handling and cached reseller eligibility checks
+
 ## v1.15.16
 ⚡ Run Telegram callback answers and My Configs show-config actions in background workers
 🐛 Add configurable timeouts for crypto payment API create/status requests via DIJIQ_CRYPTO_API_TIMEOUT_SECONDS
