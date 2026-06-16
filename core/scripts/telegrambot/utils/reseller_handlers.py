@@ -7,6 +7,7 @@ import os
 import re
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 from utils.command import bot, ADMIN_USER_IDS, is_admin
@@ -45,10 +46,28 @@ from utils.telegram_safe import (
     safe_delete_message,
     safe_edit_message_text,
     safe_send_message,
+    safe_send_photo,
+    safe_reply_to,
 )
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 reseller_username_state_lock = threading.Lock()
+RESELLER_CREATE_LOCK = threading.Lock()
+RESELLER_CREATE_INFLIGHT = set()
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+RESELLER_CREATE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_RESELLER_CREATE_WORKERS", 2),
+    thread_name_prefix="dijiq-reseller-create",
+)
 
 
 def _get_approved_reseller_data(user_id):
@@ -588,6 +607,87 @@ def handle_reseller_confirm_buy(call):
         reply_markup=_reseller_username_prompt_markup(language)
     )
 
+
+def _queue_reseller_customer_creation(user_id, message, language, data, chosen_username):
+    with RESELLER_CREATE_LOCK:
+        if user_id in RESELLER_CREATE_INFLIGHT:
+            return False
+        RESELLER_CREATE_INFLIGHT.add(user_id)
+
+    def run():
+        try:
+            _run_reseller_customer_creation(message, user_id, language, data, chosen_username)
+        finally:
+            with RESELLER_CREATE_LOCK:
+                RESELLER_CREATE_INFLIGHT.discard(user_id)
+
+    try:
+        RESELLER_CREATE_EXECUTOR.submit(run)
+    except Exception:
+        with RESELLER_CREATE_LOCK:
+            RESELLER_CREATE_INFLIGHT.discard(user_id)
+        raise
+    return True
+
+
+def _run_reseller_customer_creation(message, user_id, language, data, chosen_username):
+    gb = data['gb']
+    days = data['days']
+    price = data['price']
+    unlimited = data.get('unlimited', False)
+
+    api_client = APIClient()
+    username, result, api_client = _create_reseller_user_with_note(
+        api_client,
+        user_id,
+        gb,
+        days,
+        chosen_username,
+        unlimited=unlimited,
+    )
+
+    if result:
+        config_data = {
+            "username": username,
+            "customer_name": chosen_username,
+            "gb": gb,
+            "days": days,
+            "price": price,
+            "server_id": api_client.server_id,
+        }
+        debt_added = add_reseller_debt(user_id, price, config_data)
+        if not debt_added or not reseller_config_is_recorded(user_id, username, api_client.server_id):
+            rollback_result = _rollback_unaccounted_reseller_user(api_client, username)
+            _notify_reseller_accounting_failure(user_id, username, price, rollback_result)
+            safe_reply_to(bot, message, "Config creation could not be accounted for, so it was cancelled. Admins have been notified.")
+            return
+
+        user_uri_data = api_client.get_user_uri(username)
+        sub_url = user_uri_data.get('normal_sub', 'N/A') if user_uri_data else 'N/A'
+        ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
+        ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
+
+        msg = get_message_text(language, "reseller_config_created").format(
+            username=username,
+            plan_gb=gb,
+            days=days,
+            price=format_usd_amount(price),
+            sub_url=sub_url,
+            ipv4_info=ipv4_info
+        )
+
+        if sub_url != 'N/A':
+            qr = qrcode.make(ipv4_url or sub_url)
+            bio = io.BytesIO()
+            qr.save(bio, 'PNG')
+            bio.seek(0)
+            safe_send_photo(bot, message.chat.id, bio, caption=msg, parse_mode="Markdown")
+        else:
+            safe_send_message(bot, message.chat.id, msg, parse_mode="Markdown")
+    else:
+        safe_reply_to(bot, message, "Failed to create config. Please try again or contact support.")
+
+
 @bot.message_handler(func=lambda message: message.from_user.id in user_data and user_data[message.from_user.id].get('state') == 'waiting_reseller_username')
 def handle_reseller_username_input(message):
     user_id = message.from_user.id
@@ -616,68 +716,18 @@ def handle_reseller_username_input(message):
         bot.reply_to(message, get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount))
         return
 
-    gb = data['gb']
-    days = data['days']
-    price = data['price']
-    unlimited = data.get('unlimited', False)
-    
-    # Create user
-    api_client = APIClient()
-    username, result, api_client = _create_reseller_user_with_note(
-        api_client,
-        user_id,
-        gb,
-        days,
-        chosen_username,
-        unlimited=unlimited,
-    )
-    
-    if result:
-        # Add debt
-        config_data = {
-            "username": username,
-            "customer_name": chosen_username,
-            "gb": gb,
-            "days": days,
-            "price": price,
-            "server_id": api_client.server_id,
-        }
-        debt_added = add_reseller_debt(user_id, price, config_data)
-        if not debt_added or not reseller_config_is_recorded(user_id, username, api_client.server_id):
-            rollback_result = _rollback_unaccounted_reseller_user(api_client, username)
-            _notify_reseller_accounting_failure(user_id, username, price, rollback_result)
-            bot.reply_to(message, "Config creation could not be accounted for, so it was cancelled. Admins have been notified.")
-            user_data.pop(user_id, None)
-            return
-        
-        # Get subscription URL
-        user_uri_data = api_client.get_user_uri(username)
-        sub_url = user_uri_data.get('normal_sub', 'N/A') if user_uri_data else 'N/A'
-        ipv4_url = user_uri_data.get('ipv4', '') if user_uri_data else ''
-        ipv4_info = f"IPv4 URL: `{ipv4_url}`\n\n" if ipv4_url else ""
-        
-        msg = get_message_text(language, "reseller_config_created").format(
-            username=username,
-            plan_gb=gb,
-            days=days,
-            price=format_usd_amount(price),
-            sub_url=sub_url,
-            ipv4_info=ipv4_info
-        )
-        
-        if sub_url != 'N/A':
-            qr = qrcode.make(ipv4_url or sub_url)
-            bio = io.BytesIO()
-            qr.save(bio, 'PNG')
-            bio.seek(0)
-            bot.send_photo(message.chat.id, bio, caption=msg, parse_mode="Markdown")
-        else:
-            bot.send_message(message.chat.id, msg, parse_mode="Markdown")
-            
-        user_data.pop(user_id, None)
-    else:
-        bot.reply_to(message, "Failed to create config. Please try again or contact support.")
-        user_data.pop(user_id, None)
+    safe_reply_to(bot, message, "Creating config. I will send it here when it is ready.")
+    try:
+        queued = _queue_reseller_customer_creation(user_id, message, language, data, chosen_username)
+    except Exception as e:
+        with reseller_username_state_lock:
+            user_data[user_id] = data
+        logging.getLogger("dijiq.reseller").exception("Failed to queue reseller customer creation: %s", e)
+        safe_reply_to(bot, message, "Failed to start config creation. Please try again.")
+        return
+
+    if not queued:
+        safe_reply_to(bot, message, "Config creation is already in progress.")
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:debt")
 def handle_reseller_debt(call):

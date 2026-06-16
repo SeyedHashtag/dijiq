@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from telebot import types
 from utils.command import *
 
@@ -18,8 +19,24 @@ SERVER_INFO_SECTIONS = (
 )
 SERVER_INFO_CACHE_LOCK = threading.RLock()
 SERVER_INFO_REFRESH_LOCK = threading.Lock()
+SERVER_INFO_JOB_LOCK = threading.Lock()
 SERVER_INFO_MIN_REFRESH_SECONDS = 60
 SERVER_INFO_SNAPSHOT_CACHE = {"snapshot": None, "cached_at": 0.0}
+SERVER_INFO_RENDER_INFLIGHT = set()
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+SERVER_INFO_JOB_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_SERVER_INFO_WORKERS", 1),
+    thread_name_prefix="dijiq-server-info",
+)
 
 
 def _load_cli_api_module():
@@ -91,11 +108,58 @@ def _build_server_info_text(section=SERVER_INFO_DEFAULT_SECTION, force_refresh=F
         return f"Error generating server info: {e}"
 
 
+def _has_server_info_snapshot():
+    with SERVER_INFO_CACHE_LOCK:
+        return SERVER_INFO_SNAPSHOT_CACHE.get("snapshot") is not None
+
+
+def _server_info_placeholder(force_refresh=False):
+    if force_refresh:
+        return "Refreshing server info..."
+    return "Generating server info..."
+
+
+def _submit_server_info_render(chat_id, message_id, section, force_refresh=False):
+    key = (chat_id, message_id, section, bool(force_refresh))
+    with SERVER_INFO_JOB_LOCK:
+        if key in SERVER_INFO_RENDER_INFLIGHT:
+            return False
+        SERVER_INFO_RENDER_INFLIGHT.add(key)
+
+    def run():
+        try:
+            bot.edit_message_text(
+                _build_server_info_text(section, force_refresh=force_refresh),
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=_build_server_info_markup(section),
+                parse_mode='Markdown',
+            )
+        finally:
+            with SERVER_INFO_JOB_LOCK:
+                SERVER_INFO_RENDER_INFLIGHT.discard(key)
+
+    try:
+        SERVER_INFO_JOB_EXECUTOR.submit(run)
+    except Exception:
+        with SERVER_INFO_JOB_LOCK:
+            SERVER_INFO_RENDER_INFLIGHT.discard(key)
+        raise
+    return True
+
+
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '📊 Server Info')
 def server_info(message):
     bot.send_chat_action(message.chat.id, 'typing')
     section = SERVER_INFO_DEFAULT_SECTION
-    bot.reply_to(message, _build_server_info_text(section), reply_markup=_build_server_info_markup(section), parse_mode='Markdown')
+    markup = _build_server_info_markup(section)
+    if _has_server_info_snapshot():
+        bot.reply_to(message, _build_server_info_text(section), reply_markup=markup, parse_mode='Markdown')
+        return
+
+    reply = bot.reply_to(message, _server_info_placeholder(), reply_markup=markup, parse_mode='Markdown')
+    if reply is not None:
+        _submit_server_info_render(reply.chat.id, reply.message_id, section)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("server_info:"))
@@ -111,6 +175,17 @@ def handle_server_info_callback(call):
     answer = "Refreshed." if force_refresh else "Opened."
 
     bot.answer_callback_query(call.id, answer)
+    if force_refresh or not _has_server_info_snapshot():
+        bot.edit_message_text(
+            _server_info_placeholder(force_refresh=force_refresh),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=_build_server_info_markup(section),
+            parse_mode='Markdown',
+        )
+        _submit_server_info_render(call.message.chat.id, call.message.message_id, section, force_refresh=force_refresh)
+        return
+
     bot.edit_message_text(
         _build_server_info_text(section, force_refresh=force_refresh),
         chat_id=call.message.chat.id,

@@ -371,6 +371,10 @@ class HoldingExecutor:
         self.jobs.append((fn, args, kwargs))
         return types.SimpleNamespace(done=lambda: False)
 
+    def run_next(self):
+        fn, args, kwargs = self.jobs.pop(0)
+        return fn(*args, **kwargs)
+
 
 def install_renewal_success_stub(calls):
     renewal_stub = types.ModuleType("utils.renewal")
@@ -1213,6 +1217,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
         reseller_handlers = load_reseller_handlers(purchase_plan)
+        executor = HoldingExecutor()
+        reseller_handlers.RESELLER_CREATE_EXECUTOR = executor
         purchase_plan.user_data[1988] = {
             "state": "waiting_reseller_username",
             "gb": "5",
@@ -1256,6 +1262,11 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
 
         reseller_handlers.handle_reseller_username_input(make_message("first"))
 
+        self.assertEqual(create_calls, [])
+        self.assertEqual(len(executor.jobs), 1)
+
+        executor.run_next()
+
         self.assertEqual(create_calls, ["first"])
         self.assertEqual(len(debt_calls), 1)
         self.assertNotIn(1988, purchase_plan.user_data)
@@ -1264,6 +1275,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])
         reseller_handlers = load_reseller_handlers(purchase_plan)
+        executor = HoldingExecutor()
+        reseller_handlers.RESELLER_CREATE_EXECUTOR = executor
         purchase_plan.user_data[1988] = {
             "state": "waiting_reseller_username",
             "gb": "5",
@@ -1302,6 +1315,11 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         )
 
         reseller_handlers.handle_reseller_username_input(message)
+
+        self.assertEqual(fake_client.deleted, [])
+        self.assertEqual(len(executor.jobs), 1)
+
+        executor.run_next()
 
         self.assertEqual(fake_client.deleted, ["r1988"])
         self.assertIn("could not be accounted", bot.replies[-1][0][1])

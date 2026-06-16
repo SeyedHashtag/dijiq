@@ -353,12 +353,28 @@ class DummyBot:
 
     def reply_to(self, *args, **kwargs):
         self.replies.append((args, kwargs))
+        message = args[0] if args else None
+        chat_id = getattr(getattr(message, "chat", None), "id", kwargs.get("chat_id"))
+        return types.SimpleNamespace(chat=types.SimpleNamespace(id=chat_id), message_id=100 + len(self.replies))
 
     def edit_message_text(self, *args, **kwargs):
         self.edits.append((args, kwargs))
 
     def answer_callback_query(self, *args, **kwargs):
         self.answers.append((args, kwargs))
+
+
+class HoldingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+        return types.SimpleNamespace(done=lambda: False)
+
+    def run_next(self):
+        fn, args, kwargs = self.jobs.pop(0)
+        return fn(*args, **kwargs)
 
 
 def load_serverinfo_module():
@@ -418,12 +434,14 @@ def load_serverinfo_module():
 class ServerInfoTelegramTests(unittest.TestCase):
     def test_server_info_reply_includes_category_markup(self):
         module, bot, cli_api = load_serverinfo_module()
+        executor = HoldingExecutor()
+        module.SERVER_INFO_JOB_EXECUTOR = executor
         message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
 
         module.server_info(message)
 
-        self.assertEqual(bot.replies[0][0][1], "overview dashboard text 1")
-        self.assertEqual(cli_api.build_count, 1)
+        self.assertEqual(bot.replies[0][0][1], "Generating server info...")
+        self.assertEqual(cli_api.build_count, 0)
         markup = bot.replies[0][1]["reply_markup"]
         callbacks = [button.callback_data for button in markup.buttons]
         self.assertIn("server_info:view:overview", callbacks)
@@ -433,11 +451,16 @@ class ServerInfoTelegramTests(unittest.TestCase):
         self.assertIn("server_info:view:traffic", callbacks)
         self.assertIn("server_info:view:alerts", callbacks)
         self.assertIn("server_info:refresh:overview", callbacks)
+        self.assertEqual(len(executor.jobs), 1)
+
+        executor.run_next()
+
+        self.assertEqual(bot.edits[0][0][0], "overview dashboard text 1")
+        self.assertEqual(cli_api.build_count, 1)
 
     def test_category_callbacks_and_refresh_edit_existing_message(self):
         module, bot, cli_api = load_serverinfo_module()
-        message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
-        module.server_info(message)
+        module._get_server_info_snapshot()
 
         call = types.SimpleNamespace(
             id="ok",
@@ -461,18 +484,27 @@ class ServerInfoTelegramTests(unittest.TestCase):
             from_user=types.SimpleNamespace(id=1),
             message=types.SimpleNamespace(chat=types.SimpleNamespace(id=10), message_id=77),
         )
+        executor = HoldingExecutor()
+        module.SERVER_INFO_JOB_EXECUTOR = executor
         module.SERVER_INFO_MIN_REFRESH_SECONDS = 0
         module.handle_server_info_callback(refresh_call)
 
-        self.assertEqual(bot.edits[1][0][0], "traffic dashboard text 2")
+        self.assertEqual(bot.edits[1][0][0], "Refreshing server info...")
+        self.assertEqual(cli_api.build_count, 1)
+        self.assertEqual(len(executor.jobs), 1)
+
+        executor.run_next()
+
+        self.assertEqual(bot.edits[2][0][0], "traffic dashboard text 2")
         self.assertEqual(cli_api.build_count, 2)
-        callbacks = [button.callback_data for button in bot.edits[1][1]["reply_markup"].buttons]
+        callbacks = [button.callback_data for button in bot.edits[2][1]["reply_markup"].buttons]
         self.assertIn("server_info:refresh:traffic", callbacks)
 
     def test_refresh_uses_recent_cache_to_prevent_repeated_heavy_scans(self):
         module, bot, cli_api = load_serverinfo_module()
-        message = types.SimpleNamespace(from_user=types.SimpleNamespace(id=1), chat=types.SimpleNamespace(id=10))
-        module.server_info(message)
+        executor = HoldingExecutor()
+        module.SERVER_INFO_JOB_EXECUTOR = executor
+        module._get_server_info_snapshot()
 
         refresh_call = types.SimpleNamespace(
             id="refresh",
@@ -482,7 +514,13 @@ class ServerInfoTelegramTests(unittest.TestCase):
         )
         module.handle_server_info_callback(refresh_call)
 
-        self.assertEqual(bot.edits[0][0][0], "overview dashboard text 1")
+        self.assertEqual(bot.edits[0][0][0], "Refreshing server info...")
+        self.assertEqual(cli_api.build_count, 1)
+        self.assertEqual(len(executor.jobs), 1)
+
+        executor.run_next()
+
+        self.assertEqual(bot.edits[1][0][0], "overview dashboard text 1")
         self.assertEqual(cli_api.build_count, 1)
 
     def test_server_info_callback_blocks_unauthorized_users(self):
