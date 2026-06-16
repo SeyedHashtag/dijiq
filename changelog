@@ -1,3 +1,10 @@
+## v1.15.13
+✨ Add safe Telegram API wrappers for callback answers, message edits, sends, photos, and deletes
+🐛 Prevent Telegram API timeouts and callback errors from crashing bot handlers
+🐛 Add locked reseller data reads/writes with rollback handling for failed debt/accounting updates
+⚡ Improve reseller customer data caching with configurable TTL
+✅ Add tests for safe Telegram methods, callback resilience, reseller rollback paths, and customer cache behavior
+
 ## v1.15.12
 ✨ Add rotating Telegram bot log files with configurable path, level, slow-handler threshold, and worker count
 ✨ Add an admin Bot Logs menu action to download the current bot log file from Telegram
