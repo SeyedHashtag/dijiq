@@ -36,9 +36,9 @@ def is_expected_telegram_error(error):
     return any(marker in text for marker in EXPECTED_TELEGRAM_ERROR_MARKERS)
 
 
-def _call_with_timeout(func, timeout, *args, ignore_expected=True, **kwargs):
-    if timeout is not None:
-        kwargs.setdefault("timeout", timeout)
+def _call_with_timeout(func, timeout_seconds, *args, ignore_expected=True, **kwargs):
+    if timeout_seconds is not None:
+        kwargs.setdefault("timeout", timeout_seconds)
     try:
         return func(*args, **kwargs)
     except TypeError as error:

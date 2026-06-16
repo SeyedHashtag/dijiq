@@ -267,6 +267,27 @@ class TelegramSafeTests(unittest.TestCase):
         self.assertIs(telegram_safe.install_safe_telegram_methods(bot), bot)
         self.assertTrue(getattr(bot, "_dijiq_safe_telegram_installed"))
 
+    def test_wrapped_reply_to_can_call_wrapped_send_message_with_timeout_kwarg(self):
+        telegram_safe = load_telegram_safe()
+
+        class Bot:
+            def __init__(self):
+                self.send_calls = []
+
+            def send_message(self, *args, **kwargs):
+                self.send_calls.append((args, kwargs))
+                return "sent"
+
+            def reply_to(self, message, text, **kwargs):
+                return self.send_message(message.chat.id, text, **kwargs)
+
+        bot = telegram_safe.install_safe_telegram_methods(Bot())
+        message = types.SimpleNamespace(chat=types.SimpleNamespace(id=123))
+
+        self.assertEqual(bot.reply_to(message, "hello"), "sent")
+        self.assertEqual(bot.send_calls[0][0], (123, "hello"))
+        self.assertIn("timeout", bot.send_calls[0][1])
+
 
 class AdminLogButtonTests(unittest.TestCase):
     def test_admin_main_menu_contains_bot_logs_button(self):
