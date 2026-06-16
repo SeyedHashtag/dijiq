@@ -4,6 +4,8 @@ import threading
 import time
 import traceback
 
+EXPIRED_CLEANUP_INTERVAL_SECONDS = 3600
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -57,6 +59,25 @@ def payment_monitoring_thread():
         # Check every 5 minutes
         time.sleep(300)
 
+def expired_cleanup_monitoring_thread():
+    """Background thread to run expired user cleanup on its own cadence"""
+    while True:
+        try:
+            from utils.expired_cleanup import (
+                get_expired_cleanup_startup_delay,
+                run_expired_user_cleanup_with_metadata,
+            )
+            delay_seconds = get_expired_cleanup_startup_delay(
+                interval_seconds=EXPIRED_CLEANUP_INTERVAL_SECONDS
+            )
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+                continue
+            run_expired_user_cleanup_with_metadata(grace_hours=24)
+        except Exception as e:
+            print(f"Error in expired cleanup: {e}")
+        time.sleep(EXPIRED_CLEANUP_INTERVAL_SECONDS)
+
 def traffic_monitoring_thread():
     """Background thread to notify users when nearing traffic quota"""
     while True:
@@ -100,6 +121,8 @@ if __name__ == '__main__':
     version_thread.start()
     payment_thread = threading.Thread(target=payment_monitoring_thread, daemon=True)
     payment_thread.start()
+    expired_cleanup_thread = threading.Thread(target=expired_cleanup_monitoring_thread, daemon=True)
+    expired_cleanup_thread.start()
     traffic_thread = threading.Thread(target=traffic_monitoring_thread, daemon=True)
     traffic_thread.start()
     backup_thread = threading.Thread(target=automated_backup_thread, daemon=True)

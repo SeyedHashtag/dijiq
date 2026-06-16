@@ -57,9 +57,11 @@ TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 PAYMENTS_FILE = '/etc/dijiq/core/scripts/telegrambot/payments.json'
 RESELLERS_FILE = '/etc/dijiq/core/scripts/telegrambot/resellers.json'
 STATE_FILE = '/etc/dijiq/core/scripts/telegrambot/expired_user_cleanup.json'
+SCHEDULE_FILE = '/etc/dijiq/core/scripts/telegrambot/expired_cleanup_schedule.json'
 
 GB_BYTES = 1024 ** 3
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
+CLEANUP_SCAN_INTERVAL_SECONDS = 3600
 DELETE_RESULTS = {'deleted', 'already_missing'}
 ADMIN_CLEANUP_PAGE_SIZE = 8
 ADMIN_CLEANUP_FILTERS = (
@@ -244,6 +246,37 @@ def _save_json_file(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as f:
         json.dump(data, f, indent=4)
+
+
+def _load_cleanup_schedule_metadata():
+    data = _load_json_file(SCHEDULE_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
+def _save_cleanup_schedule_metadata(data):
+    _save_json_file(SCHEDULE_FILE, data if isinstance(data, dict) else {})
+
+
+def get_expired_cleanup_schedule_metadata():
+    return dict(_load_cleanup_schedule_metadata())
+
+
+def get_expired_cleanup_startup_delay(interval_seconds=CLEANUP_SCAN_INTERVAL_SECONDS, now=None, metadata=None):
+    now = now or datetime.now()
+    metadata = metadata if isinstance(metadata, dict) else _load_cleanup_schedule_metadata()
+    interval_seconds = max(0, _safe_int(interval_seconds, CLEANUP_SCAN_INTERVAL_SECONDS) or 0)
+    attempt_times = [
+        _parse_time(metadata.get('last_finished_at')),
+        _parse_time(metadata.get('last_started_at')),
+    ]
+    attempt_times = [value for value in attempt_times if value is not None]
+    if not attempt_times:
+        return 0
+
+    elapsed = (now - max(attempt_times)).total_seconds()
+    if elapsed < 0:
+        return interval_seconds
+    return max(0, int(interval_seconds - elapsed))
 
 
 def _safe_int(value, default=None):
@@ -1428,6 +1461,37 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
         return state
 
 
+def run_expired_user_cleanup_with_metadata(grace_hours=24, now=None, multi_api=None):
+    started_at = now or datetime.now()
+    metadata = _load_cleanup_schedule_metadata()
+    metadata.update({
+        'last_started_at': _now_str(started_at),
+    })
+    _save_cleanup_schedule_metadata(metadata)
+
+    try:
+        state = run_expired_user_cleanup(grace_hours=grace_hours, now=now, multi_api=multi_api)
+    except Exception as e:
+        finished_at = now or datetime.now()
+        metadata = _load_cleanup_schedule_metadata()
+        metadata.update({
+            'last_finished_at': _now_str(finished_at),
+            'last_error': str(e),
+        })
+        _save_cleanup_schedule_metadata(metadata)
+        raise
+
+    finished_at = now or datetime.now()
+    metadata = _load_cleanup_schedule_metadata()
+    metadata.update({
+        'last_finished_at': _now_str(finished_at),
+        'last_success_at': _now_str(finished_at),
+        'last_error': None,
+    })
+    _save_cleanup_schedule_metadata(metadata)
+    return state
+
+
 def get_deleted_users_for_json(days=60, now=None):
     now = now or datetime.now()
     cutoff = now - timedelta(days=days)
@@ -1623,7 +1687,7 @@ def _get_cleanup_refresh_state():
 def _cleanup_refresh_worker(grace_hours=24):
     error = None
     try:
-        run_expired_user_cleanup(grace_hours=grace_hours)
+        run_expired_user_cleanup_with_metadata(grace_hours=grace_hours)
     except Exception as e:
         error = str(e)
         print(f"Error refreshing expired cleanup dashboard: {e}")
@@ -1756,7 +1820,6 @@ def _handle_manual_review_delete(record_id):
 
 @bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == '🧹 Expired Cleanup')
 def admin_expired_cleanup_menu(message):
-    _start_cleanup_refresh_for_dashboard()
     language = get_user_language(message.from_user.id)
     bot.reply_to(
         message,

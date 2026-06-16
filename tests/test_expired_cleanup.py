@@ -158,6 +158,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.cleanup.PAYMENTS_FILE = str(self.base / "payments.json")
         self.cleanup.RESELLERS_FILE = str(self.base / "resellers.json")
         self.cleanup.STATE_FILE = str(self.base / "expired_user_cleanup.json")
+        self.cleanup.SCHEDULE_FILE = str(self.base / "expired_cleanup_schedule.json")
         self.now = datetime(2026, 6, 9, 12, 0, 0)
 
     def write_json(self, path, data):
@@ -1251,6 +1252,67 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(self.cleanup._test_bot.answered_callbacks[-1][0], "callback-1")
         self.assertEqual(self.cleanup._test_bot.edited_messages[-1][1]["chat_id"], 10)
         self.assertIn("Page *2/2*", self.cleanup._test_bot.edited_messages[-1][0])
+
+    def test_expired_cleanup_startup_delay_uses_recent_finished_scan(self):
+        self.write_json(self.cleanup.SCHEDULE_FILE, {
+            "last_started_at": "2026-06-09 11:00:00",
+            "last_finished_at": "2026-06-09 11:30:00",
+            "last_success_at": "2026-06-09 11:30:00",
+            "last_error": None,
+        })
+
+        delay = self.cleanup.get_expired_cleanup_startup_delay(now=self.now)
+
+        self.assertEqual(delay, 1800)
+        self.assertEqual(
+            self.cleanup.get_expired_cleanup_startup_delay(
+                now=self.now,
+                metadata={"last_started_at": "2026-06-09 11:45:00"},
+            ),
+            2700,
+        )
+
+    def test_expired_cleanup_startup_delay_allows_immediate_run_without_valid_metadata(self):
+        self.assertEqual(self.cleanup.get_expired_cleanup_startup_delay(now=self.now), 0)
+
+        self.write_json(self.cleanup.SCHEDULE_FILE, {
+            "last_started_at": "not-a-date",
+            "last_finished_at": None,
+        })
+
+        self.assertEqual(self.cleanup.get_expired_cleanup_startup_delay(now=self.now), 0)
+
+    def test_failed_cleanup_scan_records_finished_at_and_error(self):
+        original_run = self.cleanup.run_expired_user_cleanup
+        self.cleanup.run_expired_user_cleanup = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+        self.addCleanup(setattr, self.cleanup, "run_expired_user_cleanup", original_run)
+
+        with self.assertRaises(RuntimeError):
+            self.cleanup.run_expired_user_cleanup_with_metadata(now=self.now)
+
+        metadata = self.read_json(self.cleanup.SCHEDULE_FILE)
+        self.assertEqual(metadata["last_started_at"], "2026-06-09 12:00:00")
+        self.assertEqual(metadata["last_finished_at"], "2026-06-09 12:00:00")
+        self.assertEqual(metadata["last_error"], "boom")
+        self.assertNotIn("last_success_at", metadata)
+
+    def test_admin_cleanup_menu_does_not_auto_start_scan(self):
+        self.write_default_files()
+        self.write_json(self.cleanup.STATE_FILE, {})
+        started = []
+        original_start = self.cleanup._start_cleanup_refresh_for_dashboard
+        self.cleanup._start_cleanup_refresh_for_dashboard = lambda: started.append(True) or True
+        self.addCleanup(setattr, self.cleanup, "_start_cleanup_refresh_for_dashboard", original_start)
+        message = types.SimpleNamespace(
+            from_user=types.SimpleNamespace(id=1),
+            chat=types.SimpleNamespace(id=10),
+        )
+
+        self.cleanup.admin_expired_cleanup_menu(message)
+
+        self.assertEqual(started, [])
+        self.assertEqual(self.cleanup._test_bot.replies[-1][0], message)
+        self.assertIn("View: *Pending*", self.cleanup._test_bot.replies[-1][1])
 
     def test_admin_cleanup_refresh_starts_scan_without_blocking_render(self):
         self.write_default_files()
