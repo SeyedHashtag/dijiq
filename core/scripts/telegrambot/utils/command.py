@@ -5,14 +5,17 @@ import os
 import shlex
 from dotenv import load_dotenv
 from telebot import types
+from utils.bot_logging import configure_logging, get_telegram_worker_count, instrument_bot
 
 load_dotenv()
+configure_logging()
 
 API_TOKEN = os.getenv('API_TOKEN')
 ADMIN_USER_IDS = json.loads(os.getenv('ADMIN_USER_IDS'))
 CLI_PATH = '/etc/dijiq/core/cli.py'
 BACKUP_DIRECTORY = '/opt/hysbackup'
-bot = telebot.TeleBot(API_TOKEN)
+bot = telebot.TeleBot(API_TOKEN, threaded=True, num_threads=get_telegram_worker_count())
+instrument_bot(bot)
 
 def run_cli_command(command):
     try:

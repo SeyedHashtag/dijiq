@@ -2,6 +2,7 @@ from .api_client import *
 from .common import *
 from .adduser import *
 from .backup import *
+from .bot_logs import *
 from .command import *
 from .deleteuser import *
 from .edituser import *

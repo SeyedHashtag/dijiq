@@ -9,6 +9,7 @@ ADMIN_MAIN_MENU_ROWS = (
     ('💼 Manage Resellers', '🧪 Manage Test Accounts'),
     ('💰 Referral Payouts', '⚖️ VPN Servers'),
     ('✅ Confirmations', '🧹 Expired Cleanup'),
+    ('📄 Bot Logs',),
 )
 
 ADMIN_MAIN_MENU_BUTTONS = {button for row in ADMIN_MAIN_MENU_ROWS for button in row}
