@@ -1,3 +1,9 @@
+## v1.15.10
+✨ Add scheduled background expired-user cleanup with run metadata and startup-delay tracking
+⚡ Batch expired-cleanup local record writes across test configs, payments, and reseller configs
+🐛 Prevent rapid duplicate reseller customer config creation while keeping username validation intact
+✅ Add tests for cleanup scheduling metadata, batched record writes, and reseller duplicate prevention
+
 ## v1.15.9
 ✨ Cache Telegram bot server-info snapshots and render sections through the shared CLI API formatter
 ⚡ Reuse recent server-info snapshots during refreshes to avoid repeated heavy server scans
