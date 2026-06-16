@@ -47,6 +47,7 @@ from utils.username_utils import (
     extract_existing_usernames,
     format_username_timestamp,
 )
+from utils.telegram_safe import safe_answer_callback_query
 
 # New: Global dictionary for user states
 user_data = {}
@@ -650,7 +651,7 @@ def purchase_plan(message):
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_plans")
 def back_to_plans(call):
     try:
-        bot.answer_callback_query(call.id)
+        safe_answer_callback_query(bot, call.id)
         show_plans(call.message.chat.id, call.from_user.id, call.message.message_id)
     except Exception as e:
         print(f"Error in back_to_plans: {e}")
@@ -658,7 +659,7 @@ def back_to_plans(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('purchase:'))
 def handle_purchase_selection(call):
     try:
-        bot.answer_callback_query(call.id)
+        safe_answer_callback_query(bot, call.id)
         user_id = call.from_user.id
         language = get_user_language(user_id)
         plan_gb = call.data.split(':')[1]
@@ -666,7 +667,7 @@ def handle_purchase_selection(call):
         if plan_gb in plans:
             plan = plans[plan_gb]
             if plan.get('target', 'both') == 'reseller':
-                bot.answer_callback_query(call.id, text='This plan is for resellers only.')
+                safe_answer_callback_query(bot, call.id, text='This plan is for resellers only.')
                 return
             unlimited_text = get_button_text(language, "yes" if plan.get("unlimited") else "no")
             price = float(plan['price'])
@@ -700,7 +701,7 @@ def handle_purchase_selection(call):
                 methods_count += 1
             
             if methods_count == 0:
-                 bot.answer_callback_query(call.id, text=get_message_text(language, "no_payment_methods"))
+                 safe_answer_callback_query(bot, call.id, text=get_message_text(language, "no_payment_methods"))
                  return
 
             markup.add(types.InlineKeyboardButton(get_button_text(language, "back"), callback_data="back_to_plans")) 
@@ -712,17 +713,17 @@ def handle_purchase_selection(call):
                 reply_markup=markup
             )
         else:
-            bot.answer_callback_query(call.id, text=get_message_text(language, "plan_not_found"))
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "plan_not_found"))
     except Exception as e:
         user_id = call.from_user.id
         language = get_user_language(user_id)
-        bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_purchase")
 def handle_cancel_purchase(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
-    bot.answer_callback_query(call.id)
+    safe_answer_callback_query(bot, call.id)
     bot.delete_message(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id

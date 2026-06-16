@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 import types
 import unittest
@@ -193,6 +194,15 @@ def install_stubs():
     api_client_stub.MultiServerAPI = object
     sys.modules["utils.api_client"] = api_client_stub
 
+    telegram_safe_stub = types.ModuleType("utils.telegram_safe")
+    telegram_safe_stub.safe_answer_callback_query = lambda bot, *args, **kwargs: bot.answer_callback_query(*args, **kwargs)
+    telegram_safe_stub.safe_delete_message = lambda bot, *args, **kwargs: None
+    telegram_safe_stub.safe_edit_message_text = lambda bot, *args, **kwargs: bot.edit_message_text(*args, **kwargs)
+    telegram_safe_stub.safe_send_message = lambda bot, *args, **kwargs: bot.send_message(*args, **kwargs)
+    telegram_safe_stub.safe_send_photo = lambda bot, *args, **kwargs: None
+    telegram_safe_stub.safe_reply_to = lambda bot, *args, **kwargs: None
+    sys.modules["utils.telegram_safe"] = telegram_safe_stub
+
     payments_stub = types.ModuleType("utils.payments")
     payments_stub.CryptoPayment = object
     sys.modules["utils.payments"] = payments_stub
@@ -245,6 +255,11 @@ spec.loader.exec_module(reseller_handlers)
 
 
 class ResellerCustomerDisplayTests(unittest.TestCase):
+    def setUp(self):
+        reseller_handlers.bot.edits.clear()
+        reseller_handlers.bot.answers.clear()
+        reseller_handlers.bot.sent_messages.clear()
+
     def test_customer_name_displays_above_generated_username(self):
         entry = reseller_handlers._format_reseller_customer_entry(
             1,
@@ -326,6 +341,98 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         self.assertIn("4. 🗑 `reza`", entry)
         self.assertIn("   Deleted", entry)
         self.assertIn("Removed during banned reseller unpaid user cleanup (2026-06-02 13:00:00)", entry)
+
+    def test_reseller_live_users_uses_cached_snapshot_ttl_by_default(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_ttl = os.environ.get("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS")
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def get_user_snapshot_entries(self, **kwargs):
+                self.__class__.calls.append(kwargs)
+                return [
+                    {
+                        "server": {"id": "s1"},
+                        "client": types.SimpleNamespace(server_id="fallback"),
+                        "users": {"r1988a": {"expiration_days": 20}},
+                    },
+                    {
+                        "server": {"id": "s2"},
+                        "client": types.SimpleNamespace(server_id="s2"),
+                        "users": None,
+                    },
+                ]
+
+        try:
+            os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+
+            live_users, unavailable_server_ids = reseller_handlers._load_reseller_live_users()
+
+            self.assertEqual(live_users, {"r1988a": {"expiration_days": 20}})
+            self.assertEqual(unavailable_server_ids, {"s2"})
+            self.assertEqual(FakeMultiServerAPI.calls[0]["include_disabled"], True)
+            self.assertEqual(FakeMultiServerAPI.calls[0]["force_refresh"], False)
+            self.assertEqual(FakeMultiServerAPI.calls[0]["cache_ttl_seconds"], 60)
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            if original_ttl is None:
+                os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
+            else:
+                os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
+
+    def test_reseller_live_users_refresh_bypasses_cache(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_ttl = os.environ.get("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS")
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def get_user_snapshot_entries(self, **kwargs):
+                self.__class__.calls.append(kwargs)
+                return []
+
+        try:
+            os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = "12"
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+
+            reseller_handlers._load_reseller_live_users(force_refresh=True)
+
+            self.assertEqual(FakeMultiServerAPI.calls[0]["force_refresh"], True)
+            self.assertEqual(FakeMultiServerAPI.calls[0]["cache_ttl_seconds"], 12)
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            if original_ttl is None:
+                os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
+            else:
+                os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
+
+    def test_reseller_customer_overview_and_empty_category_include_refresh(self):
+        call = types.SimpleNamespace(
+            message=types.SimpleNamespace(
+                photo=None,
+                document=None,
+                sticker=None,
+                chat=types.SimpleNamespace(id=100),
+                message_id=200,
+            )
+        )
+        categorized = {category: [] for category in reseller_handlers.RESELLER_CUSTOMER_CATEGORY_ORDER}
+
+        reseller_handlers._render_reseller_customer_overview(call, "en", categorized, 0)
+        overview_callbacks = [
+            button.callback_data
+            for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+        ]
+        self.assertIn("reseller:my_customers_refresh:overview:0", overview_callbacks)
+
+        reseller_handlers._render_reseller_customer_category(call, "en", categorized, "active", 0)
+        category_callbacks = [
+            button.callback_data
+            for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+        ]
+        self.assertIn("reseller:my_customers_refresh:active:0", category_callbacks)
 
     def test_admin_reseller_row_shows_debt_and_total_paid(self):
         grouped = {

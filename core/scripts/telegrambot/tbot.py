@@ -1,10 +1,65 @@
 from telebot import types
 from utils import *
+from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 import traceback
+import os
+from utils.telegram_safe import safe_reply_to, safe_send_message
 
 EXPIRED_CLEANUP_INTERVAL_SECONDS = 3600
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+START_TEST_CONFIG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_START_JOB_WORKERS", 2),
+    thread_name_prefix="dijiq-start",
+)
+START_TEST_CONFIG_LOCK = threading.Lock()
+START_TEST_CONFIG_INFLIGHT = set()
+
+
+def _create_automatic_test_config_job(user_id, chat_id, telegram_username, language):
+    try:
+        create_test_config(
+            user_id,
+            chat_id,
+            is_automatic=True,
+            language=language,
+            telegram_username=telegram_username,
+        )
+    except Exception as e:
+        print(f"Error creating automatic test config for {user_id}: {e}")
+    finally:
+        with START_TEST_CONFIG_LOCK:
+            START_TEST_CONFIG_INFLIGHT.discard(user_id)
+
+
+def enqueue_automatic_test_config(user_id, chat_id, telegram_username=None, language=None):
+    with START_TEST_CONFIG_LOCK:
+        if user_id in START_TEST_CONFIG_INFLIGHT:
+            return False
+        START_TEST_CONFIG_INFLIGHT.add(user_id)
+    try:
+        START_TEST_CONFIG_EXECUTOR.submit(
+            _create_automatic_test_config_job,
+            user_id,
+            chat_id,
+            telegram_username,
+            language,
+        )
+    except Exception:
+        with START_TEST_CONFIG_LOCK:
+            START_TEST_CONFIG_INFLIGHT.discard(user_id)
+        raise
+    return True
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -24,24 +79,29 @@ def send_welcome(message):
             )
             lang = get_user_language(user_id)
             if success:
-                 bot.send_message(user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
+                safe_send_message(bot, user_id, get_message_text(lang, "referral_registered").format(referrer_id=result))
         except Exception as e:
             print(f"Error processing referral: {e}")
 
     if is_admin(user_id):
         markup = create_main_markup(is_admin=True)
-        bot.reply_to(message, "Welcome to the Admin Dashboard!", reply_markup=markup)
+        safe_reply_to(bot, message, "Welcome to the Admin Dashboard!", reply_markup=markup)
     else:
         language = get_user_language(user_id)
+        markup = create_main_markup(is_admin=False, user_id=user_id)
+        safe_reply_to(bot, message, "Welcome!", reply_markup=markup)
+
         # Automatically create a test config when enabled; otherwise preserve interest silently.
         if not has_used_test_config(user_id):
             if is_test_creation_disabled():
                 add_to_waiting_list(user_id, message.from_user.username, language)
             else:
-                create_test_config(user_id, message.chat.id, is_automatic=True, language=language, telegram_username=message.from_user.username)
-            
-        markup = create_main_markup(is_admin=False, user_id=user_id)
-        bot.reply_to(message, "Welcome!", reply_markup=markup)
+                enqueue_automatic_test_config(
+                    user_id,
+                    message.chat.id,
+                    telegram_username=message.from_user.username,
+                    language=language,
+                )
 
 def monitoring_thread():
     while True:

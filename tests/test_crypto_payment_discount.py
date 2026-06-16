@@ -165,6 +165,15 @@ def install_common_stubs(bot, payment_records):
     api_client_stub.MultiServerAPI = object
     sys.modules["utils.api_client"] = api_client_stub
 
+    telegram_safe_stub = types.ModuleType("utils.telegram_safe")
+    telegram_safe_stub.safe_answer_callback_query = lambda bot_obj, *args, **kwargs: bot_obj.answer_callback_query(*args, **kwargs)
+    telegram_safe_stub.safe_delete_message = lambda bot_obj, *args, **kwargs: bot_obj.delete_message(*args, **kwargs)
+    telegram_safe_stub.safe_edit_message_text = lambda bot_obj, *args, **kwargs: bot_obj.edit_message_text(*args, **kwargs)
+    telegram_safe_stub.safe_send_message = lambda bot_obj, *args, **kwargs: bot_obj.send_message(*args, **kwargs)
+    telegram_safe_stub.safe_send_photo = lambda bot_obj, *args, **kwargs: bot_obj.send_photo(*args, **kwargs)
+    telegram_safe_stub.safe_reply_to = lambda bot_obj, *args, **kwargs: bot_obj.reply_to(*args, **kwargs)
+    sys.modules["utils.telegram_safe"] = telegram_safe_stub
+
     translations_stub = types.ModuleType("utils.translations")
     translations_stub.BUTTON_TRANSLATIONS = {"en": {}}
     translations_stub.get_button_text = lambda _language, key: key

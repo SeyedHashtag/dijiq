@@ -133,6 +133,15 @@ def install_stubs():
     language_stub.get_user_language = lambda user_id: "en"
     sys.modules["utils.language"] = language_stub
 
+    telegram_safe_stub = types.ModuleType("utils.telegram_safe")
+    telegram_safe_stub.safe_answer_callback_query = lambda bot, *args, **kwargs: bot.answer_callback_query(*args, **kwargs)
+    telegram_safe_stub.safe_delete_message = lambda bot, *args, **kwargs: bot.delete_message(*args, **kwargs)
+    telegram_safe_stub.safe_edit_message_text = lambda bot, *args, **kwargs: bot.edit_message_text(*args, **kwargs)
+    telegram_safe_stub.safe_send_message = lambda bot, *args, **kwargs: bot.send_message(*args, **kwargs)
+    telegram_safe_stub.safe_send_photo = lambda bot, *args, **kwargs: bot.send_photo(*args, **kwargs)
+    telegram_safe_stub.safe_reply_to = lambda bot, *args, **kwargs: bot.reply_to(*args, **kwargs)
+    sys.modules["utils.telegram_safe"] = telegram_safe_stub
+
     sys.modules["qrcode"] = types.SimpleNamespace(make=lambda *args, **kwargs: None)
 
 

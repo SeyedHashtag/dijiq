@@ -64,6 +64,8 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.original_monotonic = api_client.time.monotonic
         self.original_ttl = os.environ.get("SERVER_USERS_CACHE_TTL_SECONDS")
         self.original_workers = os.environ.get("SERVER_FETCH_WORKERS")
+        self.original_read_timeout = os.environ.get("DIJIQ_API_READ_TIMEOUT_SECONDS")
+        self.original_write_timeout = os.environ.get("DIJIQ_API_WRITE_TIMEOUT_SECONDS")
         os.environ["SERVER_USERS_CACHE_TTL_SECONDS"] = "30"
         api_client.MultiServerAPI._creation_cache = None
         api_client.MultiServerAPI._user_snapshot_cache = {}
@@ -82,6 +84,14 @@ class MultiServerCreationCacheTests(unittest.TestCase):
             os.environ.pop("SERVER_FETCH_WORKERS", None)
         else:
             os.environ["SERVER_FETCH_WORKERS"] = self.original_workers
+        if self.original_read_timeout is None:
+            os.environ.pop("DIJIQ_API_READ_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["DIJIQ_API_READ_TIMEOUT_SECONDS"] = self.original_read_timeout
+        if self.original_write_timeout is None:
+            os.environ.pop("DIJIQ_API_WRITE_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["DIJIQ_API_WRITE_TIMEOUT_SECONDS"] = self.original_write_timeout
 
     def make_multi_api(self, clients):
         servers = [
@@ -173,6 +183,59 @@ class MultiServerCreationCacheTests(unittest.TestCase):
         self.assertIn("newuser", creation["existing_usernames"])
         self.assertEqual(clients["s1"].get_users_calls, 1)
         self.assertEqual(clients["s2"].get_users_calls, 1)
+
+    def test_record_created_user_invalidates_read_snapshots_and_is_idempotent(self):
+        clients = {
+            "s1": FakeClient("s1", {}),
+            "s2": FakeClient("s2", {}),
+        }
+        multi_api = self.make_multi_api(clients)
+        multi_api.prepare_new_user_creation()
+        api_client.MultiServerAPI._user_snapshot_cache = {True: {"stale": True}}
+
+        api_client.MultiServerAPI.record_created_user("s1", "newuser")
+        api_client.MultiServerAPI.record_created_user("s1", "newuser")
+        creation = multi_api.prepare_new_user_creation()
+
+        self.assertEqual(api_client.MultiServerAPI._user_snapshot_cache, {})
+        self.assertIn("newuser", creation["existing_usernames"])
+        server_state = next(state for state in creation["server_states"] if state["client"].server_id == "s1")
+        self.assertEqual(server_state["active_count"], 1)
+
+    def test_rapid_create_user_with_retry_allocates_distinct_usernames_inside_ttl(self):
+        def run_prefix(prefix):
+            api_client.MultiServerAPI._creation_cache = None
+            api_client.MultiServerAPI._user_snapshot_cache = {}
+            clients = {
+                "s1": FakeClient("s1", {}),
+                "s2": FakeClient("s2", {}),
+            }
+            multi_api = self.make_multi_api(clients)
+
+            def allocate(existing_usernames):
+                base = f"{prefix}123"
+                for suffix in ("", "a", "b", "c"):
+                    username = f"{base}{suffix}"
+                    if username not in existing_usernames:
+                        return username
+                raise AssertionError("no username available")
+
+            created = []
+            for _ in range(3):
+                username, result, _client = multi_api.create_user_with_retry(
+                    allocate,
+                    lambda target_client, candidate: target_client.add_user(candidate, 1, 30),
+                )
+                created.append(username)
+                self.assertEqual(result, {"created": True})
+
+            self.assertEqual(created, [f"{prefix}123", f"{prefix}123a", f"{prefix}123b"])
+            self.assertEqual(clients["s1"].get_users_calls, 1)
+            self.assertEqual(clients["s2"].get_users_calls, 1)
+
+        for prefix in ("s", "r", "t"):
+            with self.subTest(prefix=prefix):
+                run_prefix(prefix)
 
     def test_create_user_with_retry_invalidates_cache_and_retries_once(self):
         clients = {
@@ -371,7 +434,11 @@ class APIClientPoolingTests(unittest.TestCase):
     def setUp(self):
         self.original_session_factory = api_client.requests.Session
         self.original_thread_sessions = getattr(api_client._thread_local, "api_sessions", None)
+        self.original_read_timeout = os.environ.get("DIJIQ_API_READ_TIMEOUT_SECONDS")
+        self.original_write_timeout = os.environ.get("DIJIQ_API_WRITE_TIMEOUT_SECONDS")
         api_client._thread_local.api_sessions = {}
+        api_client.MultiServerAPI._creation_cache = None
+        api_client.MultiServerAPI._user_snapshot_cache = {}
 
     def tearDown(self):
         api_client.requests.Session = self.original_session_factory
@@ -382,6 +449,16 @@ class APIClientPoolingTests(unittest.TestCase):
                 pass
         else:
             api_client._thread_local.api_sessions = self.original_thread_sessions
+        api_client.MultiServerAPI._creation_cache = None
+        api_client.MultiServerAPI._user_snapshot_cache = {}
+        if self.original_read_timeout is None:
+            os.environ.pop("DIJIQ_API_READ_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["DIJIQ_API_READ_TIMEOUT_SECONDS"] = self.original_read_timeout
+        if self.original_write_timeout is None:
+            os.environ.pop("DIJIQ_API_WRITE_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["DIJIQ_API_WRITE_TIMEOUT_SECONDS"] = self.original_write_timeout
 
     def test_clients_reuse_thread_local_session_for_same_server(self):
         sessions = []
@@ -420,6 +497,52 @@ class APIClientPoolingTests(unittest.TestCase):
         self.assertEqual(len(sessions), 1)
         self.assertIs(first.session, second.session)
         self.assertEqual([call[0] for call in sessions[0].request_calls], ["GET", "GET"])
+
+    def test_read_write_timeouts_and_write_invalidation_are_applied(self):
+        os.environ["DIJIQ_API_READ_TIMEOUT_SECONDS"] = "2.5"
+        os.environ["DIJIQ_API_WRITE_TIMEOUT_SECONDS"] = "7.5"
+        sessions = []
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"ok": True}
+
+        class FakeSession:
+            def __init__(self):
+                self.request_calls = []
+
+            def mount(self, *_args, **_kwargs):
+                return None
+
+            def request(self, method, url, **kwargs):
+                self.request_calls.append((method, url, kwargs))
+                return FakeResponse()
+
+        def session_factory():
+            session = FakeSession()
+            sessions.append(session)
+            return session
+
+        api_client.requests.Session = session_factory
+        server = {"id": "s1", "name": "s1", "url": "https://s1.test", "token": "token", "enabled": True}
+        client = api_client.APIClient(server)
+
+        client.get_users()
+        api_client.MultiServerAPI._creation_cache = {"usernames": set(), "servers": [], "signature": ()}
+        api_client.MultiServerAPI._user_snapshot_cache = {True: {"stale": True}}
+        client.update_user("alice", {"blocked": True})
+        api_client.MultiServerAPI._creation_cache = {"usernames": set(), "servers": [], "signature": ()}
+        api_client.MultiServerAPI._user_snapshot_cache = {True: {"stale": True}}
+        client.delete_user("alice")
+
+        self.assertEqual(sessions[0].request_calls[0][2]["timeout"], 2.5)
+        self.assertEqual(sessions[0].request_calls[1][2]["timeout"], 7.5)
+        self.assertEqual(sessions[0].request_calls[2][2]["timeout"], 7.5)
+        self.assertIsNone(api_client.MultiServerAPI._creation_cache)
+        self.assertEqual(api_client.MultiServerAPI._user_snapshot_cache, {})
 
 
 class ServerConfigPersistenceTests(unittest.TestCase):

@@ -40,6 +40,12 @@ from utils.username_utils import (
     extract_existing_usernames,
     format_username_timestamp,
 )
+from utils.telegram_safe import (
+    safe_answer_callback_query,
+    safe_delete_message,
+    safe_edit_message_text,
+    safe_send_message,
+)
 
 TELEGRAM_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
 reseller_username_state_lock = threading.Lock()
@@ -858,6 +864,7 @@ def handle_reseller_stats(call):
     )
 
 RESELLER_CUSTOMERS_PAGE_SIZE = 5
+RESELLER_CUSTOMERS_CACHE_TTL_SECONDS_DEFAULT = 60
 RESELLER_CUSTOMER_LOW_THRESHOLD = 80
 RESELLER_CUSTOMER_CATEGORY_ORDER = ("active", "low_days", "low_gb", "expired", "deleted")
 RESELLER_CUSTOMER_CATEGORY_ICONS = {
@@ -874,6 +881,14 @@ def _safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _reseller_customers_cache_ttl_seconds():
+    try:
+        ttl = float(os.getenv("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", RESELLER_CUSTOMERS_CACHE_TTL_SECONDS_DEFAULT))
+    except (TypeError, ValueError):
+        return float(RESELLER_CUSTOMERS_CACHE_TTL_SECONDS_DEFAULT)
+    return max(0.0, ttl)
 
 
 def _valid_reseller_customer_name(value):
@@ -940,14 +955,20 @@ def _format_reseller_customer_entry(index, cfg, category, language):
     )
 
 
-def _load_reseller_live_users():
+def _load_reseller_live_users(force_refresh=False):
     multi_api = MultiServerAPI()
     live_users = {}
     unavailable_server_ids = set()
 
-    for server, client in multi_api.iter_clients(include_disabled=True):
+    for entry in multi_api.get_user_snapshot_entries(
+        include_disabled=True,
+        force_refresh=force_refresh,
+        cache_ttl_seconds=_reseller_customers_cache_ttl_seconds(),
+    ):
+        server = entry["server"]
+        client = entry["client"]
         server_id = server.get("id") or client.server_id
-        users = client.get_users()
+        users = entry["users"]
         if users is None:
             unavailable_server_ids.add(server_id)
             continue
@@ -993,8 +1014,8 @@ def _is_customer_expired(user_config):
     return False
 
 
-def _categorize_reseller_customers(configs):
-    live_users, unavailable_server_ids = _load_reseller_live_users()
+def _categorize_reseller_customers(configs, force_refresh=False):
+    live_users, unavailable_server_ids = _load_reseller_live_users(force_refresh=force_refresh)
     categorized = {category: [] for category in RESELLER_CUSTOMER_CATEGORY_ORDER}
 
     for cfg in configs:
@@ -1043,14 +1064,12 @@ def _customer_category_label(language, category):
 
 def _render_reseller_customer_message(call, msg, markup):
     if call.message.photo or call.message.document or call.message.sticker:
-        try:
-            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except Exception:
-            pass
-        bot.send_message(call.message.chat.id, msg, reply_markup=markup, parse_mode="Markdown")
+        safe_delete_message(bot, chat_id=call.message.chat.id, message_id=call.message.message_id)
+        safe_send_message(bot, call.message.chat.id, msg, reply_markup=markup, parse_mode="Markdown")
         return
 
-    bot.edit_message_text(
+    safe_edit_message_text(
+        bot,
         msg,
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
@@ -1085,6 +1104,7 @@ def _render_reseller_customer_overview(call, language, categorized, total):
             )
         )
     markup.add(*buttons)
+    markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data="reseller:my_customers_refresh:overview:0"))
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     _render_reseller_customer_message(call, msg, markup)
 
@@ -1097,6 +1117,7 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
     if total == 0:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_back_to_customers"), callback_data="reseller:my_customers:overview"))
+        markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data=f"reseller:my_customers_refresh:{category}:{page}"))
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
         _render_reseller_customer_message(
             call,
@@ -1141,18 +1162,20 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
         markup.row(*nav_buttons)
 
     markup.add(types.InlineKeyboardButton(get_button_text(language, "reseller_back_to_customers"), callback_data="reseller:my_customers:overview"))
+    markup.add(types.InlineKeyboardButton("🔄 Refresh", callback_data=f"reseller:my_customers_refresh:{category}:{page}"))
     markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
     _render_reseller_customer_message(call, msg, markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:my_customers:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("reseller:my_customers:", "reseller:my_customers_refresh:")))
 def handle_reseller_my_customers(call):
     user_id = call.from_user.id
     language = get_user_language(user_id)
     reseller_data = _get_active_reseller_data(user_id)
 
     if not reseller_data:
-        bot.answer_callback_query(call.id, "Reseller access required.")
+        safe_answer_callback_query(bot, call.id, "Reseller access required.")
         return
+    safe_answer_callback_query(bot, call.id)
 
     configs = list(reseller_data.get('configs', []))
     # Show newest configs first
@@ -1162,7 +1185,8 @@ def handle_reseller_my_customers(call):
     if total == 0:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(get_button_text(language, "cancel"), callback_data="reseller:cancel"))
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             get_message_text(language, "reseller_no_configs_created"),
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1170,16 +1194,18 @@ def handle_reseller_my_customers(call):
         )
         return
 
-    categorized = _categorize_reseller_customers(configs)
     parts = call.data.split(":")
+    force_refresh = len(parts) > 1 and parts[1] == "my_customers_refresh"
     category = parts[2] if len(parts) > 2 else "overview"
+
+    categorized = _categorize_reseller_customers(configs, force_refresh=force_refresh)
 
     if category == "overview" or category.isdigit():
         _render_reseller_customer_overview(call, language, categorized, total)
         return
 
     if category not in RESELLER_CUSTOMER_CATEGORY_ORDER:
-        bot.answer_callback_query(call.id, "Invalid customer category.")
+        safe_answer_callback_query(bot, call.id, "Invalid customer category.")
         return
 
     try:
@@ -1191,7 +1217,7 @@ def handle_reseller_my_customers(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:my_customers_noop")
 def handle_reseller_customers_noop(call):
-    bot.answer_callback_query(call.id)
+    safe_answer_callback_query(bot, call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:cfg:"))

@@ -5,6 +5,7 @@ import os
 import requests
 import re
 import time
+import threading
 from dotenv import load_dotenv
 from telebot import types
 from utils.command import bot
@@ -12,8 +13,12 @@ from utils.api_client import APIClient, MultiServerAPI
 from utils.edit_plans import load_plans
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
+from utils.telegram_safe import safe_answer_callback_query, safe_delete_message, safe_edit_message_text, safe_send_message, safe_send_photo
 
 MY_CONFIGS_CACHE_TTL_SECONDS = 300
+MY_CONFIGS_INFLIGHT_LOCK = threading.Lock()
+MY_CONFIGS_INFLIGHT = set()
+SHOW_CONFIG_INFLIGHT = set()
 
 
 def _my_configs_cache_notice(language):
@@ -34,19 +39,24 @@ def _append_my_configs_cache_notice(text, language, show_cache_notice=True):
 def my_configs(message):
     """Handle the My Configs button click"""
     user_id = message.from_user.id
+    with MY_CONFIGS_INFLIGHT_LOCK:
+        if user_id in MY_CONFIGS_INFLIGHT:
+            bot.send_chat_action(message.chat.id, 'typing')
+            return
+        MY_CONFIGS_INFLIGHT.add(user_id)
     started_at = time.monotonic()
-    bot.send_chat_action(message.chat.id, 'typing')
-    language = get_user_language(user_id)
-    
-    multi_api = MultiServerAPI()
-    if not multi_api.servers:
-        bot.reply_to(message, "⚠️ Error connecting to API. Please try again later.")
-        return
-    
-    # Look for usernames that match this user's Telegram ID pattern
-    user_configs = []
-
     try:
+        bot.send_chat_action(message.chat.id, 'typing')
+        language = get_user_language(user_id)
+        
+        multi_api = MultiServerAPI()
+        if not multi_api.servers:
+            bot.reply_to(message, "⚠️ Error connecting to API. Please try again later.")
+            return
+        
+        # Look for usernames that match this user's Telegram ID pattern
+        user_configs = []
+
         # Supported patterns include new formats (s{id}, t{id}) and legacy timestamped formats.
         paid_patterns = (
             re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),
@@ -84,45 +94,52 @@ def my_configs(message):
                 _append_my_configs_cache_notice(get_message_text(language, "no_active_configs"), language)
             )
             return
+
+        # Process and display configs
+        if len(user_configs) == 1:
+            # Only one config found, display it directly
+            display_config(
+                message.chat.id,
+                user_configs[0][0],
+                user_configs[0][1],
+                user_configs[0][2],
+                user_id=user_id,
+                show_cache_notice=True,
+            )
+        else:
+            # Multiple configs found, create a selection menu
+            markup = types.InlineKeyboardMarkup()
+
+            for username, user_data, api_client in user_configs:
+                max_traffic_gb = user_data.get('max_download_bytes', 0) / (1024 ** 3)
+                button_text = f"{username} - {max_traffic_gb:.2f} GB"
+                markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{api_client.server_id}:{username}"))
+
+            bot.reply_to(
+                message,
+                _append_my_configs_cache_notice("📱 Select a configuration to view:", language),
+                reply_markup=markup
+            )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         print(f"[MyConfigs] user_id={user_id} error={type(e).__name__} elapsed_ms={elapsed_ms}")
         bot.reply_to(message, f"⚠️ Error processing user data: {str(e)}")
         return
-    
-    # Process and display configs
-    if len(user_configs) == 1:
-        # Only one config found, display it directly
-        display_config(
-            message.chat.id,
-            user_configs[0][0],
-            user_configs[0][1],
-            user_configs[0][2],
-            user_id=user_id,
-            show_cache_notice=True,
-        )
-    else:
-        # Multiple configs found, create a selection menu
-        markup = types.InlineKeyboardMarkup()
-        
-        for username, user_data, api_client in user_configs:
-            # Get traffic limit in GB
-            max_traffic_gb = user_data.get('max_download_bytes', 0) / (1024 ** 3)
-            # Create button text with some info
-            button_text = f"{username} - {max_traffic_gb:.2f} GB"
-            markup.add(types.InlineKeyboardButton(button_text, callback_data=f"show_config:{api_client.server_id}:{username}"))
-        
-        bot.reply_to(
-            message,
-            _append_my_configs_cache_notice("📱 Select a configuration to view:", language),
-            reply_markup=markup
-        )
+    finally:
+        with MY_CONFIGS_INFLIGHT_LOCK:
+            MY_CONFIGS_INFLIGHT.discard(user_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('show_config:'))
 def handle_show_config(call):
     """Handle the selection of a specific config"""
+    key = (call.from_user.id, call.data)
+    with MY_CONFIGS_INFLIGHT_LOCK:
+        if key in SHOW_CONFIG_INFLIGHT:
+            safe_answer_callback_query(bot, call.id)
+            return
+        SHOW_CONFIG_INFLIGHT.add(key)
     try:
-        bot.answer_callback_query(call.id)
+        safe_answer_callback_query(bot, call.id)
         parts = call.data.split(':')
         if len(parts) >= 3:
             server_id, username = parts[1], parts[2]
@@ -145,18 +162,23 @@ def handle_show_config(call):
                 show_cache_notice=True,
             )
         else:
-            bot.edit_message_text(
+            safe_edit_message_text(
+                bot,
                 f"⚠️ Error: User '{username}' not found or API error.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id
             )
     except Exception as e:
         print(f"Error in handle_show_config: {str(e)}")
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             f"⚠️ Error processing your request: {str(e)}",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
         )
+    finally:
+        with MY_CONFIGS_INFLIGHT_LOCK:
+            SHOW_CONFIG_INFLIGHT.discard(key)
 
 def display_config(chat_id, username, user_data, api_client, is_callback=False, message_id=None, user_id=None, show_cache_notice=False):
     """Display user configuration details and QR code"""
@@ -240,22 +262,24 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
             message = _append_my_configs_cache_notice(message, language, show_cache_notice)
             
             if is_callback:
-                bot.edit_message_text(message, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=renewal_markup)
+                safe_edit_message_text(bot, message, chat_id=chat_id, message_id=message_id, parse_mode="Markdown", reply_markup=renewal_markup)
             else:
-                bot.send_message(chat_id, message, parse_mode="Markdown", reply_markup=renewal_markup)
+                safe_send_message(bot, chat_id, message, parse_mode="Markdown", reply_markup=renewal_markup)
             return
         
         # User is active, get subscription URL using the new API endpoint
         user_uri_data = api_client.get_user_uri(username)
         if not user_uri_data or 'normal_sub' not in user_uri_data:
             if is_callback:
-                bot.edit_message_text(
+                safe_edit_message_text(
+                    bot,
                     f"⚠️ Error: Could not generate subscription URL for '{username}'. Please contact support.",
                     chat_id=chat_id,
                     message_id=message_id
                 )
             else:
-                bot.send_message(
+                safe_send_message(
+                    bot,
                     chat_id,
                     f"⚠️ Error: Could not generate subscription URL for '{username}'. Please contact support."
                 )
@@ -283,15 +307,17 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         
         # Send QR code with details
         if is_callback:
-            bot.delete_message(chat_id=chat_id, message_id=message_id)
-            bot.send_photo(
+            safe_delete_message(bot, chat_id=chat_id, message_id=message_id)
+            safe_send_photo(
+                bot,
                 chat_id,
                 photo=bio,
                 caption=caption,
                 parse_mode="Markdown"
             )
         else:
-            bot.send_photo(
+            safe_send_photo(
+                bot,
                 chat_id,
                 photo=bio,
                 caption=caption,
@@ -301,6 +327,6 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
         error_message = f"⚠️ Error displaying configuration: {str(e)}"
         print(f"Error in display_config: {str(e)}")
         if is_callback:
-            bot.edit_message_text(error_message, chat_id=chat_id, message_id=message_id)
+            safe_edit_message_text(bot, error_message, chat_id=chat_id, message_id=message_id)
         else:
-            bot.send_message(chat_id, error_message)
+            safe_send_message(bot, chat_id, error_message)

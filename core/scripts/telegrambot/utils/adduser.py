@@ -117,6 +117,7 @@ def process_add_user_step4(call):
                 reply_markup=create_main_markup()
             )
             return
+        multi_api.record_created_user(api_client.server_id, username)
 
         # Get user URI from API
         user_uri_data = api_client.get_user_uri(username)

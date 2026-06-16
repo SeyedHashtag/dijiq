@@ -32,10 +32,26 @@ BOT_LOGS_PATH = (
     / "utils"
     / "bot_logs.py"
 )
+TELEGRAM_SAFE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "core"
+    / "scripts"
+    / "telegrambot"
+    / "utils"
+    / "telegram_safe.py"
+)
 
 
 def load_bot_logging():
     spec = importlib.util.spec_from_file_location("bot_logging_under_test", BOT_LOGGING_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_telegram_safe():
+    spec = importlib.util.spec_from_file_location("telegram_safe_under_test", TELEGRAM_SAFE_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -169,6 +185,87 @@ class BotLoggingTests(unittest.TestCase):
                 bot.callback_handlers[0](DummyCallback())
 
         self.assertIn("handler_error kind=callback handler=broken_callback", "\n".join(captured.output))
+
+
+class TelegramSafeTests(unittest.TestCase):
+    def setUp(self):
+        self.original_env = {
+            "DIJIQ_TELEGRAM_TIMEOUT_SECONDS": os.environ.get("DIJIQ_TELEGRAM_TIMEOUT_SECONDS"),
+            "DIJIQ_CALLBACK_TIMEOUT_SECONDS": os.environ.get("DIJIQ_CALLBACK_TIMEOUT_SECONDS"),
+        }
+
+    def tearDown(self):
+        for name, value in self.original_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    def test_safe_answer_callback_uses_short_timeout_and_ignores_old_callback(self):
+        telegram_safe = load_telegram_safe()
+        os.environ["DIJIQ_CALLBACK_TIMEOUT_SECONDS"] = "4"
+
+        class Bot:
+            def __init__(self):
+                self.calls = []
+
+            def answer_callback_query(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                raise RuntimeError("Bad Request: query is too old and response timeout expired")
+
+        bot = Bot()
+
+        self.assertIsNone(telegram_safe.safe_answer_callback_query(bot, "callback-1"))
+        self.assertEqual(bot.calls[0][0], ("callback-1",))
+        self.assertEqual(bot.calls[0][1]["timeout"], 4)
+
+    def test_safe_edit_retries_without_timeout_for_test_doubles(self):
+        telegram_safe = load_telegram_safe()
+
+        class Bot:
+            def __init__(self):
+                self.calls = []
+
+            def edit_message_text(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                if "timeout" in kwargs:
+                    raise TypeError("unexpected keyword argument 'timeout'")
+                return "ok"
+
+        bot = Bot()
+
+        self.assertEqual(telegram_safe.safe_edit_message_text(bot, "hello", chat_id=1, message_id=2), "ok")
+        self.assertIn("timeout", bot.calls[0][1])
+        self.assertNotIn("timeout", bot.calls[1][1])
+
+    def test_safe_send_raises_unexpected_errors(self):
+        telegram_safe = load_telegram_safe()
+
+        class Bot:
+            def send_message(self, *args, **kwargs):
+                raise RuntimeError("network exploded")
+
+        with self.assertRaises(RuntimeError):
+            telegram_safe.safe_send_message(Bot(), 123, "hello")
+
+    def test_install_safe_telegram_methods_wraps_direct_bot_calls(self):
+        telegram_safe = load_telegram_safe()
+        os.environ["DIJIQ_TELEGRAM_TIMEOUT_SECONDS"] = "6"
+
+        class Bot:
+            def __init__(self):
+                self.calls = []
+
+            def edit_message_text(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                raise RuntimeError("Bad Request: message is not modified")
+
+        bot = telegram_safe.install_safe_telegram_methods(Bot())
+
+        self.assertIsNone(bot.edit_message_text("same", chat_id=1, message_id=2))
+        self.assertEqual(bot.calls[0][1]["timeout"], 6)
+        self.assertIs(telegram_safe.install_safe_telegram_methods(bot), bot)
+        self.assertTrue(getattr(bot, "_dijiq_safe_telegram_installed"))
 
 
 class AdminLogButtonTests(unittest.TestCase):

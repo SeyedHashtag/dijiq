@@ -15,6 +15,7 @@ from utils.username_utils import (
     allocate_username,
     build_user_note,
 )
+from utils.telegram_safe import safe_answer_callback_query, safe_edit_message_text, safe_send_message, safe_send_photo
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
@@ -227,8 +228,9 @@ def test_config(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_test_config")
 def handle_cancel_test_config(call):
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(
+    safe_answer_callback_query(bot, call.id)
+    safe_edit_message_text(
+        bot,
         "❌ Test config creation cancelled.",
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
@@ -241,8 +243,9 @@ def handle_confirm_test_config(call):
     # Check if test creation is disabled
     if is_test_creation_disabled():
         if has_used_test_config(user_id):
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(
+            safe_answer_callback_query(bot, call.id)
+            safe_edit_message_text(
+                bot,
                 get_message_text(language, "test_config_used"),
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id
@@ -250,8 +253,9 @@ def handle_confirm_test_config(call):
             return
 
         add_to_waiting_list(user_id, call.from_user.username, language)
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(
+        safe_answer_callback_query(bot, call.id)
+        safe_edit_message_text(
+            bot,
             get_message_text(language, "test_config_waiting_list"),
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
@@ -260,8 +264,9 @@ def handle_confirm_test_config(call):
 
     # Double check if user has already used a test config
     if has_used_test_config(user_id):
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(
+        safe_answer_callback_query(bot, call.id)
+        safe_edit_message_text(
+            bot,
             get_message_text(language, "test_config_used"),
             chat_id=call.message.chat.id,
             message_id=call.message.message_id
@@ -269,8 +274,9 @@ def handle_confirm_test_config(call):
         return
 
     # Display processing message
-    bot.answer_callback_query(call.id)
-    bot.edit_message_text(
+    safe_answer_callback_query(bot, call.id)
+    safe_edit_message_text(
+        bot,
         "⏳ Creating your test configuration...",
         chat_id=call.message.chat.id,
         message_id=call.message.message_id
@@ -307,14 +313,16 @@ def _send_created_test_config(chat_id, username, user_uri_data, is_automatic=Fal
             success_message += f"IPv4 URL: `{ipv4_url}`\n\n"
 
         success_message += f"Subscription URL:\n{sub_url}"
-        bot.send_photo(
+        safe_send_photo(
+            bot,
             chat_id,
             photo=bio,
             caption=success_message,
             parse_mode="Markdown"
         )
     else:
-        bot.send_message(
+        safe_send_message(
+            bot,
             chat_id,
             f"✅ Your test configuration has been created, but the subscription URL could not be generated. Please contact support.",
             parse_mode="Markdown"
