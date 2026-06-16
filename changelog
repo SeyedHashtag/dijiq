@@ -1,3 +1,8 @@
+## v1.15.11
+✨ Add environment-configurable Telegram polling, API request, crypto payment, and bot worker-thread settings
+⚡ Create automatic test configs in the background and parallelize multi-server user lookups with safer snapshot refresh locking
+✅ Add tests for bot worker threads, API/client timeouts, crypto payment timeouts, and concurrent server snapshot refresh behavior
+
 ## v1.15.10
 ✨ Add scheduled background expired-user cleanup with run metadata and startup-delay tracking
 ⚡ Batch expired-cleanup local record writes across test configs, payments, and reseller configs
