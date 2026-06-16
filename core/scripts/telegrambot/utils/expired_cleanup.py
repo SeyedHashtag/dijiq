@@ -584,38 +584,74 @@ def _clear_state_delete_metadata(entry):
         entry.pop(key, None)
 
 
-def _clear_candidate_delete_metadata(candidate):
+def _load_cleanup_record_stores():
+    return {
+        'test_configs': _load_json_file(TEST_CONFIGS_FILE, {}),
+        'payments': _load_json_file(PAYMENTS_FILE, {}),
+        'resellers': _load_json_file(RESELLERS_FILE, {}),
+        '_dirty': set(),
+    }
+
+
+def _save_dirty_cleanup_record_stores(stores):
+    if not isinstance(stores, dict):
+        return
+    dirty = stores.get('_dirty') or set()
+    if 'test_configs' in dirty:
+        _save_json_file(TEST_CONFIGS_FILE, stores.get('test_configs') if isinstance(stores.get('test_configs'), dict) else {})
+    if 'payments' in dirty:
+        _save_json_file(PAYMENTS_FILE, stores.get('payments') if isinstance(stores.get('payments'), dict) else {})
+    if 'resellers' in dirty:
+        _save_json_file(RESELLERS_FILE, stores.get('resellers') if isinstance(stores.get('resellers'), dict) else {})
+    dirty.clear()
+
+
+def _mark_store_dirty(stores, key):
+    if isinstance(stores, dict):
+        stores.setdefault('_dirty', set()).add(key)
+
+
+def _clear_candidate_delete_metadata(candidate, stores=None):
     ref = candidate.get('_record_ref') or ()
     if not ref:
         return
 
     kind = ref[0]
     if kind == 'test':
-        data = _load_json_file(TEST_CONFIGS_FILE, {})
+        data = stores.get('test_configs') if isinstance(stores, dict) else _load_json_file(TEST_CONFIGS_FILE, {})
         entry = data.get(ref[1]) if isinstance(data, dict) else None
         if isinstance(entry, dict):
             for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
                 entry.pop(key, None)
-            _save_json_file(TEST_CONFIGS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'test_configs')
+            else:
+                _save_json_file(TEST_CONFIGS_FILE, data)
         return
 
     if kind == 'payment':
-        data = _load_json_file(PAYMENTS_FILE, {})
+        data = stores.get('payments') if isinstance(stores, dict) else _load_json_file(PAYMENTS_FILE, {})
         entry = data.get(ref[1]) if isinstance(data, dict) else None
         if isinstance(entry, dict):
             for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
                 entry.pop(key, None)
-            _save_json_file(PAYMENTS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'payments')
+            else:
+                _save_json_file(PAYMENTS_FILE, data)
         return
 
     if kind == 'reseller':
-        data = _load_json_file(RESELLERS_FILE, {})
+        data = stores.get('resellers') if isinstance(stores, dict) else _load_json_file(RESELLERS_FILE, {})
         reseller = data.get(ref[1]) if isinstance(data, dict) else None
         configs = reseller.get('configs', []) if isinstance(reseller, dict) else []
         if isinstance(configs, list) and 0 <= ref[2] < len(configs) and isinstance(configs[ref[2]], dict):
             for key in ('cleanup_deleted_at', 'cleanup_delete_result', 'cleanup_error'):
                 configs[ref[2]].pop(key, None)
-            _save_json_file(RESELLERS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'resellers')
+            else:
+                _save_json_file(RESELLERS_FILE, data)
 
 
 def _completed_payment(record):
@@ -709,10 +745,10 @@ def _lookup_user_from_context(context, username, preferred_server_id=None):
     return None, None, 'missing'
 
 
-def discover_cleanup_candidates(include_already_missing=False):
+def discover_cleanup_candidates(include_already_missing=False, stores=None):
     candidates = []
 
-    test_configs = _load_json_file(TEST_CONFIGS_FILE, {})
+    test_configs = stores.get('test_configs') if isinstance(stores, dict) else _load_json_file(TEST_CONFIGS_FILE, {})
     if isinstance(test_configs, dict):
         for telegram_id, entry in test_configs.items():
             if not isinstance(entry, dict):
@@ -730,7 +766,7 @@ def discover_cleanup_candidates(include_already_missing=False):
                 '_record_ref': ('test', str(telegram_id)),
             })
 
-    payments = _load_json_file(PAYMENTS_FILE, {})
+    payments = stores.get('payments') if isinstance(stores, dict) else _load_json_file(PAYMENTS_FILE, {})
     if isinstance(payments, dict):
         for payment_id, record in payments.items():
             if not _completed_payment(record):
@@ -748,7 +784,7 @@ def discover_cleanup_candidates(include_already_missing=False):
                 '_record_ref': ('payment', str(payment_id)),
             })
 
-    resellers = _load_json_file(RESELLERS_FILE, {})
+    resellers = stores.get('resellers') if isinstance(stores, dict) else _load_json_file(RESELLERS_FILE, {})
     if isinstance(resellers, dict):
         for reseller_id, reseller_data in resellers.items():
             if not isinstance(reseller_data, dict):
@@ -833,12 +869,17 @@ def _candidate_matches_server_candidates(candidate, usernames, exact_keys):
     return _state_key(server_id, username).lower() in exact_keys
 
 
-def discover_matching_cleanup_candidates(server_candidates, include_already_missing=False):
+def discover_matching_cleanup_candidates(server_candidates, include_already_missing=False, local_candidates=None):
     usernames, exact_keys, exact_candidates, username_candidates = _server_candidate_match_sets(server_candidates)
     if not usernames:
         return []
     matched = []
-    for candidate in discover_cleanup_candidates(include_already_missing=include_already_missing):
+    candidates = (
+        local_candidates
+        if local_candidates is not None
+        else discover_cleanup_candidates(include_already_missing=include_already_missing)
+    )
+    for candidate in candidates:
         if not _candidate_matches_server_candidates(candidate, usernames, exact_keys):
             continue
 
@@ -977,35 +1018,44 @@ def _merge_cleanup_candidates(*candidate_groups):
     return merged
 
 
-def _update_candidate_record(candidate, fields):
+def _update_candidate_record(candidate, fields, stores=None):
     ref = candidate.get('_record_ref') or ()
     if not ref:
         return
 
     kind = ref[0]
     if kind == 'test':
-        data = _load_json_file(TEST_CONFIGS_FILE, {})
+        data = stores.get('test_configs') if isinstance(stores, dict) else _load_json_file(TEST_CONFIGS_FILE, {})
         entry = data.get(ref[1]) if isinstance(data, dict) else None
         if isinstance(entry, dict):
             _apply_fields(entry, fields)
-            _save_json_file(TEST_CONFIGS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'test_configs')
+            else:
+                _save_json_file(TEST_CONFIGS_FILE, data)
         return
 
     if kind == 'payment':
-        data = _load_json_file(PAYMENTS_FILE, {})
+        data = stores.get('payments') if isinstance(stores, dict) else _load_json_file(PAYMENTS_FILE, {})
         entry = data.get(ref[1]) if isinstance(data, dict) else None
         if isinstance(entry, dict):
             _apply_fields(entry, fields)
-            _save_json_file(PAYMENTS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'payments')
+            else:
+                _save_json_file(PAYMENTS_FILE, data)
         return
 
     if kind == 'reseller':
-        data = _load_json_file(RESELLERS_FILE, {})
+        data = stores.get('resellers') if isinstance(stores, dict) else _load_json_file(RESELLERS_FILE, {})
         reseller = data.get(ref[1]) if isinstance(data, dict) else None
         configs = reseller.get('configs', []) if isinstance(reseller, dict) else []
         if isinstance(configs, list) and 0 <= ref[2] < len(configs) and isinstance(configs[ref[2]], dict):
             _apply_fields(configs[ref[2]], fields)
-            _save_json_file(RESELLERS_FILE, data)
+            if stores is not None:
+                _mark_store_dirty(stores, 'resellers')
+            else:
+                _save_json_file(RESELLERS_FILE, data)
 
 
 def _get_user_lookup(multi_api, username, preferred_server_id=None):
@@ -1173,7 +1223,7 @@ def _mark_renewed(state, key, candidate, now_value, last_state=None):
     })
 
 
-def _mark_deleted(state, key, candidate, status, now_value, last_state=None, delete_result=None):
+def _mark_deleted(state, key, candidate, status, now_value, last_state=None, delete_result=None, stores=None):
     entry = state.setdefault(key, {})
     entry.update({
         'username': candidate.get('username'),
@@ -1192,7 +1242,7 @@ def _mark_deleted(state, key, candidate, status, now_value, last_state=None, del
         last_state=last_state,
         delete_result=delete_result or status,
     )
-    _update_candidate_record(candidate, fields)
+    _update_candidate_record(candidate, fields, stores=stores)
 
 
 def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
@@ -1206,13 +1256,19 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
             state = {}
 
         multi_api = multi_api or MultiServerAPI()
+        record_stores = _load_cleanup_record_stores()
         server_candidates, lookup_context = _scan_server_cleanup_candidates(multi_api)
         state_candidates = discover_state_cleanup_candidates(state)
         already_missing_candidates = discover_already_missing_cleanup_candidates(state)
+        local_candidates = discover_cleanup_candidates(
+            include_already_missing=True,
+            stores=record_stores,
+        )
         candidates = _merge_cleanup_candidates(
             discover_matching_cleanup_candidates(
                 _merge_cleanup_candidates(server_candidates, state_candidates, already_missing_candidates),
                 include_already_missing=True,
+                local_candidates=local_candidates,
             ),
             state_candidates,
             already_missing_candidates,
@@ -1268,7 +1324,11 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                         _mark_renewed(state, key, candidate, now_value, last_state=capture_last_state(user_data, now=now))
                     else:
                         state.pop(key, None)
-                        _update_candidate_record(candidate, {'cleanup_status': 'renewed', 'cleanup_error': None})
+                        _update_candidate_record(
+                            candidate,
+                            {'cleanup_status': 'renewed', 'cleanup_error': None},
+                            stores=record_stores,
+                        )
                 continue
 
             if lookup_status == 'missing':
@@ -1283,6 +1343,7 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                     now_value,
                     last_state=entry.get('last_state') if entry else None,
                     delete_result='already_missing',
+                    stores=record_stores,
                 )
                 continue
 
@@ -1307,6 +1368,7 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 _update_candidate_record(
                     candidate,
                     _metadata_fields('notified', now_value, notification_error=notification_error, last_state=last_state),
+                    stores=record_stores,
                 )
                 continue
 
@@ -1337,10 +1399,11 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                     last_state = capture_last_state(user_data, now=now)
                     entry['last_state'] = last_state
                     _clear_state_delete_metadata(entry)
-                    _clear_candidate_delete_metadata(candidate)
+                    _clear_candidate_delete_metadata(candidate, stores=record_stores)
                     _update_candidate_record(
                         candidate,
                         _metadata_fields('notified', now_value, last_state=last_state),
+                        stores=record_stores,
                     )
                 continue
 
@@ -1354,11 +1417,13 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 _update_candidate_record(
                     candidate,
                     _metadata_fields('delete_failed', now_value, cleanup_error='delete_failed', last_state=last_state),
+                    stores=record_stores,
                 )
                 continue
 
-            _mark_deleted(state, key, candidate, 'deleted', now_value, last_state=last_state, delete_result='deleted')
+            _mark_deleted(state, key, candidate, 'deleted', now_value, last_state=last_state, delete_result='deleted', stores=record_stores)
 
+        _save_dirty_cleanup_record_stores(record_stores)
         _save_json_file(STATE_FILE, state)
         return state
 

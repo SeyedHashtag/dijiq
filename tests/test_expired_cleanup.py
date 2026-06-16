@@ -550,6 +550,55 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(last_state["gb_used"], 3.0)
         self.assertEqual(last_state["gb_remaining"], 2.0)
 
+    def test_cleanup_batches_local_record_writes_for_multiple_deletions(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101", "server_id": "s1", "cleanup_status": "notified"},
+            "102": {"telegram_id": 102, "username": "t102", "server_id": "s1", "cleanup_status": "notified"},
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:t101": {
+                "username": "t101",
+                "server_id": "s1",
+                "source": "test",
+                "telegram_user_id": "101",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+            "s1:t102": {
+                "username": "t102",
+                "server_id": "s1",
+                "source": "test",
+                "telegram_user_id": "102",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            },
+        })
+        client = FakeClient("s1", {"t101": self.expired_user(), "t102": self.expired_user()})
+        save_counts = {}
+        original_save = self.cleanup._save_json_file
+
+        def counted_save(path, data):
+            save_counts[path] = save_counts.get(path, 0) + 1
+            original_save(path, data)
+
+        self.cleanup._save_json_file = counted_save
+        self.addCleanup(setattr, self.cleanup, "_save_json_file", original_save)
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        self.assertEqual(client.deleted, ["t101", "t102"])
+        self.assertEqual(save_counts.get(self.cleanup.TEST_CONFIGS_FILE), 1)
+        self.assertEqual(save_counts.get(self.cleanup.STATE_FILE), 1)
+        saved_tests = self.read_json(self.cleanup.TEST_CONFIGS_FILE)
+        self.assertEqual(saved_tests["101"]["cleanup_status"], "deleted")
+        self.assertEqual(saved_tests["102"]["cleanup_status"], "deleted")
+
     def test_renewed_user_clears_pending_cleanup_state(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
             "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}
