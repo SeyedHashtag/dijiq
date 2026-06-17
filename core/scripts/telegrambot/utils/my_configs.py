@@ -36,6 +36,10 @@ SHOW_CONFIG_EXECUTOR = ThreadPoolExecutor(
     max_workers=_int_env("DIJIQ_SHOW_CONFIG_WORKERS", 2),
     thread_name_prefix="dijiq-show-config",
 )
+MY_CONFIGS_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_MY_CONFIGS_WORKERS", 2),
+    thread_name_prefix="dijiq-my-configs",
+)
 
 
 def _my_configs_cache_notice(language):
@@ -151,12 +155,19 @@ def my_configs(message):
     user_id = message.from_user.id
     with MY_CONFIGS_INFLIGHT_LOCK:
         if user_id in MY_CONFIGS_INFLIGHT:
-            bot.send_chat_action(message.chat.id, 'typing')
             return
         MY_CONFIGS_INFLIGHT.add(user_id)
+    try:
+        MY_CONFIGS_EXECUTOR.submit(_my_configs_job, message, user_id)
+    except Exception:
+        with MY_CONFIGS_INFLIGHT_LOCK:
+            MY_CONFIGS_INFLIGHT.discard(user_id)
+        raise
+
+
+def _my_configs_job(message, user_id):
     started_at = time.monotonic()
     try:
-        bot.send_chat_action(message.chat.id, 'typing')
         language = get_user_language(user_id)
         
         multi_api = MultiServerAPI()

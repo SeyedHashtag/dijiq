@@ -277,6 +277,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         reseller_handlers.bot.answers.clear()
         reseller_handlers.bot.sent_messages.clear()
         reseller_handlers.RESELLER_CUSTOMERS_INFLIGHT.clear()
+        reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT.clear()
 
     def test_customer_name_displays_above_generated_username(self):
         entry = reseller_handlers._format_reseller_customer_entry(
@@ -529,6 +530,62 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             reseller_handlers.MultiServerAPI = original_multi_api
             reseller_handlers.get_reseller_data = original_get_reseller_data
             reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR = original_executor
+
+    def test_reseller_customer_config_queues_live_lookup(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR
+
+        class FakeClient:
+            server_id = "s1"
+
+            def get_user_uri(self, username):
+                return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def find_user(self, username, preferred_server_id=None):
+                self.__class__.calls.append((username, preferred_server_id))
+                return FakeClient(), {
+                    "blocked": False,
+                    "upload_bytes": 0,
+                    "download_bytes": 0,
+                    "max_download_bytes": 20 * 1024 ** 3,
+                    "expiration_days": 20,
+                    "account_creation_date": "2026-06-01",
+                    "status": "active",
+                }
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "configs": [{"username": "r1988a", "server_id": "s1"}],
+            }
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:cfg:r1988a:active:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_reseller_customer_config(call)
+            reseller_handlers.handle_reseller_customer_config(call)
+
+            self.assertEqual(len(executor.jobs), 1)
+            self.assertEqual(FakeMultiServerAPI.calls, [])
+
+            executor.run_next()
+
+            self.assertEqual(FakeMultiServerAPI.calls, [("r1988a", "s1")])
+            self.assertEqual(reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT, set())
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = original_executor
 
     def test_reseller_customer_overview_and_empty_category_include_refresh(self):
         call = types.SimpleNamespace(

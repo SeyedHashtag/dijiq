@@ -123,6 +123,19 @@ class ImmediateExecutor:
         return types.SimpleNamespace()
 
 
+class HoldingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+        return types.SimpleNamespace(done=lambda: False)
+
+    def run_next(self):
+        fn, args, kwargs = self.jobs.pop(0)
+        return fn(*args, **kwargs)
+
+
 def install_stubs():
     telebot_stub = types.ModuleType("telebot")
     telebot_stub.types = types.SimpleNamespace(
@@ -192,6 +205,7 @@ class MyConfigsTests(unittest.TestCase):
         my_configs_module.MY_CONFIGS_REFRESH_INFLIGHT.clear()
         my_configs_module.MY_CONFIGS_INFLIGHT.clear()
         my_configs_module.SHOW_CONFIG_INFLIGHT.clear()
+        my_configs_module.MY_CONFIGS_EXECUTOR = ImmediateExecutor()
         self.displayed_configs = []
         my_configs_module.display_config = lambda *args, **kwargs: self.displayed_configs.append((args, kwargs))
 
@@ -224,6 +238,26 @@ class MyConfigsTests(unittest.TestCase):
             "📱 Select a configuration to view:\n\nThis list may take a few minutes to update.",
         )
         self.assertEqual(my_configs_module.bot.replies[0][1]["reply_markup"].buttons[0].callback_data, "show_config:enabled:s123a")
+
+    def test_my_configs_queues_uncached_scan_and_dedupes(self):
+        executor = HoldingExecutor()
+        my_configs_module.MY_CONFIGS_EXECUTOR = executor
+        enabled_client = FakeClient("enabled")
+        FakeMultiServerAPI.users_by_include_disabled[False] = [
+            (enabled_client, "s123a", {"max_download_bytes": 20}),
+        ]
+        message = self.make_message()
+
+        my_configs_module.my_configs(message)
+        my_configs_module.my_configs(message)
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(FakeMultiServerAPI.iter_calls, [])
+
+        executor.run_next()
+
+        self.assertEqual(len(my_configs_module.bot.replies), 1)
+        self.assertEqual(my_configs_module.MY_CONFIGS_INFLIGHT, set())
 
     def test_my_configs_excludes_disabled_servers_for_customer_lookup(self):
         disabled_client = FakeClient("disabled")

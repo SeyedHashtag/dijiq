@@ -2,6 +2,8 @@ import json
 import os
 import datetime
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from telebot import types
 from utils.command import bot, is_admin
 from utils.common import create_main_markup
@@ -22,6 +24,22 @@ TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
 TEST_WAITING_LIST_FILE = '/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json'
 TEST_TRAFFIC_GB = 1
 TEST_DAYS = 30
+TEST_CONFIG_JOB_LOCK = threading.Lock()
+TEST_CONFIG_INFLIGHT = set()
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+TEST_CONFIG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_TEST_CONFIG_WORKERS", 2),
+    thread_name_prefix="dijiq-test-config",
+)
 
 def load_test_settings():
     try:
@@ -236,6 +254,44 @@ def handle_cancel_test_config(call):
         message_id=call.message.message_id
     )
 
+
+def _queue_test_config_creation(user_id, chat_id, message_id, language, telegram_username=None):
+    with TEST_CONFIG_JOB_LOCK:
+        if user_id in TEST_CONFIG_INFLIGHT:
+            return False
+        TEST_CONFIG_INFLIGHT.add(user_id)
+
+    def run():
+        try:
+            safe_edit_message_text(
+                bot,
+                "⏳ Creating your test configuration...",
+                chat_id=chat_id,
+                message_id=message_id,
+            )
+        except Exception:
+            pass
+        try:
+            create_test_config(
+                user_id,
+                chat_id,
+                is_automatic=False,
+                language=language,
+                telegram_username=telegram_username,
+            )
+        finally:
+            with TEST_CONFIG_JOB_LOCK:
+                TEST_CONFIG_INFLIGHT.discard(user_id)
+
+    try:
+        TEST_CONFIG_EXECUTOR.submit(run)
+    except Exception:
+        with TEST_CONFIG_JOB_LOCK:
+            TEST_CONFIG_INFLIGHT.discard(user_id)
+        raise
+    return True
+
+
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_test_config")
 def handle_confirm_test_config(call):
     user_id = call.from_user.id
@@ -273,16 +329,15 @@ def handle_confirm_test_config(call):
         )
         return
 
-    # Display processing message
     safe_answer_callback_query(bot, call.id)
-    safe_edit_message_text(
-        bot,
-        "⏳ Creating your test configuration...",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
-
-    create_test_config(user_id, call.message.chat.id, is_automatic=False, language=language, telegram_username=call.from_user.username)
+    if not _queue_test_config_creation(
+        user_id,
+        call.message.chat.id,
+        call.message.message_id,
+        language,
+        telegram_username=call.from_user.username,
+    ):
+        safe_answer_callback_query(bot, call.id, text="Test config creation is already in progress.")
 
 def _send_created_test_config(chat_id, username, user_uri_data, is_automatic=False):
     if user_uri_data and 'normal_sub' in user_uri_data:

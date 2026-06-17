@@ -1,5 +1,8 @@
 import io
 import json
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from telebot import types
 from utils.command import bot, ADMIN_USER_IDS, is_admin
@@ -16,15 +19,79 @@ from utils.referral import (
 )
 from utils.translations import BUTTON_TRANSLATIONS, get_message_text, get_button_text
 from utils.language import get_user_language
+from utils.telegram_safe import safe_answer_callback_query, safe_edit_message_text, safe_send_message
 
 ADMIN_REFERRAL_PAGE_SIZE = 8
+REFERRAL_MENU_LOCK = threading.Lock()
+REFERRAL_MENU_INFLIGHT = set()
+BOT_USERNAME_LOCK = threading.Lock()
+BOT_USERNAME_CACHE = None
+
+
+def _int_env(name, default, minimum=1):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+REFERRAL_MENU_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_REFERRAL_MENU_WORKERS", 2),
+    thread_name_prefix="dijiq-referral-menu",
+)
+
+
+def _get_bot_username():
+    global BOT_USERNAME_CACHE
+    env_username = (
+        os.getenv("DIJIQ_BOT_USERNAME")
+        or os.getenv("BOT_USERNAME")
+        or os.getenv("TELEGRAM_BOT_USERNAME")
+    )
+    if env_username:
+        return env_username.strip().lstrip("@") or "YourBotName"
+
+    with BOT_USERNAME_LOCK:
+        if BOT_USERNAME_CACHE:
+            return BOT_USERNAME_CACHE
+        try:
+            bot_info = bot.get_me()
+            bot_username = str(getattr(bot_info, "username", "") or "").strip().lstrip("@")
+        except Exception:
+            bot_username = ""
+        BOT_USERNAME_CACHE = bot_username or "YourBotName"
+        return BOT_USERNAME_CACHE
+
+
+def _queue_referral_menu_render(user_id, chat_id, message_id=None):
+    key = (user_id, chat_id, message_id)
+    with REFERRAL_MENU_LOCK:
+        if key in REFERRAL_MENU_INFLIGHT:
+            return False
+        REFERRAL_MENU_INFLIGHT.add(key)
+
+    def run():
+        try:
+            show_referral_menu(user_id, chat_id, message_id)
+        finally:
+            with REFERRAL_MENU_LOCK:
+                REFERRAL_MENU_INFLIGHT.discard(key)
+
+    try:
+        REFERRAL_MENU_EXECUTOR.submit(run)
+    except Exception:
+        with REFERRAL_MENU_LOCK:
+            REFERRAL_MENU_INFLIGHT.discard(key)
+        raise
+    return True
 
 @bot.message_handler(func=lambda message: any(
     message.text == get_button_text(get_user_language(message.from_user.id), "referral") for lang in BUTTON_TRANSLATIONS
 ))
 def referral_menu(message):
     user_id = message.from_user.id
-    show_referral_menu(user_id, message.chat.id)
+    _queue_referral_menu_render(user_id, message.chat.id)
 
 def show_referral_menu(user_id, chat_id, message_id=None):
     language = get_user_language(user_id)
@@ -33,11 +100,7 @@ def show_referral_menu(user_id, chat_id, message_id=None):
     stats = get_referral_stats(user_id)
     wallet = get_wallet_address(user_id)
     
-    try:
-        bot_info = bot.get_me()
-        bot_username = bot_info.username
-    except Exception:
-        bot_username = "YourBotName" # Fallback if API fails
+    bot_username = _get_bot_username()
     
     referral_link = f"https://t.me/{bot_username}?start={code}"
     
@@ -63,9 +126,9 @@ def show_referral_menu(user_id, chat_id, message_id=None):
     markup.add(*buttons)
     
     if message_id:
-        bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=msg, reply_markup=markup, parse_mode="Markdown")
+        safe_edit_message_text(bot, chat_id=chat_id, message_id=message_id, text=msg, reply_markup=markup, parse_mode="Markdown")
     else:
-        bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="Markdown")
+        safe_send_message(bot, chat_id, msg, reply_markup=markup, parse_mode="Markdown")
 
 def _admin_referral_page_count(total_items):
     if total_items <= 0:
@@ -296,7 +359,8 @@ def handle_withdraw(call):
 @bot.callback_query_handler(func=lambda call: call.data == "ref_withdraw_cancel")
 def handle_withdraw_cancel(call):
     user_id = call.from_user.id
-    show_referral_menu(user_id, call.message.chat.id, call.message.message_id)
+    safe_answer_callback_query(bot, call.id)
+    _queue_referral_menu_render(user_id, call.message.chat.id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "ref_withdraw_confirm")
 def handle_withdraw_confirm(call):
@@ -305,7 +369,8 @@ def handle_withdraw_confirm(call):
     telegram_username = str(call.from_user.username or "").strip().lstrip("@")
 
     if not telegram_username:
-        bot.answer_callback_query(
+        safe_answer_callback_query(
+            bot,
             call.id,
             get_message_text(language, "withdraw_requires_telegram_username"),
             show_alert=True
@@ -319,8 +384,9 @@ def handle_withdraw_confirm(call):
         wallet = result["wallet"]
         audit_payload = build_withdrawal_audit_payload(user_id, telegram_username, result)
         
-        bot.answer_callback_query(call.id, "Request sent!")
-        bot.edit_message_text(
+        safe_answer_callback_query(bot, call.id, "Request sent!")
+        safe_edit_message_text(
+            bot,
             chat_id=call.message.chat.id, 
             message_id=call.message.message_id, 
             text=get_message_text(language, "withdraw_success"),
@@ -330,9 +396,9 @@ def handle_withdraw_confirm(call):
         # Notify Admins
         notify_admins_withdrawal(user_id, telegram_username, amount, wallet, result, audit_payload)
     else:
-        bot.answer_callback_query(call.id, "Error!")
-        bot.send_message(call.message.chat.id, get_message_text(language, "withdraw_failed").format(reason=result))
-        show_referral_menu(user_id, call.message.chat.id)
+        safe_answer_callback_query(bot, call.id, "Error!")
+        safe_send_message(bot, call.message.chat.id, get_message_text(language, "withdraw_failed").format(reason=result))
+        _queue_referral_menu_render(user_id, call.message.chat.id)
 
 def notify_admins_withdrawal(user_id, telegram_username, amount, wallet, withdrawal_data, audit_payload):
     markup = types.InlineKeyboardMarkup()

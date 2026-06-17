@@ -74,6 +74,12 @@ RESELLER_CUSTOMERS_EXECUTOR = ThreadPoolExecutor(
     max_workers=_int_env("DIJIQ_RESELLER_CUSTOMERS_WORKERS", 2),
     thread_name_prefix="dijiq-reseller-customers",
 )
+RESELLER_CUSTOMER_CONFIG_LOCK = threading.Lock()
+RESELLER_CUSTOMER_CONFIG_INFLIGHT = set()
+RESELLER_CUSTOMER_CONFIG_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_RESELLER_CUSTOMER_CONFIG_WORKERS", 2),
+    thread_name_prefix="dijiq-reseller-cfg",
+)
 
 
 def _get_approved_reseller_data(user_id):
@@ -1388,8 +1394,57 @@ def handle_reseller_customer_config(call):
         except (ValueError, IndexError):
             return_page = 0
 
-    bot.answer_callback_query(call.id)
+    safe_answer_callback_query(bot, call.id)
+    _queue_reseller_customer_config_render(
+        call,
+        user_id,
+        language,
+        reseller_data,
+        username,
+        return_category,
+        return_page,
+    )
 
+
+def _queue_reseller_customer_config_render(call, user_id, language, reseller_data, username, return_category, return_page):
+    key = (
+        user_id,
+        getattr(getattr(call.message, "chat", None), "id", None),
+        getattr(call.message, "message_id", None),
+        username,
+        return_category,
+        return_page,
+    )
+    with RESELLER_CUSTOMER_CONFIG_LOCK:
+        if key in RESELLER_CUSTOMER_CONFIG_INFLIGHT:
+            return False
+        RESELLER_CUSTOMER_CONFIG_INFLIGHT.add(key)
+
+    def run():
+        try:
+            _render_reseller_customer_config_job(
+                call,
+                user_id,
+                language,
+                reseller_data,
+                username,
+                return_category,
+                return_page,
+            )
+        finally:
+            with RESELLER_CUSTOMER_CONFIG_LOCK:
+                RESELLER_CUSTOMER_CONFIG_INFLIGHT.discard(key)
+
+    try:
+        RESELLER_CUSTOMER_CONFIG_EXECUTOR.submit(run)
+    except Exception:
+        with RESELLER_CUSTOMER_CONFIG_LOCK:
+            RESELLER_CUSTOMER_CONFIG_INFLIGHT.discard(key)
+        raise
+    return True
+
+
+def _render_reseller_customer_config_job(call, user_id, language, reseller_data, username, return_category, return_page):
     preferred_server_id = None
     matched_config_index = None
     for index, cfg in enumerate((reseller_data or {}).get('configs', [])):
@@ -1411,7 +1466,8 @@ def handle_reseller_customer_config(call):
     )
 
     if not user_config:
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             f"⚠️ Could not retrieve data for `{username}`. The config may have been deleted.",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1488,7 +1544,8 @@ def handle_reseller_customer_config(call):
             except Exception as renewal_error:
                 print(f"Error building reseller renewal offer for {username}: {renewal_error}")
         message_text = f"❌ **Configuration expired/blocked**\n{formatted_details}"
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             message_text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1500,7 +1557,8 @@ def handle_reseller_customer_config(call):
     # Active config — fetch subscription URL and send QR code
     user_uri_data = api_client.get_user_uri(username)
     if not user_uri_data or 'normal_sub' not in user_uri_data:
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             f"⚠️ Could not generate subscription URL for `{username}`.",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1523,8 +1581,9 @@ def handle_reseller_customer_config(call):
         qr_code.save(bio, 'PNG')
         bio.seek(0)
 
-        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-        bot.send_photo(
+        safe_delete_message(bot, chat_id=call.message.chat.id, message_id=call.message.message_id)
+        safe_send_photo(
+            bot,
             call.message.chat.id,
             photo=bio,
             caption=caption,
@@ -1532,7 +1591,8 @@ def handle_reseller_customer_config(call):
             reply_markup=back_markup
         )
     except Exception as e:
-        bot.send_message(
+        safe_send_message(
+            bot,
             call.message.chat.id,
             caption,
             parse_mode="Markdown",

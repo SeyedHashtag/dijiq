@@ -42,6 +42,7 @@ class DummyBot:
         self.answers = []
         self.messages = []
         self.documents = []
+        self.get_me_calls = 0
 
     def message_handler(self, *args, **kwargs):
         return lambda func: func
@@ -63,6 +64,23 @@ class DummyBot:
 
     def send_document(self, *args, **kwargs):
         self.documents.append((args, kwargs))
+
+    def get_me(self):
+        self.get_me_calls += 1
+        return types.SimpleNamespace(username="DijiqBot")
+
+
+class HoldingExecutor:
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+        return types.SimpleNamespace(done=lambda: False)
+
+    def run_next(self):
+        fn, args, kwargs = self.jobs.pop(0)
+        return fn(*args, **kwargs)
 
 
 def load_referral_handlers_module():
@@ -109,6 +127,12 @@ def load_referral_handlers_module():
     language_stub = types.ModuleType("utils.language")
     language_stub.get_user_language = lambda user_id: "en"
     sys.modules["utils.language"] = language_stub
+
+    telegram_safe_stub = types.ModuleType("utils.telegram_safe")
+    telegram_safe_stub.safe_answer_callback_query = lambda bot_obj, *args, **kwargs: bot_obj.answer_callback_query(*args, **kwargs)
+    telegram_safe_stub.safe_edit_message_text = lambda bot_obj, *args, **kwargs: bot_obj.edit_message_text(*args, **kwargs)
+    telegram_safe_stub.safe_send_message = lambda bot_obj, *args, **kwargs: bot_obj.send_message(*args, **kwargs)
+    sys.modules["utils.telegram_safe"] = telegram_safe_stub
 
     spec = importlib.util.spec_from_file_location("referral_handlers_admin_under_test", REFERRAL_HANDLERS_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -284,6 +308,32 @@ class ReferralAdminHelperTests(unittest.TestCase):
 
 
 class ReferralAdminHandlerTests(unittest.TestCase):
+    def test_referral_menu_queues_render_and_dedupes_duplicate_taps(self):
+        module, bot = load_referral_handlers_module()
+        executor = HoldingExecutor()
+        module.REFERRAL_MENU_EXECUTOR = executor
+        module.get_message_text = lambda language, key: {
+            "wallet_not_set": "No wallet",
+            "referral_stats": "Count {count} Link {referral_link} {wallet_info}",
+        }.get(key, key)
+        message = types.SimpleNamespace(
+            from_user=types.SimpleNamespace(id=10),
+            chat=types.SimpleNamespace(id=20),
+            text="💰 Earn Crypto",
+        )
+
+        module.referral_menu(message)
+        module.referral_menu(message)
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(bot.messages, [])
+
+        executor.run_next()
+
+        self.assertEqual(module.REFERRAL_MENU_INFLIGHT, set())
+        self.assertEqual(bot.get_me_calls, 1)
+        self.assertIn("https://t.me/DijiqBot?start=CODE", bot.messages[0][0][1])
+
     def test_admin_menu_renders_eligible_users(self):
         module, bot = load_referral_handlers_module()
         module.get_eligible_referral_users = lambda: [{
