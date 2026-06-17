@@ -1,3 +1,9 @@
+## v1.15.20
+⚡ Queue My Configs, referral menu, test-config creation, and reseller customer config rendering in background workers with duplicate-tap protection
+✨ Cache bot username lookup for referral links and allow environment overrides
+🐛 Use safe Telegram API wrappers while refreshing referral and reseller customer config screens
+✅ Add tests for queued My Configs scans, referral menu rendering, test-config creation, reseller config lookups, and referral payout flows
+
 ## v1.15.19
 ⚡ Run reseller customer list rendering in background workers with duplicate-job protection
 ⚡ Render VPN server menus asynchronously with loading placeholders and safe Telegram API calls
