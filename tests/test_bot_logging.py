@@ -376,7 +376,25 @@ class AdminLogButtonTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
+        module.BOT_LOGS_EXECUTOR = self.ImmediateExecutor()
         return module, bot
+
+    class HoldingExecutor:
+        def __init__(self):
+            self.jobs = []
+
+        def submit(self, fn, *args, **kwargs):
+            self.jobs.append((fn, args, kwargs))
+            return types.SimpleNamespace(done=lambda: False)
+
+        def run_next(self):
+            fn, args, kwargs = self.jobs.pop(0)
+            return fn(*args, **kwargs)
+
+    class ImmediateExecutor:
+        def submit(self, fn, *args, **kwargs):
+            fn(*args, **kwargs)
+            return types.SimpleNamespace(done=lambda: True)
 
     def make_message(self):
         return types.SimpleNamespace(
@@ -409,6 +427,28 @@ class AdminLogButtonTests(unittest.TestCase):
             self.assertEqual(bot.documents[-1]["chat_id"], 456)
             self.assertEqual(bot.documents[-1]["content"], b"line one\n")
             self.assertEqual(bot.documents[-1]["kwargs"]["visible_file_name"], "bot.log")
+
+    def test_admin_log_handler_queues_upload_and_dedupes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_file = os.path.join(tmpdir, "bot.log")
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write("line one\n")
+
+            module, bot = self.load_bot_logs_module(log_file)
+            executor = self.HoldingExecutor()
+            module.BOT_LOGS_EXECUTOR = executor
+
+            module.send_bot_logs(self.make_message())
+            module.send_bot_logs(self.make_message())
+
+            self.assertEqual(len(executor.jobs), 1)
+            self.assertEqual(bot.documents, [])
+            self.assertIn(123, module.BOT_LOGS_INFLIGHT)
+
+            executor.run_next()
+
+            self.assertEqual(bot.documents[-1]["chat_id"], 456)
+            self.assertEqual(module.BOT_LOGS_INFLIGHT, set())
 
 
 if __name__ == "__main__":

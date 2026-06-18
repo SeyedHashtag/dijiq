@@ -80,6 +80,12 @@ RESELLER_CUSTOMER_CONFIG_EXECUTOR = ThreadPoolExecutor(
     max_workers=_int_env("DIJIQ_RESELLER_CUSTOMER_CONFIG_WORKERS", 2),
     thread_name_prefix="dijiq-reseller-cfg",
 )
+RESELLER_REQUEST_LOCK = threading.Lock()
+RESELLER_REQUEST_INFLIGHT = set()
+RESELLER_REQUEST_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_RESELLER_REQUEST_WORKERS", 2),
+    thread_name_prefix="dijiq-reseller-request",
+)
 
 
 def _get_approved_reseller_data(user_id):
@@ -350,6 +356,72 @@ def reseller_panel(message):
         markup.add(types.InlineKeyboardButton(get_button_text(language, "request_reseller"), callback_data="reseller:request"))
         bot.reply_to(message, get_message_text(language, "reseller_intro").replace("${debt}", "0") + "\n\n" + get_message_text(language, "request_reseller"), reply_markup=markup)
 
+
+def _queue_reseller_request_job(call, user_id, language, telegram_username):
+    with RESELLER_REQUEST_LOCK:
+        if user_id in RESELLER_REQUEST_INFLIGHT:
+            return False
+        RESELLER_REQUEST_INFLIGHT.add(user_id)
+
+    def run():
+        try:
+            _process_reseller_request_job(call, user_id, language, telegram_username)
+        finally:
+            with RESELLER_REQUEST_LOCK:
+                RESELLER_REQUEST_INFLIGHT.discard(user_id)
+
+    try:
+        RESELLER_REQUEST_EXECUTOR.submit(run)
+    except Exception:
+        with RESELLER_REQUEST_LOCK:
+            RESELLER_REQUEST_INFLIGHT.discard(user_id)
+        raise
+    return True
+
+
+def _process_reseller_request_job(call, user_id, language, telegram_username):
+    if not _has_active_purchased_config(user_id):
+        safe_edit_message_text(
+            bot,
+            get_message_text(language, "reseller_requires_active_paid_config"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+        )
+        return
+
+    # Update status to pending
+    if not update_reseller_status(user_id, 'pending', telegram_username=telegram_username):
+        safe_edit_message_text(
+            bot,
+            "Failed to submit request. Please try again.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+        )
+        return
+
+    safe_edit_message_text(
+        bot,
+        get_message_text(language, "reseller_request_sent"),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+
+    # Notify Admins
+    notification = get_message_text(language, "reseller_request_notification").format(user_id=user_id, username=telegram_username)
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_reseller:approve:{user_id}"),
+        types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_reseller:reject:{user_id}")
+    )
+
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            safe_send_message(bot, admin_id, notification, reply_markup=markup)
+        except:
+            pass
+
+
 @bot.callback_query_handler(func=lambda call: call.data == "reseller:request")
 def handle_reseller_request(call):
     user_id = call.from_user.id
@@ -359,46 +431,21 @@ def handle_reseller_request(call):
     telegram_username = str(call.from_user.username or "").strip().lstrip("@")
 
     if current_status == 'approved':
-        bot.answer_callback_query(call.id, "You are already an approved reseller.")
+        safe_answer_callback_query(bot, call.id, "You are already an approved reseller.")
         return
     if current_status == 'pending':
-        bot.answer_callback_query(call.id, get_message_text(language, "reseller_status_pending"))
+        safe_answer_callback_query(bot, call.id, get_message_text(language, "reseller_status_pending"))
         return
     if current_status == 'banned':
-        bot.answer_callback_query(call.id, get_message_text(language, "reseller_access_banned"))
+        safe_answer_callback_query(bot, call.id, get_message_text(language, "reseller_access_banned"))
         return
     if not telegram_username:
-        bot.answer_callback_query(call.id, get_message_text(language, "reseller_requires_telegram_username"), show_alert=True)
+        safe_answer_callback_query(bot, call.id, get_message_text(language, "reseller_requires_telegram_username"), show_alert=True)
         return
-    if not _has_active_purchased_config(user_id):
-        bot.answer_callback_query(call.id, get_message_text(language, "reseller_requires_active_paid_config"), show_alert=True)
-        return
-    
-    # Update status to pending
-    if not update_reseller_status(user_id, 'pending', telegram_username=telegram_username):
-        bot.answer_callback_query(call.id, "Failed to submit request. Please try again.")
-        return
-    
-    bot.edit_message_text(
-        get_message_text(language, "reseller_request_sent"),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
-    
-    # Notify Admins
-    notification = get_message_text(language, "reseller_request_notification").format(user_id=user_id, username=telegram_username)
-    
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("✅ Approve", callback_data=f"admin_reseller:approve:{user_id}"),
-        types.InlineKeyboardButton("❌ Reject", callback_data=f"admin_reseller:reject:{user_id}")
-    )
-    
-    for admin_id in ADMIN_USER_IDS:
-        try:
-            bot.send_message(admin_id, notification, reply_markup=markup)
-        except:
-            pass
+
+    safe_answer_callback_query(bot, call.id, text="Checking reseller eligibility...")
+    if not _queue_reseller_request_job(call, user_id, language, telegram_username):
+        safe_answer_callback_query(bot, call.id, text="Reseller request is already being checked.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_reseller:"))
 def handle_admin_reseller(call):

@@ -1281,7 +1281,7 @@ def handle_photo(message):
     if user_id in user_data and user_data[user_id]['state'] == 'waiting_receipt':
         plan_gb = user_data[user_id]['plan_gb']
         price = user_data[user_id]['price']
-        process_receipt_photo(message, plan_gb, price)
+        _queue_payment_job(("receipt_photo", user_id), process_receipt_photo, message, plan_gb, price)
     # Optional: Handle non-state photos if needed (e.g., ignore or reply)
 
 # New: Handler for text messages while waiting for receipt (reminds without looping)
@@ -1339,28 +1339,8 @@ def show_pending_confirmations(message):
         except Exception as e:
             bot.send_message(message.chat.id, f"Failed to show withdrawal {withdrawal_request.get('id')}: {str(e)}")
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
-def handle_admin_approval(call):
+def _process_admin_approval_job(call, action, payment_id, payment_record, reviewer_role, language):
     try:
-        user_id = call.from_user.id
-        language = get_user_language(user_id)
-        user_is_admin = is_admin(user_id)
-        _, action, payment_id = call.data.split(':')
-        payment_record = get_payment_record(payment_id)
-        if not payment_record:
-            bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
-            return
-        if not can_review_receipt(user_id, payment_record, is_admin_user=user_is_admin):
-            bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"))
-            return
-        reviewer_role = "admin" if user_is_admin else "checker"
-        if payment_record['status'] != 'pending_approval':
-            bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
-            return
-        if action in {'approve', 'reject'}:
-            if not _claim_payment_or_answer(call, language, payment_id, {'pending_approval'}):
-                return
-            payment_record = get_payment_record(payment_id) or payment_record
         if action == 'approve':
             _record_review_audit(payment_id, call, action, reviewer_role)
             _record_checker_share_audit(payment_id, payment_record)
@@ -1371,7 +1351,7 @@ def handle_admin_approval(call):
                  )
                  if not success:
                      _release_processing_for_retry(payment_id, 'pending_approval', "settlement credit failed")
-                     bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
+                     safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
                      return
                  update_payment_status(payment_id, 'completed')
                  
@@ -1461,7 +1441,8 @@ def handle_admin_approval(call):
             )
             if result:
                 if not _complete_sale_payment_or_notify(payment_id, user_to_notify, username, api_client):
-                    bot.answer_callback_query(
+                    safe_answer_callback_query(
+                        bot,
                         call.id,
                         text=get_message_text(language, "error_processing_payment").format(error="payment record update failed")
                     )
@@ -1514,7 +1495,7 @@ def handle_admin_approval(call):
                 )
             else:
                 _record_sale_creation_failure(payment_id, username=username, api_client=api_client)
-                bot.answer_callback_query(call.id, text=get_message_text(language, "failed_to_create_user"))
+                safe_answer_callback_query(bot, call.id, text=get_message_text(language, "failed_to_create_user"))
                 bot.send_message(user_to_notify, get_message_text(user_language, "payment_approved_user_error"))
         elif action == 'reject':
             _record_review_audit(payment_id, call, action, reviewer_role)
@@ -1535,9 +1516,58 @@ def handle_admin_approval(call):
                  
             _update_receipt_message_refs(payment_id, payment_record, rejection_caption)
     except Exception as e:
+        _record_processing_error(payment_id, e)
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_approval:'))
+def handle_admin_approval(call):
+    try:
         user_id = call.from_user.id
         language = get_user_language(user_id)
-        bot.answer_callback_query(call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
+        user_is_admin = is_admin(user_id)
+        _, action, payment_id = call.data.split(':')
+        payment_record = get_payment_record(payment_id)
+        if not payment_record:
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_record_not_found"))
+            return
+        if not can_review_receipt(user_id, payment_record, is_admin_user=user_is_admin):
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "not_authorized"))
+            return
+        reviewer_role = "admin" if user_is_admin else "checker"
+        if payment_record['status'] != 'pending_approval':
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_already_processed").format(status=payment_record['status']))
+            return
+        if action not in {'approve', 'reject'}:
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error="invalid action"))
+            return
+        if not _claim_payment_or_answer(call, language, payment_id, {'pending_approval'}):
+            return
+
+        payment_record = get_payment_record(payment_id) or payment_record
+        try:
+            queued = _queue_payment_job(
+                ("admin_approval", payment_id),
+                _process_admin_approval_job,
+                call,
+                action,
+                payment_id,
+                payment_record,
+                reviewer_role,
+                language,
+            )
+        except Exception as enqueue_error:
+            _release_processing_for_retry(payment_id, 'pending_approval', enqueue_error)
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error=str(enqueue_error)))
+            return
+        if queued:
+            safe_answer_callback_query(bot, call.id, text="Processing approval...")
+        else:
+            safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_already_processed").format(status="processing"))
+    except Exception as e:
+        user_id = call.from_user.id
+        language = get_user_language(user_id)
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
 def handle_check_payment(call):

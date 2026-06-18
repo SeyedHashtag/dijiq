@@ -323,6 +323,7 @@ def load_purchase_plan(bot=None, payment_records=None):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     sys.modules["utils.purchase_plan"] = module
+    module.PAYMENT_JOB_EXECUTOR = ImmediateExecutor()
     return module
 
 
@@ -374,6 +375,12 @@ class HoldingExecutor:
     def run_next(self):
         fn, args, kwargs = self.jobs.pop(0)
         return fn(*args, **kwargs)
+
+
+class ImmediateExecutor:
+    def submit(self, fn, *args, **kwargs):
+        fn(*args, **kwargs)
+        return types.SimpleNamespace(done=lambda: True)
 
 
 def install_renewal_success_stub(calls):
@@ -652,6 +659,75 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertIn(("settlement-payment", "completed"), statuses)
         self.assertTrue(any(fields.get("renewal_after_state") == {"status": "active"} for _pid, fields in field_updates))
         self.assertEqual(bot.sent_photos[-1][1]["caption"], "renewal success")
+
+    def test_admin_approval_queues_claimed_payment_work(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        executor = HoldingExecutor()
+        purchase_plan.PAYMENT_JOB_EXECUTOR = executor
+        store = {
+            "receipt-payment": {
+                "status": "pending_approval",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 100.0,
+                "payment_method": "Card to Card",
+            }
+        }
+        statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        created = []
+        purchase_plan.is_admin = lambda _user_id: True
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        purchase_plan.create_sale_user_with_note = (
+            lambda *args, **kwargs: created.append(args) or ("s1988a", {"ok": True}, DummySaleClient())
+        )
+
+        purchase_plan.handle_admin_approval(make_receipt_approval_call("approve"))
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(created, [])
+        self.assertEqual(store["receipt-payment"]["status"], "processing")
+        self.assertEqual(statuses, [("receipt-payment", "processing")])
+        self.assertTrue(any(answer[1].get("text") == "Processing approval..." for answer in bot.callback_answers))
+
+        executor.run_next()
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(store["receipt-payment"]["status"], "completed")
+        self.assertEqual(statuses.count(("receipt-payment", "completed")), 1)
+        self.assertNotIn(("admin_approval", "receipt-payment"), purchase_plan.PAYMENT_JOB_INFLIGHT)
+
+    def test_receipt_photo_queues_processing_and_dedupes_duplicate_uploads(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        executor = HoldingExecutor()
+        purchase_plan.PAYMENT_JOB_EXECUTOR = executor
+        purchase_plan.user_data[1988] = {
+            "state": "waiting_receipt",
+            "plan_gb": "40",
+            "price": 100.0,
+        }
+        calls = []
+        purchase_plan.process_receipt_photo = lambda *args, **kwargs: calls.append((args, kwargs))
+        message = types.SimpleNamespace(
+            from_user=types.SimpleNamespace(id=1988),
+            chat=types.SimpleNamespace(id=555),
+            photo=[types.SimpleNamespace(file_id="file-1")],
+        )
+
+        purchase_plan.handle_photo(message)
+        purchase_plan.handle_photo(message)
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(calls, [])
+        self.assertIn(("receipt_photo", 1988), purchase_plan.PAYMENT_JOB_INFLIGHT)
+
+        executor.run_next()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], (message, "40", 100.0))
+        self.assertNotIn(("receipt_photo", 1988), purchase_plan.PAYMENT_JOB_INFLIGHT)
 
     def test_receipt_approval_claim_blocks_fast_duplicate_admin_press(self):
         bot = DummyBot()

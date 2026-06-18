@@ -148,6 +148,12 @@ def install_stubs():
         "admin_cleanup_result_title": "Cleanup Result",
         "admin_cleanup_banned_only": "Cleanup is only available for banned resellers.",
         "admin_invalid_action": "Invalid action.",
+        "reseller_requires_active_paid_config": "Requires active paid config",
+        "reseller_request_sent": "Reseller request sent",
+        "reseller_request_notification": "Request from {user_id} @{username}",
+        "reseller_status_pending": "Pending",
+        "reseller_access_banned": "Banned",
+        "reseller_requires_telegram_username": "Username required",
         "cancel": "Cancel",
     }
     translations_stub = types.ModuleType("utils.translations")
@@ -278,6 +284,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         reseller_handlers.bot.sent_messages.clear()
         reseller_handlers.RESELLER_CUSTOMERS_INFLIGHT.clear()
         reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT.clear()
+        reseller_handlers.RESELLER_REQUEST_INFLIGHT.clear()
 
     def test_customer_name_displays_above_generated_username(self):
         entry = reseller_handlers._format_reseller_customer_entry(
@@ -464,6 +471,53 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
                 os.environ.pop("RESELLER_CUSTOMERS_CACHE_TTL_SECONDS", None)
             else:
                 os.environ["RESELLER_CUSTOMERS_CACHE_TTL_SECONDS"] = original_ttl
+
+    def test_reseller_request_queues_active_config_check_and_dedupes(self):
+        original_executor = reseller_handlers.RESELLER_REQUEST_EXECUTOR
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_has_active = reseller_handlers._has_active_purchased_config
+        original_update_status = reseller_handlers.update_reseller_status
+        original_admin_ids = reseller_handlers.ADMIN_USER_IDS
+        try:
+            executor = HoldingExecutor()
+            active_checks = []
+            updates = []
+            reseller_handlers.RESELLER_REQUEST_EXECUTOR = executor
+            reseller_handlers.ADMIN_USER_IDS = [99]
+            reseller_handlers.get_reseller_data = lambda _user_id: None
+            reseller_handlers._has_active_purchased_config = lambda user_id: active_checks.append(user_id) or True
+            reseller_handlers.update_reseller_status = (
+                lambda user_id, status, **kwargs:
+                updates.append((user_id, status, kwargs)) or True
+            )
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:request",
+                from_user=types.SimpleNamespace(id=1988, username="buyer"),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_reseller_request(call)
+            reseller_handlers.handle_reseller_request(call)
+
+            self.assertEqual(len(executor.jobs), 1)
+            self.assertEqual(active_checks, [])
+            self.assertEqual(updates, [])
+
+            executor.run_next()
+
+            self.assertEqual(active_checks, [1988])
+            self.assertEqual(updates, [(1988, "pending", {"telegram_username": "buyer"})])
+            self.assertEqual(reseller_handlers.bot.edits[-1][0][0], "Reseller request sent")
+            self.assertEqual(reseller_handlers.bot.sent_messages[-1][0][0], 99)
+            self.assertIn("Request from 1988 @buyer", reseller_handlers.bot.sent_messages[-1][0][1])
+            self.assertEqual(reseller_handlers.RESELLER_REQUEST_INFLIGHT, set())
+        finally:
+            reseller_handlers.RESELLER_REQUEST_EXECUTOR = original_executor
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers._has_active_purchased_config = original_has_active
+            reseller_handlers.update_reseller_status = original_update_status
+            reseller_handlers.ADMIN_USER_IDS = original_admin_ids
 
     def test_reseller_my_customers_queues_live_status_render(self):
         original_multi_api = reseller_handlers.MultiServerAPI
