@@ -502,6 +502,32 @@ def _claim_payment_or_answer(call, language, payment_id, allowed_statuses):
     return False
 
 
+def _can_access_payment_record(user_id, payment_record):
+    owner_id = payment_record.get('user_id')
+    if owner_id is None:
+        return is_admin(user_id)
+    return is_admin(user_id) or str(owner_id) == str(user_id)
+
+
+def _payment_owner_id(payment_record):
+    owner_id = payment_record.get('user_id')
+    try:
+        return int(owner_id)
+    except (TypeError, ValueError):
+        return owner_id
+
+
+def _payment_owner_username(payment_record, fallback=None):
+    owner_id = _payment_owner_id(payment_record)
+    if owner_id is None:
+        return fallback
+    try:
+        chat = bot.get_chat(owner_id)
+        return chat.username
+    except Exception:
+        return fallback
+
+
 def _record_processing_error(payment_id, error):
     update_payment_record_fields(payment_id, {
         "processing_error": str(error),
@@ -1571,12 +1597,15 @@ def handle_admin_approval(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
 def handle_check_payment(call):
-    user_id = call.from_user.id
-    language = get_user_language(user_id)
+    caller_id = call.from_user.id
+    language = get_user_language(caller_id)
     payment_id = call.data.split(':')[1]
     payment_record = get_payment_record(payment_id)
     if not payment_record:
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
+        return
+    if not _can_access_payment_record(caller_id, payment_record):
+        bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"), show_alert=True)
         return
     if payment_record.get('status') == 'completed':
         bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status='completed'))
@@ -1599,7 +1628,12 @@ def handle_check_payment(call):
             return
 
         payment_record = get_payment_record(payment_id) or payment_record
-        user_id = payment_record.get('user_id')
+        user_id = _payment_owner_id(payment_record)
+        user_language = get_user_language(user_id)
+        if str(caller_id) == str(user_id):
+            telegram_username = call.from_user.username
+        else:
+            telegram_username = _payment_owner_username(payment_record)
         plan_gb = payment_record.get('plan_gb')
         
         if payment_record.get('type') == 'settlement' or plan_gb == 'Settlement':
@@ -1615,11 +1649,11 @@ def handle_check_payment(call):
                 payment_record,
                 credited_amount=credited_amount,
                 payment_method="Crypto",
-                telegram_username=call.from_user.username,
+                telegram_username=telegram_username,
             )
             bot.send_message(
-                call.message.chat.id,
-                _settlement_approved_message(language, user_id, credited_amount, remaining_debt),
+                user_id,
+                _settlement_approved_message(user_language, user_id, credited_amount, remaining_debt),
                 parse_mode="Markdown"
             )
             return
@@ -1628,9 +1662,9 @@ def handle_check_payment(call):
             _process_customer_renewal_payment(
                 payment_id,
                 payment_record,
-                notify_chat_id=call.message.chat.id,
+                notify_chat_id=user_id,
                 payment_method="Crypto",
-                telegram_username=call.from_user.username,
+                telegram_username=telegram_username,
             )
             return
 
@@ -1656,12 +1690,12 @@ def handle_check_payment(call):
         if result:
             if not _complete_sale_payment_or_notify(payment_id, user_id, username, api_client):
                 bot.send_message(
-                    call.message.chat.id,
-                    get_message_text(language, "payment_completed_user_error"),
+                    user_id,
+                    get_message_text(user_language, "payment_completed_user_error"),
                     parse_mode="Markdown"
                 )
                 return
-            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=call.from_user.username)
+            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=telegram_username)
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
@@ -1673,23 +1707,23 @@ def handle_check_payment(call):
                 bio = io.BytesIO()
                 qr.save(bio, 'PNG')
                 bio.seek(0)
-                success_message = get_message_text(language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
+                success_message = get_message_text(user_language, "payment_completed").format(plan_gb=plan_gb, username=username, sub_url=sub_url, ipv4_info=ipv4_info)
                 bot.send_photo(
-                    call.message.chat.id,
+                    user_id,
                     photo=bio,
                     caption=success_message,
                     parse_mode="Markdown"
                 )
             else:
                 bot.send_message(
-                    call.message.chat.id,
-                    get_message_text(language, "payment_completed_no_url"),
+                    user_id,
+                    get_message_text(user_language, "payment_completed_no_url"),
                     parse_mode="Markdown"
                 )
         else:
             bot.send_message(
-                call.message.chat.id,
-                get_message_text(language, "payment_completed_user_error"),
+                user_id,
+                get_message_text(user_language, "payment_completed_user_error"),
                 parse_mode="Markdown"
             )
             _record_crypto_sale_creation_failure(payment_id, username=username, api_client=api_client)

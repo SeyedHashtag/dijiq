@@ -65,7 +65,11 @@ def update_payment_status(payment_id, status):
             
             payments[payment_id]['status'] = status
             payments[payment_id]['updated_at'] = current_time
-            payments[payment_id]['updates'].append(update)
+            updates = payments[payment_id].setdefault('updates', [])
+            if not isinstance(updates, list):
+                updates = []
+                payments[payment_id]['updates'] = updates
+            updates.append(update)
             
             with open(PAYMENTS_FILE, 'w') as f:
                 json.dump(payments, f, indent=4)

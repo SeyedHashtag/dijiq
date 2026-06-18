@@ -1500,10 +1500,6 @@ def _render_reseller_customer_config_job(call, user_id, language, reseller_data,
             matched_config_index = index
             break
 
-    # Fetch live config data from the server that owns this config.
-    multi_api = MultiServerAPI()
-    api_client, user_config = multi_api.find_user(username, preferred_server_id=preferred_server_id)
-
     back_markup = types.InlineKeyboardMarkup()
     back_markup.add(
         types.InlineKeyboardButton(
@@ -1511,6 +1507,20 @@ def _render_reseller_customer_config_job(call, user_id, language, reseller_data,
             callback_data=f"reseller:my_customers:{return_category}:{return_page}"
         )
     )
+
+    if matched_config_index is None:
+        safe_edit_message_text(
+            bot,
+            get_message_text(language, "not_authorized"),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=back_markup
+        )
+        return
+
+    # Fetch live config data from the server that owns this config.
+    multi_api = MultiServerAPI()
+    api_client, user_config = multi_api.find_user(username, preferred_server_id=preferred_server_id)
 
     if not user_config:
         safe_edit_message_text(

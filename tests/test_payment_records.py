@@ -69,6 +69,16 @@ class PaymentRecordsTests(unittest.TestCase):
         record = self.read_payments()["pay-1"]
         self.assertEqual(record, {"status": "processing", "updates": []})
 
+    def test_update_payment_status_creates_missing_legacy_updates_list(self):
+        self.write_payments({"pay-1": {"status": "pending"}})
+
+        self.assertTrue(self.payment_records.update_payment_status("pay-1", "expired"))
+
+        record = self.read_payments()["pay-1"]
+        self.assertEqual(record["status"], "expired")
+        self.assertEqual(record["updates"][-1]["previous_status"], "pending")
+        self.assertEqual(record["updates"][-1]["status"], "expired")
+
 
 if __name__ == "__main__":
     unittest.main()

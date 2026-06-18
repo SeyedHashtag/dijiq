@@ -20,6 +20,8 @@ class DummyBot:
         self.chat_actions = []
         self.replies = []
         self.sent_messages = []
+        self.edited_messages = []
+        self.callback_answers = []
 
     def message_handler(self, *args, **kwargs):
         return lambda func: func
@@ -37,9 +39,11 @@ class DummyBot:
         self.sent_messages.append((args, kwargs))
 
     def edit_message_text(self, *args, **kwargs):
+        self.edited_messages.append((args, kwargs))
         return None
 
     def answer_callback_query(self, *args, **kwargs):
+        self.callback_answers.append((args, kwargs))
         return None
 
     def delete_message(self, *args, **kwargs):
@@ -167,6 +171,7 @@ def install_stubs():
     translations_stub.get_message_text = lambda language, key: {
         "no_active_configs": "No active configs",
         "my_configs_cache_notice": "This list may take a few minutes to update.",
+        "not_authorized": "Not authorized",
     }.get(key, key)
     translations_stub.get_button_text = lambda language, key: key
     sys.modules["utils.translations"] = translations_stub
@@ -202,6 +207,8 @@ class MyConfigsTests(unittest.TestCase):
         FakeMultiServerAPI.cached_entries = None
         my_configs_module.bot.replies = []
         my_configs_module.bot.chat_actions = []
+        my_configs_module.bot.edited_messages = []
+        my_configs_module.bot.callback_answers = []
         my_configs_module.MY_CONFIGS_REFRESH_INFLIGHT.clear()
         my_configs_module.MY_CONFIGS_INFLIGHT.clear()
         my_configs_module.SHOW_CONFIG_INFLIGHT.clear()
@@ -320,6 +327,35 @@ class MyConfigsTests(unittest.TestCase):
 
         self.assertEqual(len(self.displayed_configs), 1)
         self.assertEqual(self.displayed_configs[0][0][1], "s123a")
+        self.assertEqual(my_configs_module.SHOW_CONFIG_INFLIGHT, set())
+
+    def test_show_config_callback_rejects_username_not_owned_by_user(self):
+        original_executor = my_configs_module.SHOW_CONFIG_EXECUTOR
+        original_find_user = FakeMultiServerAPI.find_user
+        calls = []
+
+        def find_user(self, username, preferred_server_id=None):
+            calls.append((username, preferred_server_id))
+            return FakeClient("server3"), {"max_download_bytes": 20, "blocked": False}
+
+        FakeMultiServerAPI.find_user = find_user
+        my_configs_module.SHOW_CONFIG_EXECUTOR = ImmediateExecutor()
+        call = types.SimpleNamespace(
+            id="callback-1",
+            data="show_config:server3:s999a",
+            from_user=types.SimpleNamespace(id=123),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=456), message_id=789),
+        )
+
+        try:
+            my_configs_module.handle_show_config(call)
+        finally:
+            my_configs_module.SHOW_CONFIG_EXECUTOR = original_executor
+            FakeMultiServerAPI.find_user = original_find_user
+
+        self.assertEqual(calls, [])
+        self.assertEqual(self.displayed_configs, [])
+        self.assertEqual(my_configs_module.bot.edited_messages[-1][0][0], "Not authorized")
         self.assertEqual(my_configs_module.SHOW_CONFIG_INFLIGHT, set())
 
     def test_my_configs_uses_stale_cached_snapshot_and_refreshes_in_background(self):

@@ -231,6 +231,7 @@ def install_common_stubs(bot, payment_records):
         "payment_approved_user_error": "approved user error",
         "failed_to_create_user": "failed to create user",
         "payment_rejected": "rejected",
+        "not_authorized": "not authorized",
         "cancel": "cancel",
     }.get(key, key)
     sys.modules["utils.translations"] = translations_stub
@@ -939,6 +940,37 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(store["crypto-payment"]["server_id"], "s1")
         self.assertEqual(store["crypto-payment"]["updates"][-1]["previous_status"], "processing")
         self.assertEqual(bot.sent_photos[-1][1]["caption"], "completed s1988a https://sub.example/s1988a")
+
+    def test_crypto_check_rejects_non_owner_without_processing_payment(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        store = {
+            "crypto-payment": {
+                "status": "pending",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 95.0,
+                "payment_method": "Crypto",
+                "payment_id": "crypto-payment",
+            }
+        }
+        statuses, _field_updates, claims = install_payment_store(purchase_plan, store)
+        purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("unauthorized callbacks must not create users")
+        FakeCryptoPayment.statuses = {"crypto-payment": {"result": {"status": "paid"}}}
+
+        purchase_plan.handle_check_payment(types.SimpleNamespace(
+            data="check_payment:crypto-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=999, username="intruder"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        ))
+
+        self.assertEqual(statuses, [])
+        self.assertEqual(claims, [])
+        self.assertEqual(bot.sent_photos, [])
+        self.assertEqual(bot.sent_messages, [])
+        self.assertEqual(bot.callback_answers[-1][1], {"text": "not authorized", "show_alert": True})
 
     def test_crypto_check_leaves_payment_processing_when_completion_persistence_fails(self):
         bot = DummyBot()

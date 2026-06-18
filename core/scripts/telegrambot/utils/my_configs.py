@@ -53,6 +53,26 @@ def _append_my_configs_cache_notice(text, language, show_cache_notice=True):
     return f"{text}\n\n{notice}" if notice else text
 
 
+def _user_config_patterns(user_id):
+    return (
+        (
+            re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),
+            re.compile(rf"^{user_id}t"),
+            re.compile(rf"^sell{user_id}t"),
+        ),
+        (
+            re.compile(rf"^t{user_id}[a-z]*$", re.IGNORECASE),
+            re.compile(rf"^test{user_id}t"),
+        ),
+    )
+
+
+def _username_belongs_to_user(username, user_id):
+    paid_patterns, test_patterns = _user_config_patterns(user_id)
+    username = str(username or "")
+    return any(pattern.match(username) for pattern in paid_patterns + test_patterns)
+
+
 def _refresh_my_configs_snapshot_async(include_disabled=False):
     key = bool(include_disabled)
     with MY_CONFIGS_REFRESH_LOCK:
@@ -179,15 +199,7 @@ def _my_configs_job(message, user_id):
         user_configs = []
 
         # Supported patterns include new formats (s{id}, t{id}) and legacy timestamped formats.
-        paid_patterns = (
-            re.compile(rf"^s{user_id}[a-z]*$", re.IGNORECASE),
-            re.compile(rf"^{user_id}t"),
-            re.compile(rf"^sell{user_id}t"),
-        )
-        test_patterns = (
-            re.compile(rf"^t{user_id}[a-z]*$", re.IGNORECASE),
-            re.compile(rf"^test{user_id}t"),
-        )
+        paid_patterns, test_patterns = _user_config_patterns(user_id)
 
         paid_configs = []
         test_configs = []
@@ -255,6 +267,16 @@ def _show_config_job(call, key):
             server_id, username = parts[1], parts[2]
         else:
             server_id, username = None, parts[1]
+
+        if not _username_belongs_to_user(username, call.from_user.id):
+            language = get_user_language(call.from_user.id)
+            safe_edit_message_text(
+                bot,
+                get_message_text(language, "not_authorized"),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id
+            )
+            return
 
         multi_api = MultiServerAPI()
         api_client, user_data = _find_cached_user(multi_api, username, preferred_server_id=server_id)

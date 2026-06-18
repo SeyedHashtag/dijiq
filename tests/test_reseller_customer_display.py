@@ -154,6 +154,7 @@ def install_stubs():
         "reseller_status_pending": "Pending",
         "reseller_access_banned": "Banned",
         "reseller_requires_telegram_username": "Username required",
+        "not_authorized": "Not authorized",
         "cancel": "Cancel",
     }
     translations_stub = types.ModuleType("utils.translations")
@@ -640,6 +641,44 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             reseller_handlers.MultiServerAPI = original_multi_api
             reseller_handlers.get_reseller_data = original_get_reseller_data
             reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = original_executor
+
+    def test_reseller_customer_config_rejects_unrecorded_username_without_live_lookup(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def find_user(self, username, preferred_server_id=None):
+                self.__class__.calls.append((username, preferred_server_id))
+                return object(), {"blocked": False}
+
+        try:
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:cfg:r9999a:active:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+            reseller_data = {
+                "status": "approved",
+                "configs": [{"username": "r1988a", "server_id": "s1"}],
+            }
+
+            reseller_handlers._render_reseller_customer_config_job(
+                call,
+                1988,
+                "en",
+                reseller_data,
+                "r9999a",
+                "active",
+                0,
+            )
+
+            self.assertEqual(FakeMultiServerAPI.calls, [])
+            self.assertEqual(reseller_handlers.bot.edits[-1][0][0], "Not authorized")
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
 
     def test_reseller_customer_overview_and_empty_category_include_refresh(self):
         call = types.SimpleNamespace(
