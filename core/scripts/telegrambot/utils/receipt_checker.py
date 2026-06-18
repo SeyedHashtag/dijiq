@@ -231,6 +231,26 @@ def get_checker_paid_total_usd_legacy(checker_id=None):
     return calculate_checker_share_amount(total, 100)
 
 
+def _settlement_open_account_amount(item, share_percent):
+    if item.get('open_account_amount_toman') is not None:
+        return normalize_toman_amount(item.get('open_account_amount_toman'))
+    if item.get('amount_toman') is None:
+        return 0.0
+    percent = item.get('checker_share_percent_snapshot')
+    if percent is None:
+        percent = share_percent
+    return _open_account_from_balance(item.get('amount_toman'), percent)
+
+
+def get_checker_paid_open_account_total(checker_id=None, share_percent=None):
+    if share_percent is None:
+        share_percent = get_receipt_checker_share_percent()
+    total = 0.0
+    for item in get_checker_settlements(checker_id):
+        total += _settlement_open_account_amount(item, share_percent)
+    return normalize_toman_amount(total)
+
+
 def _receipt_type_from_record(payment_record):
     receipt_type = payment_record.get('receipt_type')
     if receipt_type:
@@ -257,6 +277,7 @@ def build_receipt_checker_stats(payments, checker_id=None):
         checker_id = get_receipt_checker_user_id()
     checker_types = get_receipt_checker_types()
     share_percent = get_receipt_checker_share_percent()
+    paid_open_account_total = get_checker_paid_open_account_total(checker_id, share_percent)
     stats = {
         'checker_id': checker_id,
         'checker_types': checker_types,
@@ -287,6 +308,7 @@ def build_receipt_checker_stats(payments, checker_id=None):
         'paid_total': get_checker_paid_total(checker_id),
         'paid_last_30_days': get_checker_paid_total_since(datetime.now() - timedelta(days=30), checker_id),
         'paid_total_usd': get_checker_paid_total_usd_legacy(checker_id),
+        'paid_open_account_total': paid_open_account_total,
         'unpaid_total': 0.0,
         'open_account_total': 0.0,
         'unpaid_total_usd': 0.0,
@@ -366,7 +388,11 @@ def build_receipt_checker_stats(payments, checker_id=None):
     stats['owed_total'] = normalize_toman_amount(stats['owed_total'])
     stats['owed_total_usd'] = calculate_checker_share_amount(stats['owed_total_usd'], 100)
     stats['unpaid_total'] = max(0.0, normalize_toman_amount(stats['owed_total'] - stats['paid_total']))
-    stats['open_account_total'] = _open_account_from_balance(stats['unpaid_total'], share_percent)
+    stats['paid_open_account_total'] = normalize_toman_amount(stats['paid_open_account_total'])
+    stats['open_account_total'] = max(
+        0.0,
+        normalize_toman_amount(stats['approved_total'] - stats['paid_open_account_total'])
+    )
     stats['unpaid_total_usd'] = max(0.0, calculate_checker_share_amount(stats['owed_total_usd'] - stats['paid_total_usd'], 100))
 
     if latest_review:

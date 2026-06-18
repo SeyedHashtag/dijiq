@@ -152,6 +152,48 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         self.assertEqual(stats["paid_last_30_days"], 200000.0)
         self.assertEqual(stats["paid_total_usd"], 7.0)
 
+    def test_open_account_base_uses_unpaid_receipt_base_not_reversed_rounded_share(self):
+        payments = {
+            "settled-before": {
+                "routed_to_checker": True,
+                "receipt_checker_user_id": 42,
+                "receipt_type": "settlement",
+                "status": "completed",
+                "checker_accounting_amount_toman": 100,
+                "checker_share_amount_toman": 10,
+                "converted_amount": 100,
+            },
+            "new-rounded-receipt": {
+                "routed_to_checker": True,
+                "receipt_checker_user_id": 42,
+                "receipt_type": "settlement",
+                "status": "completed",
+                "checker_accounting_amount_toman": 576,
+                "checker_share_amount_toman": 58,
+                "converted_amount": 576,
+            },
+        }
+        self.module.save_checker_settlements([
+            {
+                "checker_user_id": 42,
+                "amount_toman": 10,
+                "open_account_amount_toman": 100,
+                "checker_share_percent_snapshot": 10,
+            },
+        ])
+
+        with patch.dict(os.environ, {
+            "RECEIPT_CHECKER_USER_ID": "42",
+            "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "RECEIPT_CHECKER_SHARE_PERCENT": "10",
+        }, clear=False):
+            stats = self.module.build_receipt_checker_stats(payments)
+
+        self.assertEqual(stats["owed_total"], 68.0)
+        self.assertEqual(stats["paid_total"], 10.0)
+        self.assertEqual(stats["unpaid_total"], 58.0)
+        self.assertEqual(stats["open_account_total"], 576.0)
+
     def test_add_checker_settlement_checkpoint_audit(self):
         snapshot = {
             "share_percent": 10.0,
