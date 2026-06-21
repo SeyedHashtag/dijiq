@@ -1,3 +1,8 @@
+## v1.15.22
+✨ Track paid receipt-checker open-account totals from settlement records
+🐛 Calculate remaining open-account base from approved receipt amounts instead of reversing rounded checker shares
+✅ Add regression coverage for receipt-checker open-account stats
+
 ## v1.15.21
 ⚡ Queue bot log downloads, receipt uploads, admin receipt approvals, and reseller requests in background workers with duplicate-action protection
 ✨ Enforce payment and My Configs ownership checks before crypto status checks or config display callbacks
