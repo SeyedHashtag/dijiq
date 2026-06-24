@@ -193,7 +193,10 @@ def _plan_for_record(record, plans, source):
     if _safe_int(record.get('days')) != _safe_int(plan.get('days')):
         return None, 'renewal_ineligible_plan_mismatch'
 
-    if _safe_bool(record.get('unlimited', False)) != _safe_bool(plan.get('unlimited', False)):
+    if (
+        record.get('unlimited') is not None
+        and _safe_bool(record.get('unlimited')) != _safe_bool(plan.get('unlimited', False))
+    ):
         return None, 'renewal_ineligible_plan_mismatch'
 
     return plan, None
@@ -558,6 +561,16 @@ def format_renewal_offer(language, offer, include_payment_prompt=True):
         after=after,
         payment_prompt=payment_prompt,
     )
+
+
+def format_renewal_unavailable(language, offer):
+    from utils.translations import get_message_text
+
+    reason = (offer or {}).get('reason')
+    reason_text = get_message_text(language, reason) if reason else ''
+    if not reason_text:
+        reason_text = str(reason or 'renewal is unavailable')
+    return get_message_text(language, 'renewal_unavailable').format(reason=reason_text)
 
 
 def format_renewal_success(language, result, plan_gb, days, sub_url=None, ipv4_url=None):

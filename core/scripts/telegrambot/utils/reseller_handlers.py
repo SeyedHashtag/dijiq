@@ -113,6 +113,17 @@ def _is_reseller_suspended(reseller_data):
     return reseller_data.get('debt_state') == 'suspended' and float(reseller_data.get('debt', 0.0)) > 0
 
 
+def _log_renewal_unavailable(source, username, api_client, reason, offer=None):
+    offer = offer or {}
+    logging.getLogger("dijiq.renewal").info(
+        "Renewal unavailable source=%s username=%s server_id=%s reason=%s",
+        offer.get("source") or source,
+        offer.get("username") or username,
+        offer.get("server_id") or getattr(api_client, "server_id", None),
+        reason,
+    )
+
+
 def _debt_state_label(debt_state):
     if debt_state == 'suspended':
         return "debt_state_suspended"
@@ -711,6 +722,7 @@ def _run_reseller_customer_creation(message, user_id, language, data, chosen_use
             "customer_name": chosen_username,
             "gb": gb,
             "days": days,
+            "unlimited": unlimited,
             "price": price,
             "server_id": api_client.server_id,
         }
@@ -1572,9 +1584,27 @@ def _render_reseller_customer_config_job(call, user_id, language, reseller_data,
 
     if is_blocked:
         expired_markup = back_markup
-        if matched_config_index is not None and not _is_reseller_suspended(reseller_data):
+        renewal_unavailable_message = None
+        if matched_config_index is not None and _is_reseller_suspended(reseller_data):
+            debt = float((reseller_data or {}).get('debt', 0.0))
+            unlock_amount = get_reseller_unlock_amount(debt)
+            suspended_reason = get_message_text(language, "reseller_suspended_due_debt").format(
+                debt=debt,
+                unlock_amount=unlock_amount,
+            )
+            renewal_unavailable_message = get_message_text(language, "renewal_unavailable").format(
+                reason=suspended_reason
+            )
+            _log_renewal_unavailable(
+                "reseller_customer",
+                username,
+                api_client,
+                "reseller_suspended",
+                {"server_id": preferred_server_id},
+            )
+        elif matched_config_index is not None:
             try:
-                from utils.renewal import find_reseller_renewal_offer
+                from utils.renewal import find_reseller_renewal_offer, format_renewal_unavailable
 
                 offer = find_reseller_renewal_offer(
                     user_id,
@@ -1598,9 +1628,20 @@ def _render_reseller_customer_config_job(call, user_id, language, reseller_data,
                             callback_data=f"reseller:my_customers:{return_category}:{return_page}"
                         )
                     )
+                else:
+                    renewal_unavailable_message = format_renewal_unavailable(language, offer)
+                    _log_renewal_unavailable(
+                        "reseller_customer",
+                        username,
+                        api_client,
+                        offer.get("reason"),
+                        offer,
+                    )
             except Exception as renewal_error:
                 print(f"Error building reseller renewal offer for {username}: {renewal_error}")
         message_text = f"❌ **Configuration expired/blocked**\n{formatted_details}"
+        if renewal_unavailable_message:
+            message_text += f"\n\n{renewal_unavailable_message}"
         safe_edit_message_text(
             bot,
             message_text,

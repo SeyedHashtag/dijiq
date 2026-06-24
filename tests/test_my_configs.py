@@ -197,6 +197,7 @@ spec = importlib.util.spec_from_file_location("my_configs_under_test", MODULE_PA
 my_configs_module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = my_configs_module
 spec.loader.exec_module(my_configs_module)
+REAL_DISPLAY_CONFIG = my_configs_module.display_config
 
 
 class MyConfigsTests(unittest.TestCase):
@@ -207,6 +208,7 @@ class MyConfigsTests(unittest.TestCase):
         FakeMultiServerAPI.cached_entries = None
         my_configs_module.bot.replies = []
         my_configs_module.bot.chat_actions = []
+        my_configs_module.bot.sent_messages = []
         my_configs_module.bot.edited_messages = []
         my_configs_module.bot.callback_answers = []
         my_configs_module.MY_CONFIGS_REFRESH_INFLIGHT.clear()
@@ -222,6 +224,21 @@ class MyConfigsTests(unittest.TestCase):
             from_user=types.SimpleNamespace(id=user_id),
             chat=types.SimpleNamespace(id=456),
         )
+
+    def install_renewal_stub(self, offer, details="Renew offer", unavailable="Renewal is not available"):
+        original = sys.modules.get("utils.renewal")
+        renewal_stub = types.ModuleType("utils.renewal")
+        renewal_stub.find_customer_renewal_offer = lambda *args, **kwargs: offer
+        renewal_stub.format_renewal_offer = lambda *args, **kwargs: details
+        renewal_stub.format_renewal_unavailable = lambda *args, **kwargs: unavailable
+        sys.modules["utils.renewal"] = renewal_stub
+        return original
+
+    def restore_renewal_stub(self, original):
+        if original is None:
+            sys.modules.pop("utils.renewal", None)
+        else:
+            sys.modules["utils.renewal"] = original
 
     def test_my_configs_scans_once_and_prefers_paid_configs_over_test_configs(self):
         enabled_client = FakeClient("enabled")
@@ -357,6 +374,62 @@ class MyConfigsTests(unittest.TestCase):
         self.assertEqual(self.displayed_configs, [])
         self.assertEqual(my_configs_module.bot.edited_messages[-1][0][0], "Not authorized")
         self.assertEqual(my_configs_module.SHOW_CONFIG_INFLIGHT, set())
+
+    def test_expired_customer_config_shows_renew_button_when_eligible(self):
+        my_configs_module.display_config = REAL_DISPLAY_CONFIG
+        original = self.install_renewal_stub(
+            {"eligible": True, "token": "renew-token", "source": "customer"},
+            details="Renew offer details",
+        )
+        try:
+            my_configs_module.display_config(
+                456,
+                "s123a",
+                {
+                    "blocked": True,
+                    "expiration_days": 0,
+                    "upload_bytes": 0,
+                    "download_bytes": 0,
+                    "max_download_bytes": 5 * 1024 ** 3,
+                    "status": "expired",
+                },
+                FakeClient("enabled"),
+                user_id=123,
+            )
+        finally:
+            self.restore_renewal_stub(original)
+
+        sent_args, sent_kwargs = my_configs_module.bot.sent_messages[-1]
+        self.assertIn("Renew offer details", sent_args[1])
+        self.assertEqual(sent_kwargs["reply_markup"].buttons[0].callback_data, "renew_plan:renew-token")
+
+    def test_expired_customer_config_shows_renewal_unavailable_reason(self):
+        my_configs_module.display_config = REAL_DISPLAY_CONFIG
+        original = self.install_renewal_stub(
+            {"eligible": False, "reason": "renewal_ineligible_no_record", "source": "customer"},
+            unavailable="Renewal is not available for this config: no matching paid record was found.",
+        )
+        try:
+            my_configs_module.display_config(
+                456,
+                "s123a",
+                {
+                    "blocked": True,
+                    "expiration_days": 0,
+                    "upload_bytes": 0,
+                    "download_bytes": 0,
+                    "max_download_bytes": 5 * 1024 ** 3,
+                    "status": "expired",
+                },
+                FakeClient("enabled"),
+                user_id=123,
+            )
+        finally:
+            self.restore_renewal_stub(original)
+
+        sent_args, sent_kwargs = my_configs_module.bot.sent_messages[-1]
+        self.assertIn("Renewal is not available for this config", sent_args[1])
+        self.assertIsNone(sent_kwargs["reply_markup"])
 
     def test_my_configs_uses_stale_cached_snapshot_and_refreshes_in_background(self):
         enabled_client = FakeClient("enabled")

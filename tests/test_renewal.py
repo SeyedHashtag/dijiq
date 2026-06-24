@@ -215,6 +215,101 @@ class RenewalTests(unittest.TestCase):
         )
         self.assertEqual(quota_mismatch_offer["reason"], "renewal_ineligible_plan_mismatch")
 
+    def test_customer_offer_rejects_reseller_only_plan(self):
+        plans = {
+            "1": {"price": 2.0, "days": 7, "unlimited": False, "target": "reseller"},
+        }
+        payments = {"base-1": self.base_payment(plan_gb="1", days=7, unlimited=False)}
+        client = FakeClient("s1", {"alice": self.expired_user(max_gb=1)})
+
+        offer = self.renewal.find_customer_renewal_offer(
+            123,
+            "alice",
+            client,
+            client.get_user("alice"),
+            plans,
+            payments=payments,
+        )
+
+        self.assertFalse(offer["eligible"])
+        self.assertEqual(offer["reason"], "renewal_ineligible_plan_mismatch")
+
+    def test_missing_legacy_unlimited_metadata_does_not_block_matching_renewal(self):
+        plans = {
+            "5": {"price": 12.0, "days": 30, "unlimited": True, "target": "both"},
+        }
+        customer_record = self.base_payment()
+        customer_record.pop("unlimited", None)
+        client = FakeClient("s1", {"alice": self.expired_user()})
+
+        customer_offer = self.renewal.find_customer_renewal_offer(
+            123,
+            "alice",
+            client,
+            client.get_user("alice"),
+            plans,
+            payments={"base-1": customer_record},
+        )
+
+        reseller_data = {
+            "configs": [{
+                "username": "bob",
+                "server_id": "s1",
+                "gb": "5",
+                "days": 30,
+                "price": 9.6,
+            }]
+        }
+        reseller_client = FakeClient("s1", {"bob": self.expired_user()})
+        reseller_offer = self.renewal.find_reseller_renewal_offer(
+            "1988",
+            0,
+            reseller_client,
+            reseller_client.get_user("bob"),
+            plans,
+            reseller_data=reseller_data,
+        )
+
+        self.assertTrue(customer_offer["eligible"])
+        self.assertTrue(reseller_offer["eligible"])
+
+    def test_explicit_unlimited_mismatch_still_blocks_renewal(self):
+        plans = {
+            "5": {"price": 12.0, "days": 30, "unlimited": True, "target": "both"},
+        }
+        client = FakeClient("s1", {"alice": self.expired_user()})
+        customer_offer = self.renewal.find_customer_renewal_offer(
+            123,
+            "alice",
+            client,
+            client.get_user("alice"),
+            plans,
+            payments={"base-1": self.base_payment(unlimited=False)},
+        )
+
+        reseller_data = {
+            "configs": [{
+                "username": "bob",
+                "server_id": "s1",
+                "gb": "5",
+                "days": 30,
+                "unlimited": False,
+                "price": 9.6,
+            }]
+        }
+        reseller_client = FakeClient("s1", {"bob": self.expired_user()})
+        reseller_offer = self.renewal.find_reseller_renewal_offer(
+            "1988",
+            0,
+            reseller_client,
+            reseller_client.get_user("bob"),
+            plans,
+            reseller_data=reseller_data,
+        )
+
+        self.assertEqual(customer_offer["reason"], "renewal_ineligible_plan_mismatch")
+        self.assertEqual(reseller_offer["reason"], "renewal_ineligible_plan_mismatch")
+
     def test_customer_renewal_resets_existing_user_and_clears_cleanup_state(self):
         client = FakeClient("s1", {"alice": self.expired_user()})
         multi_api = FakeMultiAPI({"s1": client})
@@ -296,6 +391,34 @@ class RenewalTests(unittest.TestCase):
         self.assertEqual(offer["full_price"], 12.0)
         self.assertTrue(result["success"])
         self.assertEqual(client.reset_calls, ["bob"])
+
+    def test_reseller_offer_accepts_reseller_only_plan(self):
+        reseller_data = {
+            "configs": [{
+                "username": "bob",
+                "server_id": "s1",
+                "gb": "1",
+                "days": 7,
+                "unlimited": False,
+                "price": 1.6,
+            }]
+        }
+        plans = {
+            "1": {"price": 2.0, "days": 7, "unlimited": False, "target": "reseller"},
+        }
+        client = FakeClient("s1", {"bob": self.expired_user(max_gb=1)})
+
+        offer = self.renewal.find_reseller_renewal_offer(
+            "1988",
+            0,
+            client,
+            client.get_user("bob"),
+            plans,
+            reseller_data=reseller_data,
+        )
+
+        self.assertTrue(offer["eligible"])
+        self.assertAlmostEqual(offer["price"], 1.6)
 
 
 if __name__ == "__main__":

@@ -156,6 +156,9 @@ def install_stubs():
         "reseller_requires_telegram_username": "Username required",
         "not_authorized": "Not authorized",
         "cancel": "Cancel",
+        "renewal_unavailable": "Renewal is not available for this config: {reason}.",
+        "renewal_ineligible_no_record": "no matching paid record was found",
+        "reseller_suspended_due_debt": "Account suspended due to debt (${debt:.2f}). Pay ${unlock_amount:.2f} to unlock config generation.",
     }
     translations_stub = types.ModuleType("utils.translations")
     translations_stub.get_message_text = lambda language, key: translations.get(key, key)
@@ -286,6 +289,20 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         reseller_handlers.RESELLER_CUSTOMERS_INFLIGHT.clear()
         reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT.clear()
         reseller_handlers.RESELLER_REQUEST_INFLIGHT.clear()
+
+    def install_renewal_stub(self, offer, unavailable="Renewal is not available"):
+        original = sys.modules.get("utils.renewal")
+        renewal_stub = types.ModuleType("utils.renewal")
+        renewal_stub.find_reseller_renewal_offer = lambda *args, **kwargs: offer
+        renewal_stub.format_renewal_unavailable = lambda *args, **kwargs: unavailable
+        sys.modules["utils.renewal"] = renewal_stub
+        return original
+
+    def restore_renewal_stub(self, original):
+        if original is None:
+            sys.modules.pop("utils.renewal", None)
+        else:
+            sys.modules["utils.renewal"] = original
 
     def test_customer_name_displays_above_generated_username(self):
         entry = reseller_handlers._format_reseller_customer_entry(
@@ -679,6 +696,159 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             self.assertEqual(reseller_handlers.bot.edits[-1][0][0], "Not authorized")
         finally:
             reseller_handlers.MultiServerAPI = original_multi_api
+
+    def test_expired_reseller_customer_config_shows_renew_button_when_eligible(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_renewal = self.install_renewal_stub({
+            "eligible": True,
+            "token": "renew-token",
+            "source": "reseller_customer",
+        })
+
+        class FakeClient:
+            server_id = "s1"
+
+        class FakeMultiServerAPI:
+            def find_user(self, username, preferred_server_id=None):
+                return FakeClient(), {
+                    "blocked": True,
+                    "upload_bytes": 2 * 1024 ** 3,
+                    "download_bytes": 0,
+                    "max_download_bytes": 1 * 1024 ** 3,
+                    "expiration_days": 7,
+                    "account_creation_date": "2026-06-24",
+                    "status": "offline",
+                }
+
+        try:
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:cfg:r1988a:expired:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+            reseller_data = {
+                "status": "approved",
+                "configs": [{
+                    "username": "r1988a",
+                    "server_id": "s1",
+                    "gb": "1",
+                    "days": 7,
+                    "unlimited": True,
+                }],
+            }
+
+            reseller_handlers._render_reseller_customer_config_job(
+                call,
+                1988,
+                "en",
+                reseller_data,
+                "r1988a",
+                "expired",
+                0,
+            )
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            self.restore_renewal_stub(original_renewal)
+
+        callbacks = [
+            button.callback_data
+            for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+        ]
+        self.assertIn("reseller:renew:renew-token", callbacks)
+
+    def test_expired_reseller_customer_config_shows_renewal_unavailable_reason(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_renewal = self.install_renewal_stub(
+            {
+                "eligible": False,
+                "reason": "renewal_ineligible_no_record",
+                "source": "reseller_customer",
+                "username": "r1988a",
+                "server_id": "s1",
+            },
+            unavailable="Renewal is not available for this config: no matching paid record was found.",
+        )
+
+        class FakeClient:
+            server_id = "s1"
+
+        class FakeMultiServerAPI:
+            def find_user(self, username, preferred_server_id=None):
+                return FakeClient(), {
+                    "blocked": True,
+                    "upload_bytes": 2 * 1024 ** 3,
+                    "download_bytes": 0,
+                    "max_download_bytes": 1 * 1024 ** 3,
+                    "expiration_days": 7,
+                    "account_creation_date": "2026-06-24",
+                    "status": "offline",
+                }
+
+        try:
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:cfg:r1988a:expired:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+            reseller_handlers._render_reseller_customer_config_job(
+                call,
+                1988,
+                "en",
+                {"status": "approved", "configs": [{"username": "r1988a", "server_id": "s1"}]},
+                "r1988a",
+                "expired",
+                0,
+            )
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            self.restore_renewal_stub(original_renewal)
+
+        edit_args, edit_kwargs = reseller_handlers.bot.edits[-1]
+        self.assertIn("Renewal is not available for this config", edit_args[0])
+        callbacks = [button.callback_data for button in edit_kwargs["reply_markup"].buttons]
+        self.assertNotIn("reseller:renew:renew-token", callbacks)
+
+    def test_reseller_customer_creation_persists_unlimited_flag(self):
+        original_api_client = reseller_handlers.APIClient
+        original_create = reseller_handlers._create_reseller_user_with_note
+        original_add_debt = reseller_handlers.add_reseller_debt
+        original_is_recorded = reseller_handlers.reseller_config_is_recorded
+        captured_configs = []
+
+        class FakeClient:
+            server_id = "s1"
+
+            def get_user_uri(self, username):
+                return None
+
+        try:
+            reseller_handlers.APIClient = FakeClient
+            reseller_handlers._create_reseller_user_with_note = (
+                lambda *args, **kwargs: ("r1988a", {"ok": True}, FakeClient())
+            )
+            reseller_handlers.add_reseller_debt = (
+                lambda _user_id, _amount, config_data: captured_configs.append(config_data) or True
+            )
+            reseller_handlers.reseller_config_is_recorded = lambda *args, **kwargs: True
+
+            reseller_handlers._run_reseller_customer_creation(
+                types.SimpleNamespace(chat=types.SimpleNamespace(id=100)),
+                1988,
+                "en",
+                {"gb": "1", "days": 7, "price": 1.6, "unlimited": True},
+                "ali",
+            )
+        finally:
+            reseller_handlers.APIClient = original_api_client
+            reseller_handlers._create_reseller_user_with_note = original_create
+            reseller_handlers.add_reseller_debt = original_add_debt
+            reseller_handlers.reseller_config_is_recorded = original_is_recorded
+
+        self.assertTrue(captured_configs[0]["unlimited"])
 
     def test_reseller_customer_overview_and_empty_category_include_refresh(self):
         call = types.SimpleNamespace(

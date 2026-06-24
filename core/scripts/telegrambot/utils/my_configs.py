@@ -1,6 +1,7 @@
 import qrcode
 import io
 import json
+import logging
 import os
 import requests
 import re
@@ -51,6 +52,17 @@ def _append_my_configs_cache_notice(text, language, show_cache_notice=True):
         return text
     notice = _my_configs_cache_notice(language)
     return f"{text}\n\n{notice}" if notice else text
+
+
+def _log_renewal_unavailable(source, username, api_client, offer):
+    offer = offer or {}
+    logging.getLogger("dijiq.renewal").info(
+        "Renewal unavailable source=%s username=%s server_id=%s reason=%s",
+        offer.get("source") or source,
+        offer.get("username") or username,
+        offer.get("server_id") or getattr(api_client, "server_id", None),
+        offer.get("reason"),
+    )
 
 
 def _user_config_patterns(user_id):
@@ -369,7 +381,11 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
             )
 
             try:
-                from utils.renewal import find_customer_renewal_offer, format_renewal_offer
+                from utils.renewal import (
+                    find_customer_renewal_offer,
+                    format_renewal_offer,
+                    format_renewal_unavailable,
+                )
 
                 offer = find_customer_renewal_offer(
                     user_id or chat_id,
@@ -390,6 +406,9 @@ def display_config(chat_id, username, user_data, api_client, is_callback=False, 
                             callback_data=f"renew_plan:{offer['token']}"
                         )
                     )
+                else:
+                    message += f"\n\n{format_renewal_unavailable(language, offer)}"
+                    _log_renewal_unavailable("customer", username, api_client, offer)
             except Exception as renewal_error:
                 print(f"Error building renewal offer for {username}: {renewal_error}")
 
