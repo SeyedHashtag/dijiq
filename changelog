@@ -1,3 +1,8 @@
+## v1.15.25
+✨ Extend expired-user cleanup grace period to 48 hours before deletion decisions
+🐛 Keep old expired users eligible for cleanup while preserving the new grace-period protection for recently expired accounts
+✅ Add regression coverage for 48-hour grace-period handling and expired-cleanup timestamp paths
+
 ## v1.15.24
 ✨ Reset users through the panel's documented `/reset` endpoint so creation dates renew and users are unblocked in one API call
 🐛 Invalidate cached user snapshots after reset-user requests and preserve success handling for non-JSON reset responses
