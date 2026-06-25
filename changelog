@@ -1,3 +1,9 @@
+## v1.15.23
+✨ Show renewal-unavailable reasons for expired customer and reseller customer configs
+🐛 Allow legacy renewal records without unlimited metadata to match current unlimited plans while still rejecting explicit mismatches
+✨ Preserve reseller customer unlimited flags and allow reseller-only plans in reseller renewals
+✅ Add regression coverage for renewal eligibility, unavailable renewal messaging, and reseller customer config display
+
 ## v1.15.22
 ✨ Track paid receipt-checker open-account totals from settlement records
 🐛 Calculate remaining open-account base from approved receipt amounts instead of reversing rounded checker shares
