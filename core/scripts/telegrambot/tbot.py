@@ -124,6 +124,7 @@ def expired_cleanup_monitoring_thread():
     while True:
         try:
             from utils.expired_cleanup import (
+                EXPIRED_CLEANUP_GRACE_HOURS,
                 get_expired_cleanup_startup_delay,
                 run_expired_user_cleanup_with_metadata,
             )
@@ -133,7 +134,7 @@ def expired_cleanup_monitoring_thread():
             if delay_seconds > 0:
                 time.sleep(delay_seconds)
                 continue
-            run_expired_user_cleanup_with_metadata(grace_hours=24)
+            run_expired_user_cleanup_with_metadata(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS)
         except Exception as e:
             print(f"Error in expired cleanup: {e}")
         time.sleep(EXPIRED_CLEANUP_INTERVAL_SECONDS)

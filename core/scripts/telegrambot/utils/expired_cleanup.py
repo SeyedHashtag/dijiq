@@ -63,6 +63,7 @@ SCHEDULE_FILE = '/etc/dijiq/core/scripts/telegrambot/expired_cleanup_schedule.js
 GB_BYTES = 1024 ** 3
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S'
 CLEANUP_SCAN_INTERVAL_SECONDS = 3600
+EXPIRED_CLEANUP_GRACE_HOURS = 48
 DELETE_RESULTS = {'deleted', 'already_missing'}
 ADMIN_CLEANUP_PAGE_SIZE = 8
 ADMIN_CLEANUP_FILTERS = (
@@ -255,6 +256,25 @@ def _parse_time(value):
         return datetime.strptime(str(value), TIMESTAMP_FORMAT)
     except Exception:
         return None
+
+
+def _effective_delete_after(entry, grace_hours=EXPIRED_CLEANUP_GRACE_HOURS):
+    if not isinstance(entry, dict):
+        return None
+
+    delete_after = _parse_time(entry.get('delete_after'))
+    notified_at = _parse_time(entry.get('notified_at'))
+    if notified_at is None:
+        return delete_after
+
+    minimum_delete_after = notified_at + timedelta(hours=grace_hours)
+    if delete_after is None or delete_after < minimum_delete_after:
+        return minimum_delete_after
+    return delete_after
+
+
+def _format_time(value):
+    return value.strftime(TIMESTAMP_FORMAT) if isinstance(value, datetime) else None
 
 
 def _load_json_file(path, default):
@@ -576,7 +596,7 @@ def _effective_cleanup_status(entry, now=None):
 
     status = str(entry.get('cleanup_status') or entry.get('delete_result') or 'unknown')
     if status == 'notified':
-        delete_after = _parse_time(entry.get('delete_after'))
+        delete_after = _effective_delete_after(entry)
         if delete_after and (now or datetime.now()) >= delete_after:
             return 'due'
         return 'pending'
@@ -629,6 +649,9 @@ def _cleanup_record_from_state(state_key, entry, now=None):
     reason_code, reason = _cleanup_reason(entry)
     effective_status = _effective_cleanup_status(entry, now=now)
     cleanup_status = entry.get('cleanup_status') or effective_status
+    delete_after = entry.get('delete_after')
+    if cleanup_status == 'notified':
+        delete_after = _format_time(_effective_delete_after(entry)) or delete_after
     return {
         'state_key': state_key,
         'username': entry.get('username'),
@@ -640,7 +663,7 @@ def _cleanup_record_from_state(state_key, entry, now=None):
         'reviewed_at': entry.get('reviewed_at'),
         'reviewed_by': entry.get('reviewed_by'),
         'notified_at': entry.get('notified_at'),
-        'delete_after': entry.get('delete_after'),
+        'delete_after': delete_after,
         'deleted_at': entry.get('deleted_at'),
         'cleanup_status': cleanup_status,
         'effective_status': effective_status,
@@ -1420,10 +1443,9 @@ def _mark_deleted(state, key, candidate, status, now_value, last_state=None, del
     _update_candidate_record(candidate, fields, stores=stores)
 
 
-def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
+def run_expired_user_cleanup(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, multi_api=None):
     now = now or datetime.now()
     now_value = _now_str(now)
-    grace_delta = timedelta(hours=grace_hours)
 
     with _cleanup_lock:
         state = _load_json_file(STATE_FILE, {})
@@ -1562,9 +1584,8 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
                 continue
 
             notified_at = _parse_time(entry.get('notified_at'))
-            delete_after = _parse_time(entry.get('delete_after'))
-            if delete_after is None and notified_at is not None:
-                delete_after = notified_at + grace_delta
+            delete_after = _effective_delete_after(entry, grace_hours=grace_hours)
+            if delete_after is not None and notified_at is not None:
                 entry['delete_after'] = delete_after.strftime(TIMESTAMP_FORMAT)
 
             if delete_after is None or now < delete_after:
@@ -1603,7 +1624,7 @@ def run_expired_user_cleanup(grace_hours=24, now=None, multi_api=None):
         return state
 
 
-def run_expired_user_cleanup_with_metadata(grace_hours=24, now=None, multi_api=None):
+def run_expired_user_cleanup_with_metadata(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, multi_api=None):
     started_at = now or datetime.now()
     metadata = _load_cleanup_schedule_metadata()
     metadata.update({
@@ -1826,7 +1847,7 @@ def _get_cleanup_refresh_state():
         return dict(_cleanup_refresh_state)
 
 
-def _cleanup_refresh_worker(grace_hours=24):
+def _cleanup_refresh_worker(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS):
     error = None
     try:
         run_expired_user_cleanup_with_metadata(grace_hours=grace_hours)
@@ -1842,7 +1863,7 @@ def _cleanup_refresh_worker(grace_hours=24):
             })
 
 
-def _start_cleanup_refresh_for_dashboard(grace_hours=24):
+def _start_cleanup_refresh_for_dashboard(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS):
     with _cleanup_refresh_lock:
         if _cleanup_refresh_state.get('running'):
             return False

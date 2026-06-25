@@ -280,7 +280,7 @@ class ExpiredCleanupTests(unittest.TestCase):
             "download_bytes": 0,
             "max_download_bytes": 5 * self.cleanup.GB_BYTES,
         }
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
         self.assertEqual(client.deleted, [])
@@ -360,6 +360,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(saved_test["cleanup_notified_at"], "2026-06-09 12:00:00")
         self.assertEqual(saved_test["cleanup_last_state"]["status"], "expired")
         self.assertIn("your test account", self.cleanup._test_bot.sent_messages[0][1])
+        self.assertIn("|48|", self.cleanup._test_bot.sent_messages[0][1])
         self.assertIn("Status: expired", self.cleanup._test_bot.sent_messages[0][1])
         self.assertNotIn("Blocked:", self.cleanup._test_bot.sent_messages[0][1])
         self.assertIn("Days remaining: 0", self.cleanup._test_bot.sent_messages[0][1])
@@ -388,7 +389,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         client = FakeClient("s1", {"orphan": self.expired_user()})
 
         self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(client.deleted, [])
@@ -407,7 +408,7 @@ class ExpiredCleanupTests(unittest.TestCase):
             "download_bytes": 0,
             "max_download_bytes": 5 * self.cleanup.GB_BYTES,
         }
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(state["s1:orphan"]["cleanup_status"], "renewed")
@@ -429,7 +430,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         })
         client = FakeClient("s1", {"orphan": self.expired_user()})
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         self.assertEqual(client.deleted, [])
@@ -561,7 +562,7 @@ class ExpiredCleanupTests(unittest.TestCase):
             }
         })
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         self.assertEqual(client.get_users_calls, 1)
         self.assertEqual(client.get_user_calls, [])
@@ -580,6 +581,13 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
         self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
 
+        pending_state = self.read_json(self.cleanup.STATE_FILE)
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(pending_state["s1:t101"]["cleanup_status"], "notified")
+        self.assertEqual(pending_state["s1:t101"]["delete_after"], "2026-06-11 12:00:00")
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
+
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
         last_state = saved_test["cleanup_last_state"]
@@ -590,6 +598,35 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertEqual(last_state["gb_limit"], 5.0)
         self.assertEqual(last_state["gb_used"], 3.0)
         self.assertEqual(last_state["gb_remaining"], 2.0)
+
+    def test_existing_24_hour_pending_record_is_extended_to_default_48_hours(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101", "server_id": "s1", "cleanup_status": "notified"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:t101": {
+                "username": "t101",
+                "server_id": "s1",
+                "source": "test",
+                "telegram_user_id": "101",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-09 11:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = FakeClient("s1", {"t101": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        record = self.cleanup.get_expired_cleanup_records(filter_key="pending", now=self.now + timedelta(hours=25))[0]
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(state["s1:t101"]["cleanup_status"], "notified")
+        self.assertEqual(state["s1:t101"]["delete_after"], "2026-06-11 08:00:00")
+        self.assertEqual(record["delete_after"], "2026-06-11 08:00:00")
 
     def test_cleanup_batches_local_record_writes_for_multiple_deletions(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
@@ -631,7 +668,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.cleanup._save_json_file = counted_save
         self.addCleanup(setattr, self.cleanup, "_save_json_file", original_save)
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         self.assertEqual(client.deleted, ["t101", "t102"])
         self.assertEqual(save_counts.get(self.cleanup.TEST_CONFIGS_FILE), 1)
@@ -656,7 +693,7 @@ class ExpiredCleanupTests(unittest.TestCase):
             "download_bytes": 0,
             "max_download_bytes": 5 * self.cleanup.GB_BYTES,
         }
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         self.assertEqual(self.read_json(self.cleanup.STATE_FILE), {})
         self.assertEqual(client.deleted, [])
@@ -671,7 +708,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         client = FakeClient("s1", {"t101": self.expired_user()}, delete_result=None)
 
         self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
@@ -691,7 +728,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
         unavailable_client = FakeClient("s1", unavailable=True)
         self.cleanup.run_expired_user_cleanup(
-            now=self.now + timedelta(hours=25),
+            now=self.now + timedelta(hours=49),
             multi_api=FakeMultiAPI({"s1": unavailable_client}),
         )
 
@@ -717,9 +754,9 @@ class ExpiredCleanupTests(unittest.TestCase):
         })
         client = FakeClient("s1", {})
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
-        exported = self.cleanup.get_deleted_users_for_json(now=self.now + timedelta(hours=25))
+        exported = self.cleanup.get_deleted_users_for_json(now=self.now + timedelta(hours=49))
         self.assertEqual(self.cleanup._test_bot.sent_messages, [])
         self.assertEqual(exported[0]["delete_result"], "already_missing")
         self.assertIsNone(exported[0]["last_state"])
@@ -752,7 +789,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         }
         client = BulkOnlyFakeClient("s1", {"r303": traffic_exhausted_user})
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
@@ -797,7 +834,7 @@ class ExpiredCleanupTests(unittest.TestCase):
         }
         client = BulkOnlyFakeClient("s1", {"r303": traffic_exhausted_user})
 
-        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=25), multi_api=FakeMultiAPI({"s1": client}))
+        self.cleanup.run_expired_user_cleanup(now=self.now + timedelta(hours=49), multi_api=FakeMultiAPI({"s1": client}))
 
         state = self.read_json(self.cleanup.STATE_FILE)
         saved_config = self.read_json(self.cleanup.RESELLERS_FILE)["303"]["configs"][0]
@@ -905,8 +942,8 @@ class ExpiredCleanupTests(unittest.TestCase):
                 "server_id": "s1",
                 "source": "customer",
                 "cleanup_status": "notified",
-                "notified_at": "2026-06-09 08:00:00",
-                "delete_after": "2026-06-09 11:00:00",
+                "notified_at": "2026-06-07 08:00:00",
+                "delete_after": "2026-06-08 08:00:00",
                 "last_state": {"days_remaining": 0},
             },
             "s1:deleted": {
