@@ -1,3 +1,8 @@
+## v1.15.24
+✨ Reset users through the panel's documented `/reset` endpoint so creation dates renew and users are unblocked in one API call
+🐛 Invalidate cached user snapshots after reset-user requests and preserve success handling for non-JSON reset responses
+✅ Add regression coverage for reset-user endpoint usage, write timeout handling, headers, and cache invalidation
+
 ## v1.15.23
 ✨ Show renewal-unavailable reasons for expired customer and reseller customer configs
 🐛 Allow legacy renewal records without unlimited metadata to match current unlimited plans while still rejecting explicit mismatches
