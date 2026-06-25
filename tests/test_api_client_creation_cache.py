@@ -544,6 +544,52 @@ class APIClientPoolingTests(unittest.TestCase):
         self.assertIsNone(api_client.MultiServerAPI._creation_cache)
         self.assertEqual(api_client.MultiServerAPI._user_snapshot_cache, {})
 
+    def test_reset_user_uses_documented_mutating_get_endpoint(self):
+        os.environ["DIJIQ_API_WRITE_TIMEOUT_SECONDS"] = "7.5"
+        sessions = []
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"detail": "User has been reset."}
+
+        class FakeSession:
+            def __init__(self):
+                self.request_calls = []
+
+            def mount(self, *_args, **_kwargs):
+                return None
+
+            def request(self, method, url, **kwargs):
+                self.request_calls.append((method, url, kwargs))
+                return FakeResponse()
+
+        def session_factory():
+            session = FakeSession()
+            sessions.append(session)
+            return session
+
+        api_client.requests.Session = session_factory
+        server = {"id": "s1", "name": "s1", "url": "https://s1.test", "token": "token", "enabled": True}
+        client = api_client.APIClient(server)
+        api_client.MultiServerAPI._creation_cache = {"usernames": set(), "servers": [], "signature": ()}
+        api_client.MultiServerAPI._user_snapshot_cache = {True: {"stale": True}}
+
+        result = client.reset_user("alice")
+
+        self.assertEqual(result, {"detail": "User has been reset."})
+        self.assertEqual(len(sessions[0].request_calls), 1)
+        method, url, kwargs = sessions[0].request_calls[0]
+        self.assertEqual(method, "GET")
+        self.assertEqual(url, "https://s1.test/api/v1/users/alice/reset")
+        self.assertEqual(kwargs["timeout"], 7.5)
+        self.assertIsNone(kwargs.get("json"))
+        self.assertNotIn("Content-Type", kwargs["headers"])
+        self.assertIsNone(api_client.MultiServerAPI._creation_cache)
+        self.assertEqual(api_client.MultiServerAPI._user_snapshot_cache, {})
+
 
 class ServerConfigPersistenceTests(unittest.TestCase):
     def setUp(self):

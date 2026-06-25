@@ -286,8 +286,19 @@ class APIClient:
         return self._patch(f"{self.users_endpoint}{username}", data)
 
     def reset_user(self, username: str):
-        """Renew a user's creation date and unblock them."""
-        return self.update_user(username, {"renew_creation_date": True, "blocked": False})
+        """Reset a user through the panel reset endpoint."""
+        url = f"{self.users_endpoint}{username}/reset"
+        try:
+            response = self._request("GET", url, timeout=get_api_write_timeout_seconds())
+            response.raise_for_status()
+            MultiServerAPI.invalidate_all_caches()
+            try:
+                return response.json()
+            except ValueError:
+                return {"message": "Reset successfully."}
+        except requests.exceptions.RequestException as e:
+            print(f"[APIClient] GET {url} failed: {e}")
+            return None
 
     def delete_user(self, username: str):
         """Delete a user. Returns response data or ``None`` on failure."""
