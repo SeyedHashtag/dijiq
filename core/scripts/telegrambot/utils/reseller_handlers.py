@@ -1308,8 +1308,11 @@ def _render_reseller_customer_category(call, language, categorized, category, pa
     markup = types.InlineKeyboardMarkup(row_width=1)
     row_buttons = []
     for i, cfg in enumerate(page_configs, start=start + 1):
-        username = cfg.get('username', 'N/A')
-        row_buttons.append(types.InlineKeyboardButton(f"{i}", callback_data=f"reseller:cfg:{username}:{category}:{page}"))
+        config_index = cfg.get("_config_index")
+        row_buttons.append(types.InlineKeyboardButton(
+            f"{i}",
+            callback_data=f"reseller:cfg_index:{config_index}:{category}:{page}",
+        ))
     if row_buttons:
         markup.row(*row_buttons)
 
@@ -1379,9 +1382,15 @@ def handle_reseller_my_customers(call):
         return
     safe_answer_callback_query(bot, call.id)
 
-    configs = list(reseller_data.get('configs', []))
-    # Show newest configs first
-    configs = list(reversed(configs))
+    stored_configs = reseller_data.get('configs', [])
+    if not isinstance(stored_configs, list):
+        stored_configs = []
+    # Show newest configs first while preserving each record's stable list index.
+    configs = [
+        {**config, "_config_index": config_index}
+        for config_index, config in reversed(list(enumerate(stored_configs)))
+        if isinstance(config, dict)
+    ]
     total = len(configs)
 
     if total == 0:
@@ -1420,7 +1429,30 @@ def handle_reseller_customers_noop(call):
     safe_answer_callback_query(bot, call.id)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:cfg:"))
+def _resolve_reseller_customer_config(reseller_data, username=None, config_index=None):
+    configs = (reseller_data or {}).get('configs', [])
+    if not isinstance(configs, list):
+        return None, None
+
+    if config_index is not None:
+        if not isinstance(config_index, int) or config_index < 0 or config_index >= len(configs):
+            return None, None
+        config = configs[config_index]
+        if not isinstance(config, dict) or not str(config.get('username') or '').strip():
+            return None, None
+        return config_index, config
+
+    target_username = str(username or '').strip()
+    if not target_username:
+        return None, None
+    for index in range(len(configs) - 1, -1, -1):
+        config = configs[index]
+        if isinstance(config, dict) and config.get('username') == target_username:
+            return index, config
+    return None, None
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("reseller:cfg:", "reseller:cfg_index:")))
 def handle_reseller_customer_config(call):
     """Show the config card for a specific customer of the reseller."""
     user_id = call.from_user.id
@@ -1432,14 +1464,25 @@ def handle_reseller_customer_config(call):
         bot.answer_callback_query(call.id, "Reseller access required.")
         return
 
-    # Parse callback data: reseller:cfg:{username}:{category}:{page}
-    # Legacy callback shape reseller:cfg:{username}:{page} is still accepted.
+    # Current callback: reseller:cfg_index:{config_index}:{category}:{page}
+    # Legacy callbacks reseller:cfg:{username}:{category}:{page} and
+    # reseller:cfg:{username}:{page} remain accepted for existing keyboards.
     parts = call.data.split(":")
     if len(parts) < 4:
         bot.answer_callback_query(call.id, "Invalid request.")
         return
 
-    username = parts[2]
+    config_index = None
+    username = None
+    if parts[1] == "cfg_index":
+        try:
+            config_index = int(parts[2])
+        except (TypeError, ValueError):
+            bot.answer_callback_query(call.id, "Invalid request.")
+            return
+    else:
+        username = parts[2]
+
     return_category = "overview"
     if len(parts) >= 5:
         return_category = parts[3] if parts[3] in RESELLER_CUSTOMER_CATEGORY_ORDER else "overview"
@@ -1453,6 +1496,16 @@ def handle_reseller_customer_config(call):
         except (ValueError, IndexError):
             return_page = 0
 
+    matched_config_index, matched_config = _resolve_reseller_customer_config(
+        reseller_data,
+        username=username,
+        config_index=config_index,
+    )
+    if matched_config_index is None:
+        bot.answer_callback_query(call.id, "Invalid request.")
+        return
+
+    username = str(matched_config.get('username') or '').strip()
     safe_answer_callback_query(bot, call.id)
     _queue_reseller_customer_config_render(
         call,
@@ -1462,15 +1515,25 @@ def handle_reseller_customer_config(call):
         username,
         return_category,
         return_page,
+        config_index=matched_config_index,
     )
 
 
-def _queue_reseller_customer_config_render(call, user_id, language, reseller_data, username, return_category, return_page):
+def _queue_reseller_customer_config_render(
+    call,
+    user_id,
+    language,
+    reseller_data,
+    username,
+    return_category,
+    return_page,
+    config_index=None,
+):
     key = (
         user_id,
         getattr(getattr(call.message, "chat", None), "id", None),
         getattr(call.message, "message_id", None),
-        username,
+        config_index if config_index is not None else username,
         return_category,
         return_page,
     )
@@ -1489,6 +1552,7 @@ def _queue_reseller_customer_config_render(call, user_id, language, reseller_dat
                 username,
                 return_category,
                 return_page,
+                config_index=config_index,
             )
         finally:
             with RESELLER_CUSTOMER_CONFIG_LOCK:
@@ -1503,14 +1567,21 @@ def _queue_reseller_customer_config_render(call, user_id, language, reseller_dat
     return True
 
 
-def _render_reseller_customer_config_job(call, user_id, language, reseller_data, username, return_category, return_page):
-    preferred_server_id = None
-    matched_config_index = None
-    for index, cfg in enumerate((reseller_data or {}).get('configs', [])):
-        if cfg.get('username') == username:
-            preferred_server_id = cfg.get('server_id')
-            matched_config_index = index
-            break
+def _render_reseller_customer_config_job(
+    call,
+    user_id,
+    language,
+    reseller_data,
+    username,
+    return_category,
+    return_page,
+    config_index=None,
+):
+    matched_config_index, matched_config = _resolve_reseller_customer_config(
+        reseller_data,
+        username=username,
+        config_index=config_index,
+    )
 
     back_markup = types.InlineKeyboardMarkup()
     back_markup.add(
@@ -1529,6 +1600,9 @@ def _render_reseller_customer_config_job(call, user_id, language, reseller_data,
             reply_markup=back_markup
         )
         return
+
+    username = str(matched_config.get('username') or '').strip()
+    preferred_server_id = matched_config.get('server_id')
 
     # Fetch live config data from the server that owns this config.
     multi_api = MultiServerAPI()

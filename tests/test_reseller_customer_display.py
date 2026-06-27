@@ -598,6 +598,68 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             self.assertEqual(FakeMultiServerAPI.calls[0]["include_disabled"], True)
             self.assertEqual(FakeMultiServerAPI.calls[0]["cache_ttl_seconds"], 60)
             self.assertIn("ali", reseller_handlers.bot.edits[-1][0][0])
+            callbacks = [
+                button.callback_data
+                for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+            ]
+            self.assertIn("reseller:cfg_index:0:active:0", callbacks)
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR = original_executor
+
+    def test_reseller_customer_buttons_keep_original_indices_when_reversed(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR
+
+        class FakeMultiServerAPI:
+            def get_user_snapshot_entries(self, **_kwargs):
+                return [{
+                    "server": {"id": "s1"},
+                    "client": types.SimpleNamespace(server_id="s1"),
+                    "users": {
+                        "r1988a": {"expiration_days": 20},
+                        "r1988b": {"expiration_days": 20},
+                    },
+                }]
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMERS_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "configs": [
+                    {"username": "r1988a", "server_id": "s1", "gb": 1, "days": 7},
+                    {"username": "r1988b", "server_id": "s1", "gb": 100, "days": 60},
+                ],
+            }
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:my_customers:active:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(
+                    photo=None,
+                    document=None,
+                    sticker=None,
+                    chat=types.SimpleNamespace(id=100),
+                    message_id=200,
+                ),
+            )
+
+            reseller_handlers.handle_reseller_my_customers(call)
+            executor.run_next()
+
+            callbacks = [
+                button.callback_data
+                for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+            ]
+            config_callbacks = [value for value in callbacks if value.startswith("reseller:cfg_index:")]
+            self.assertEqual(
+                config_callbacks,
+                ["reseller:cfg_index:1:active:0", "reseller:cfg_index:0:active:0"],
+            )
         finally:
             reseller_handlers.MultiServerAPI = original_multi_api
             reseller_handlers.get_reseller_data = original_get_reseller_data
@@ -639,7 +701,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             }
             call = types.SimpleNamespace(
                 id="call-1",
-                data="reseller:cfg:r1988a:active:0",
+                data="reseller:cfg_index:0:active:0",
                 from_user=types.SimpleNamespace(id=1988),
                 message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
             )
@@ -654,6 +716,100 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
 
             self.assertEqual(FakeMultiServerAPI.calls, [("r1988a", "s1")])
             self.assertEqual(reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT, set())
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = original_executor
+
+    def test_legacy_reseller_customer_callback_uses_newest_duplicate(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR
+
+        class FakeClient:
+            server_id = "server2"
+
+            def get_user_uri(self, username):
+                return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def find_user(self, username, preferred_server_id=None):
+                self.__class__.calls.append((username, preferred_server_id))
+                return FakeClient(), {
+                    "blocked": False,
+                    "max_download_bytes": 100 * 1024 ** 3,
+                    "expiration_days": 60,
+                }
+
+        reseller_data = {
+            "status": "approved",
+            "configs": [
+                {"username": "r1988a", "gb": "1", "days": 7, "server_id": "primary"},
+                {"username": "r1988a", "gb": "100", "days": 60, "server_id": "server2"},
+            ],
+        }
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: reseller_data
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:cfg:r1988a:active:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_reseller_customer_config(call)
+            executor.run_next()
+
+            self.assertEqual(FakeMultiServerAPI.calls, [("r1988a", "server2")])
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = original_executor
+
+    def test_reseller_customer_callback_rejects_invalid_index_without_lookup(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def find_user(self, username, preferred_server_id=None):
+                self.__class__.calls.append((username, preferred_server_id))
+                return object(), {"blocked": False}
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "configs": [{"username": "r1988a", "server_id": "s1"}],
+            }
+
+            for callback_data in (
+                "reseller:cfg_index:not-a-number:active:0",
+                "reseller:cfg_index:9:active:0",
+                "reseller:cfg_index:-1:active:0",
+                "reseller:cfg_index::active:0",
+            ):
+                call = types.SimpleNamespace(
+                    id=callback_data,
+                    data=callback_data,
+                    from_user=types.SimpleNamespace(id=1988),
+                    message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+                )
+                reseller_handlers.handle_reseller_customer_config(call)
+
+            self.assertEqual(executor.jobs, [])
+            self.assertEqual(FakeMultiServerAPI.calls, [])
+            self.assertTrue(all(args[1] == "Invalid request." for args, _kwargs in reseller_handlers.bot.answers))
         finally:
             reseller_handlers.MultiServerAPI = original_multi_api
             reseller_handlers.get_reseller_data = original_get_reseller_data
@@ -757,6 +913,104 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
         ]
         self.assertIn("reseller:renew:renew-token", callbacks)
+
+    def test_duplicate_reseller_callbacks_renew_the_exact_selected_record(self):
+        original_multi_api = reseller_handlers.MultiServerAPI
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_executor = reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR
+        original_renewal = sys.modules.get("utils.renewal")
+        renewal_calls = []
+
+        class FakeClient:
+            def __init__(self, server_id):
+                self.server_id = server_id
+
+        class FakeMultiServerAPI:
+            calls = []
+
+            def find_user(self, username, preferred_server_id=None):
+                self.__class__.calls.append((username, preferred_server_id))
+                return FakeClient(preferred_server_id), {
+                    "blocked": True,
+                    "upload_bytes": 5 * 1024 ** 3,
+                    "download_bytes": 96 * 1024 ** 3,
+                    "max_download_bytes": 100 * 1024 ** 3,
+                    "expiration_days": 60,
+                    "account_creation_date": "2026-05-30",
+                    "status": "offline",
+                }
+
+        def find_offer(reseller_id, config_index, api_client, user_data, plans, reseller_data=None):
+            renewal_calls.append((reseller_id, config_index, api_client.server_id, reseller_data))
+            return {
+                "eligible": True,
+                "token": f"renew-{config_index}",
+                "source": "reseller_customer",
+            }
+
+        renewal_stub = types.ModuleType("utils.renewal")
+        renewal_stub.find_reseller_renewal_offer = find_offer
+        renewal_stub.format_renewal_unavailable = lambda *args, **kwargs: "unavailable"
+        reseller_data = {
+            "status": "approved",
+            "configs": [
+                {"username": "r1988a", "gb": "1", "days": 7, "server_id": "primary"},
+                {"username": "r1988a", "gb": "100", "days": 60, "server_id": "server2"},
+            ],
+        }
+
+        try:
+            executor = HoldingExecutor()
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = executor
+            reseller_handlers.MultiServerAPI = FakeMultiServerAPI
+            reseller_handlers.get_reseller_data = lambda _user_id: reseller_data
+            sys.modules["utils.renewal"] = renewal_stub
+
+            newer_call = types.SimpleNamespace(
+                id="newer",
+                data="reseller:cfg_index:1:expired:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=201),
+            )
+            reseller_handlers.handle_reseller_customer_config(newer_call)
+            executor.run_next()
+            newer_callbacks = [
+                button.callback_data
+                for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+            ]
+
+            older_call = types.SimpleNamespace(
+                id="older",
+                data="reseller:cfg_index:0:expired:0",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=202),
+            )
+            reseller_handlers.handle_reseller_customer_config(older_call)
+            executor.run_next()
+            older_callbacks = [
+                button.callback_data
+                for button in reseller_handlers.bot.edits[-1][1]["reply_markup"].buttons
+            ]
+
+            self.assertEqual(
+                FakeMultiServerAPI.calls,
+                [("r1988a", "server2"), ("r1988a", "primary")],
+            )
+            self.assertEqual(
+                [(reseller_id, index, server_id) for reseller_id, index, server_id, _data in renewal_calls],
+                [(1988, 1, "server2"), (1988, 0, "primary")],
+            )
+            self.assertIs(renewal_calls[0][3], reseller_data)
+            self.assertIn("reseller:renew:renew-1", newer_callbacks)
+            self.assertIn("reseller:renew:renew-0", older_callbacks)
+        finally:
+            reseller_handlers.MultiServerAPI = original_multi_api
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers.RESELLER_CUSTOMER_CONFIG_EXECUTOR = original_executor
+            if original_renewal is None:
+                sys.modules.pop("utils.renewal", None)
+            else:
+                sys.modules["utils.renewal"] = original_renewal
 
     def test_expired_reseller_customer_config_shows_renewal_unavailable_reason(self):
         original_multi_api = reseller_handlers.MultiServerAPI
