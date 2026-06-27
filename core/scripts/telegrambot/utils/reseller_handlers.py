@@ -86,6 +86,12 @@ RESELLER_REQUEST_EXECUTOR = ThreadPoolExecutor(
     max_workers=_int_env("DIJIQ_RESELLER_REQUEST_WORKERS", 2),
     thread_name_prefix="dijiq-reseller-request",
 )
+RESELLER_RENEWAL_LOCK = threading.Lock()
+RESELLER_RENEWAL_INFLIGHT = set()
+RESELLER_RENEWAL_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_int_env("DIJIQ_RESELLER_RENEWAL_WORKERS", 2),
+    thread_name_prefix="dijiq-reseller-renewal",
+)
 
 
 def _get_approved_reseller_data(user_id):
@@ -1855,31 +1861,58 @@ def handle_reseller_renewal_start(call):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:renew_confirm:"))
-def handle_reseller_renewal_confirm(call):
-    user_id = call.from_user.id
-    language = get_user_language(user_id)
+def _queue_reseller_renewal_confirm(call, user_id, language, token):
+    key = (user_id, token)
+    with RESELLER_RENEWAL_LOCK:
+        if key in RESELLER_RENEWAL_INFLIGHT:
+            return False
+        RESELLER_RENEWAL_INFLIGHT.add(key)
+
+    def run():
+        try:
+            _process_reseller_renewal_confirm_job(call, user_id, language, token)
+        finally:
+            with RESELLER_RENEWAL_LOCK:
+                RESELLER_RENEWAL_INFLIGHT.discard(key)
+
+    try:
+        RESELLER_RENEWAL_EXECUTOR.submit(run)
+    except Exception:
+        with RESELLER_RENEWAL_LOCK:
+            RESELLER_RENEWAL_INFLIGHT.discard(key)
+        raise
+    return True
+
+
+def _process_reseller_renewal_confirm_job(call, user_id, language, token):
     reseller_data = _get_active_reseller_data(user_id)
     if not reseller_data:
-        bot.answer_callback_query(call.id, "Reseller access required.")
+        safe_edit_message_text(
+            bot,
+            "Reseller access required.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+        )
         return
     if _is_reseller_suspended(reseller_data):
         debt = float(reseller_data.get('debt', 0.0))
         unlock_amount = get_reseller_unlock_amount(debt)
-        bot.answer_callback_query(
-            call.id,
+        safe_edit_message_text(
+            bot,
             get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount),
-            show_alert=True,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
         )
         return
 
-    token = call.data.split(":", 2)[2]
     offer, reseller_data = _resolve_reseller_renewal_offer_for_call(call, token)
     if not offer.get("eligible"):
-        bot.answer_callback_query(
-            call.id,
+        safe_edit_message_text(
+            bot,
             get_message_text(language, "renewal_unavailable").format(reason=_renewal_reason_text(language, offer.get("reason"))),
-            show_alert=True,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
         )
         return
 
@@ -1943,23 +1976,48 @@ def handle_reseller_renewal_confirm(call):
         bio = io.BytesIO()
         qr.save(bio, 'PNG')
         bio.seek(0)
-        try:
-            bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-        except Exception:
-            pass
-        bot.send_photo(
+        safe_delete_message(bot, chat_id=call.message.chat.id, message_id=call.message.message_id)
+        safe_send_photo(
+            bot,
             call.message.chat.id,
             photo=bio,
             caption=success_message,
             parse_mode="Markdown",
         )
     else:
-        bot.edit_message_text(
+        safe_edit_message_text(
+            bot,
             success_message,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="Markdown",
         )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reseller:renew_confirm:"))
+def handle_reseller_renewal_confirm(call):
+    user_id = call.from_user.id
+    language = get_user_language(user_id)
+    reseller_data = _get_active_reseller_data(user_id)
+    if not reseller_data:
+        safe_answer_callback_query(bot, call.id, "Reseller access required.")
+        return
+    if _is_reseller_suspended(reseller_data):
+        debt = float(reseller_data.get('debt', 0.0))
+        unlock_amount = get_reseller_unlock_amount(debt)
+        safe_answer_callback_query(
+            bot,
+            call.id,
+            get_message_text(language, "reseller_suspended_due_debt").format(debt=debt, unlock_amount=unlock_amount),
+            show_alert=True,
+        )
+        return
+
+    token = call.data.split(":", 2)[2]
+    if _queue_reseller_renewal_confirm(call, user_id, language, token):
+        safe_answer_callback_query(bot, call.id, text="Processing renewal...")
+    else:
+        safe_answer_callback_query(bot, call.id, text="Renewal is already in progress.")
 
 
 # Admin Management Handlers

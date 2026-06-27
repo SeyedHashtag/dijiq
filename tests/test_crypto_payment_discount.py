@@ -866,6 +866,53 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(statuses.count(("receipt-payment", "rejected")), 1)
         self.assertTrue(any(answer[1].get("text") == "Already processed: rejected" for answer in bot.callback_answers))
 
+    def test_check_payment_queues_gateway_lookup_and_dedupes(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        executor = HoldingExecutor()
+        purchase_plan.PAYMENT_JOB_EXECUTOR = executor
+        store = {
+            "crypto-payment": {
+                "status": "pending",
+                "user_id": 1988,
+                "plan_gb": "40",
+                "days": 30,
+                "price": 95.0,
+                "payment_method": "Crypto",
+                "payment_id": "crypto-payment",
+            }
+        }
+        statuses, _field_updates, claims = install_payment_store(purchase_plan, store)
+        checks = []
+
+        class Gateway:
+            def check_payment_status(self, payment_id):
+                checks.append(payment_id)
+                return {"result": {"status": "pending"}}
+
+        purchase_plan.CryptoPayment = Gateway
+        call = types.SimpleNamespace(
+            data="check_payment:crypto-payment",
+            id="check-callback",
+            from_user=types.SimpleNamespace(id=1988, username="buyer"),
+            message=types.SimpleNamespace(chat=types.SimpleNamespace(id=555), message_id=777),
+        )
+
+        purchase_plan.handle_check_payment(call)
+        purchase_plan.handle_check_payment(call)
+
+        self.assertEqual(len(executor.jobs), 1)
+        self.assertEqual(checks, [])
+        self.assertEqual(statuses, [])
+        self.assertEqual(claims, [])
+        self.assertIn(("check_payment", "crypto-payment"), purchase_plan.PAYMENT_JOB_INFLIGHT)
+
+        executor.run_next()
+
+        self.assertEqual(checks, ["crypto-payment"])
+        self.assertEqual(bot.sent_messages[-1][0], (1988, "payment_pending"))
+        self.assertNotIn(("check_payment", "crypto-payment"), purchase_plan.PAYMENT_JOB_INFLIGHT)
+
     def test_crypto_check_webhook_and_pending_poll_dispatch_renewals(self):
         bot = DummyBot()
         purchase_plan = load_purchase_plan(bot, [])

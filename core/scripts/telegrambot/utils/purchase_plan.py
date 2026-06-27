@@ -49,7 +49,7 @@ from utils.username_utils import (
     extract_existing_usernames,
     format_username_timestamp,
 )
-from utils.telegram_safe import safe_answer_callback_query
+from utils.telegram_safe import safe_answer_callback_query, safe_send_message
 
 # New: Global dictionary for user states
 user_data = {}
@@ -1595,28 +1595,27 @@ def handle_admin_approval(call):
         language = get_user_language(user_id)
         safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_occurred").format(error=str(e)))
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
-def handle_check_payment(call):
+def _process_check_payment_job(call):
     caller_id = call.from_user.id
     language = get_user_language(caller_id)
     payment_id = call.data.split(':')[1]
     payment_record = get_payment_record(payment_id)
     if not payment_record:
-        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_record_not_found"))
+        safe_send_message(bot, caller_id, get_message_text(language, "payment_record_not_found"))
         return
     if not _can_access_payment_record(caller_id, payment_record):
-        bot.answer_callback_query(call.id, text=get_message_text(language, "not_authorized"), show_alert=True)
+        safe_send_message(bot, caller_id, get_message_text(language, "not_authorized"))
         return
     if payment_record.get('status') == 'completed':
-        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status='completed'))
+        safe_send_message(bot, caller_id, get_message_text(language, "payment_already_processed").format(status='completed'))
         return
     if payment_record.get('status') == 'processing':
-        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status='processing'))
+        safe_send_message(bot, caller_id, get_message_text(language, "payment_already_processed").format(status='processing'))
         return
     payment_handler = CryptoPayment()
     payment_status_response = payment_handler.check_payment_status(payment_id)
     if "error" in payment_status_response:
-        bot.answer_callback_query(call.id, text=get_message_text(language, "error_checking_payment").format(error=payment_status_response['error']))
+        safe_send_message(bot, caller_id, get_message_text(language, "error_checking_payment").format(error=payment_status_response['error']))
         return
     payment_status_data = payment_status_response.get('result', {})
     status = payment_status_data.get('status') or payment_status_data.get('payment_status') or payment_status_data.get('paymentStatus')
@@ -1624,7 +1623,7 @@ def handle_check_payment(call):
         if not claim_payment_for_processing(payment_id, allowed_statuses={'pending'}):
             latest_record = get_payment_record(payment_id) or {}
             latest_status = latest_record.get('status', 'unknown')
-            bot.answer_callback_query(call.id, text=get_message_text(language, "payment_already_processed").format(status=latest_status))
+            safe_send_message(bot, caller_id, get_message_text(language, "payment_already_processed").format(status=latest_status))
             return
 
         payment_record = get_payment_record(payment_id) or payment_record
@@ -1640,7 +1639,7 @@ def handle_check_payment(call):
             success, credited_amount, remaining_debt = _apply_reseller_settlement_payment(user_id, payment_record)
             if not success:
                 _release_processing_for_retry(payment_id, 'pending', "settlement credit failed")
-                bot.answer_callback_query(call.id, text=get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
+                safe_send_message(bot, caller_id, get_message_text(language, "error_processing_payment").format(error="settlement credit failed"))
                 return
             update_payment_status(payment_id, 'completed')
             _send_reseller_settlement_admin_notification(
@@ -1728,14 +1727,45 @@ def handle_check_payment(call):
             )
             _record_crypto_sale_creation_failure(payment_id, username=username, api_client=api_client)
     elif status and status.lower() == 'pending':
-        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_pending"))
+        safe_send_message(bot, caller_id, get_message_text(language, "payment_pending"))
     else:
-        bot.answer_callback_query(call.id, text=get_message_text(language, "payment_status").format(status=status or 'unknown'))
+        safe_send_message(bot, caller_id, get_message_text(language, "payment_status").format(status=status or 'unknown'))
     try:
         import logging
         logging.getLogger('dijiq.payments').debug(f"Check payment response for {payment_id}: {payment_status_response}")
     except Exception:
         pass
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('check_payment:'))
+def handle_check_payment(call):
+    caller_id = call.from_user.id
+    language = get_user_language(caller_id)
+    payment_id = call.data.split(':')[1]
+    payment_record = get_payment_record(payment_id)
+    if not payment_record:
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_record_not_found"))
+        return
+    if not _can_access_payment_record(caller_id, payment_record):
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "not_authorized"), show_alert=True)
+        return
+    if payment_record.get('status') == 'completed':
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_already_processed").format(status='completed'))
+        return
+    if payment_record.get('status') == 'processing':
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "payment_already_processed").format(status='processing'))
+        return
+
+    try:
+        queued = _queue_payment_job(("check_payment", payment_id), _process_check_payment_job, call)
+    except Exception as enqueue_error:
+        safe_answer_callback_query(bot, call.id, text=get_message_text(language, "error_checking_payment").format(error=str(enqueue_error)))
+        return
+    if queued:
+        safe_answer_callback_query(bot, call.id, text="Checking payment status...")
+    else:
+        safe_answer_callback_query(bot, call.id, text="Payment status check is already in progress.")
+
 
 def process_payment_webhook(request_data):
     try:

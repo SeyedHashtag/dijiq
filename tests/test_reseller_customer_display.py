@@ -289,6 +289,7 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
         reseller_handlers.RESELLER_CUSTOMERS_INFLIGHT.clear()
         reseller_handlers.RESELLER_CUSTOMER_CONFIG_INFLIGHT.clear()
         reseller_handlers.RESELLER_REQUEST_INFLIGHT.clear()
+        reseller_handlers.RESELLER_RENEWAL_INFLIGHT.clear()
 
     def install_renewal_stub(self, offer, unavailable="Renewal is not available"):
         original = sys.modules.get("utils.renewal")
@@ -536,6 +537,46 @@ class ResellerCustomerDisplayTests(unittest.TestCase):
             reseller_handlers._has_active_purchased_config = original_has_active
             reseller_handlers.update_reseller_status = original_update_status
             reseller_handlers.ADMIN_USER_IDS = original_admin_ids
+
+    def test_reseller_renewal_confirm_queues_and_dedupes(self):
+        original_executor = reseller_handlers.RESELLER_RENEWAL_EXECUTOR
+        original_get_reseller_data = reseller_handlers.get_reseller_data
+        original_process = reseller_handlers._process_reseller_renewal_confirm_job
+        try:
+            executor = HoldingExecutor()
+            processed = []
+            reseller_handlers.RESELLER_RENEWAL_EXECUTOR = executor
+            reseller_handlers.get_reseller_data = lambda _user_id: {
+                "status": "approved",
+                "debt": 0.0,
+                "configs": [],
+            }
+            reseller_handlers._process_reseller_renewal_confirm_job = (
+                lambda *args: processed.append(args)
+            )
+            call = types.SimpleNamespace(
+                id="call-1",
+                data="reseller:renew_confirm:token-1",
+                from_user=types.SimpleNamespace(id=1988),
+                message=types.SimpleNamespace(chat=types.SimpleNamespace(id=100), message_id=200),
+            )
+
+            reseller_handlers.handle_reseller_renewal_confirm(call)
+            reseller_handlers.handle_reseller_renewal_confirm(call)
+
+            self.assertEqual(len(executor.jobs), 1)
+            self.assertEqual(processed, [])
+            self.assertIn((1988, "token-1"), reseller_handlers.RESELLER_RENEWAL_INFLIGHT)
+
+            executor.run_next()
+
+            self.assertEqual(len(processed), 1)
+            self.assertEqual(processed[0][1:], (1988, "en", "token-1"))
+            self.assertEqual(reseller_handlers.RESELLER_RENEWAL_INFLIGHT, set())
+        finally:
+            reseller_handlers.RESELLER_RENEWAL_EXECUTOR = original_executor
+            reseller_handlers.get_reseller_data = original_get_reseller_data
+            reseller_handlers._process_reseller_renewal_confirm_job = original_process
 
     def test_reseller_my_customers_queues_live_status_render(self):
         original_multi_api = reseller_handlers.MultiServerAPI
