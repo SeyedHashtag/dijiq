@@ -1,5 +1,6 @@
 import json
 import datetime
+import html
 from telebot import types
 from utils.command import bot, ADMIN_USER_IDS, is_admin
 from utils.common import create_main_markup
@@ -297,7 +298,9 @@ def _process_customer_renewal_payment(payment_id, payment_record, notify_chat_id
         telegram_username=telegram_username,
         converted_amount=payment_record.get('converted_amount'),
         converted_currency=payment_record.get('converted_currency'),
-        exchange_rate=payment_record.get('exchange_rate')
+        exchange_rate=payment_record.get('exchange_rate'),
+        server_name=getattr(api_client, 'server_name', None),
+        server_id=result.get('server_id') or getattr(api_client, 'server_id', None),
     )
 
     user_uri_data = api_client.get_user_uri(username) if api_client else None
@@ -647,6 +650,8 @@ def send_admin_payment_notification(
     converted_amount=None,
     converted_currency=None,
     exchange_rate=None,
+    server_name=None,
+    server_id=None,
 ):
     """Send a notification to all admins about a successful payment"""
     try:
@@ -663,6 +668,22 @@ def send_admin_payment_notification(
             
             notification_message += (
                 f"📱 <b>{get_message_text(admin_language, 'username')}:</b> <code>{username}</code>\n"
+            )
+            normalized_server_name = str(server_name or '').strip()
+            normalized_server_id = str(server_id or '').strip()
+            if normalized_server_name or normalized_server_id:
+                safe_server_name = html.escape(normalized_server_name)
+                safe_server_id = html.escape(normalized_server_id)
+                if normalized_server_name and normalized_server_id and normalized_server_name != normalized_server_id:
+                    server_display = f"{safe_server_name} (<code>{safe_server_id}</code>)"
+                elif normalized_server_id:
+                    server_display = f"<code>{safe_server_id}</code>"
+                else:
+                    server_display = safe_server_name
+                notification_message += (
+                    f"🌐 <b>{get_message_text(admin_language, 'server')}:</b> {server_display}\n"
+                )
+            notification_message += (
                 f"📊 <b>{get_message_text(admin_language, 'plan_size')}:</b> {plan_gb} GB\n"
                 f"💵 <b>{get_message_text(admin_language, 'amount')}:</b> ${format_usd_amount(price)}\n"
             )
@@ -1492,7 +1513,9 @@ def _process_admin_approval_job(call, action, payment_id, payment_record, review
                     telegram_username=telegram_username,
                     converted_amount=payment_record.get('converted_amount'),
                     converted_currency=payment_record.get('converted_currency'),
-                    exchange_rate=payment_record.get('exchange_rate')
+                    exchange_rate=payment_record.get('exchange_rate'),
+                    server_name=getattr(api_client, 'server_name', None),
+                    server_id=getattr(api_client, 'server_id', None),
                 )
 
                 user_uri_data = api_client.get_user_uri(username)
@@ -1694,7 +1717,17 @@ def _process_check_payment_job(call):
                     parse_mode="Markdown"
                 )
                 return
-            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=telegram_username)
+            send_admin_payment_notification(
+                user_id,
+                username,
+                plan_gb,
+                price,
+                payment_id,
+                "Crypto",
+                telegram_username=telegram_username,
+                server_name=getattr(api_client, 'server_name', None),
+                server_id=getattr(api_client, 'server_id', None),
+            )
             add_referral_reward(user_id, price)
             user_uri_data = api_client.get_user_uri(username)
             if user_uri_data and 'normal_sub' in user_uri_data:
@@ -1856,7 +1889,17 @@ def process_payment_webhook(request_data):
                         telegram_username = chat.username
                     except:
                         pass
-                    send_admin_payment_notification(user_id, username, plan_gb, price, record_key, payment_method, telegram_username=telegram_username)
+                    send_admin_payment_notification(
+                        user_id,
+                        username,
+                        plan_gb,
+                        price,
+                        record_key,
+                        payment_method,
+                        telegram_username=telegram_username,
+                        server_name=getattr(api_client, 'server_name', None),
+                        server_id=getattr(api_client, 'server_id', None),
+                    )
                     add_referral_reward(user_id, price)
                     
                     user_uri_data = api_client.get_user_uri(username)
@@ -1998,7 +2041,17 @@ def check_pending_payments():
                                 telegram_username = chat.username
                             except:
                                 pass
-                            send_admin_payment_notification(user_id, username, plan_gb, price, payment_id, "Crypto", telegram_username=telegram_username)
+                            send_admin_payment_notification(
+                                user_id,
+                                username,
+                                plan_gb,
+                                price,
+                                payment_id,
+                                "Crypto",
+                                telegram_username=telegram_username,
+                                server_name=getattr(api_client, 'server_name', None),
+                                server_id=getattr(api_client, 'server_id', None),
+                            )
                             add_referral_reward(user_id, price)
                             user_uri_data = api_client.get_user_uri(username)
 

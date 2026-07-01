@@ -8,6 +8,25 @@ from utils.common import create_main_markup, is_admin_main_menu_button
 from utils.api_client import APIClient, MultiServerAPI
 
 
+def _escape_markdown(value):
+    escaped = str(value or "").replace("\\", "\\\\")
+    for char in ("`", "*", "_", "["):
+        escaped = escaped.replace(char, f"\\{char}")
+    return escaped
+
+
+def _format_server_label(api_client):
+    server_name = str(getattr(api_client, "server_name", None) or "").strip()
+    server_id = str(getattr(api_client, "server_id", None) or "").strip()
+    if server_name and server_id and server_name != server_id:
+        return f"{_escape_markdown(server_name)} (`{server_id}`)"
+    if server_id:
+        return f"`{server_id}`"
+    if server_name:
+        return _escape_markdown(server_name)
+    return None
+
+
 @bot.callback_query_handler(func=lambda call: call.data == "cancel_show_user")
 def handle_cancel_show_user(call):
     bot.answer_callback_query(call.id)
@@ -64,8 +83,11 @@ def process_show_user(message):
         bot.reply_to(message, f"Failed to process user data: {str(e)}")
         return
 
+    server_label = _format_server_label(api_client)
+    server_line = f"🌐 Server: {server_label}\n" if server_label else ""
     formatted_details = (
         f"\n🆔 Name: {actual_username}\n"
+        f"{server_line}"
         f"📊 Traffic Limit: {user_details['max_download_bytes'] / (1024 ** 3):.2f} GB\n"
         f"📅 Days: {user_details['expiration_days']}\n"
         f"⏳ Creation: {user_details['account_creation_date']}\n"

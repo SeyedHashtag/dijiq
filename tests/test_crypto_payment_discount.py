@@ -360,6 +360,7 @@ def make_admin_approval_call(action):
 
 class FakeRenewalAPIClient:
     server_id = "s1"
+    server_name = "Germany"
 
     def get_user_uri(self, username):
         return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
@@ -406,6 +407,7 @@ def install_renewal_success_stub(calls):
 
 class DummySaleClient:
     server_id = "s1"
+    server_name = "Germany"
 
     def get_user_uri(self, username):
         return {"normal_sub": f"https://sub.example/{username}", "ipv4": ""}
@@ -486,6 +488,42 @@ def install_payment_store(purchase_plan, store):
 
 
 class CryptoPaymentDiscountTests(unittest.TestCase):
+    def test_admin_payment_notification_formats_and_escapes_server(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.ADMIN_USER_IDS = [1]
+
+        purchase_plan.send_admin_payment_notification(
+            1988,
+            "s1988a",
+            "40",
+            2,
+            "payment-1",
+            "Crypto",
+            server_name="Germany & <West>",
+            server_id="de-1",
+        )
+
+        message = bot.sent_messages[0][0][1]
+        self.assertIn("🌐 <b>server:</b> Germany &amp; &lt;West&gt; (<code>de-1</code>)", message)
+
+    def test_admin_payment_notification_falls_back_to_id_and_omits_missing_server(self):
+        bot = DummyBot()
+        purchase_plan = load_purchase_plan(bot, [])
+        purchase_plan.ADMIN_USER_IDS = [1]
+
+        purchase_plan.send_admin_payment_notification(
+            1988, "s1988a", "40", 2, "payment-1", "Crypto", server_id="de-1"
+        )
+        purchase_plan.send_admin_payment_notification(
+            1988, "Settlement", "Settlement", 2, "payment-2", "Crypto"
+        )
+
+        id_only_message = bot.sent_messages[0][0][1]
+        settlement_message = bot.sent_messages[1][0][1]
+        self.assertIn("🌐 <b>server:</b> <code>de-1</code>", id_only_message)
+        self.assertNotIn("🌐 <b>server:</b>", settlement_message)
+
     def test_crypto_discount_helper_rounds_to_two_decimals(self):
         purchase_plan = load_purchase_plan()
 
@@ -651,7 +689,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         purchase_plan.get_payment_record = lambda _payment_id: payment_record
         purchase_plan.update_payment_status = lambda payment_id, status: statuses.append((payment_id, status))
         purchase_plan.update_payment_record_fields = lambda payment_id, fields: field_updates.append((payment_id, fields))
-        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        admin_notifications = []
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
         purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for renewal payments")
 
         purchase_plan.handle_admin_approval(make_admin_approval_call("approve"))
@@ -660,6 +699,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertIn(("settlement-payment", "completed"), statuses)
         self.assertTrue(any(fields.get("renewal_after_state") == {"status": "active"} for _pid, fields in field_updates))
         self.assertEqual(bot.sent_photos[-1][1]["caption"], "renewal success")
+        self.assertEqual(admin_notifications[0][1]["server_name"], "Germany")
+        self.assertEqual(admin_notifications[0][1]["server_id"], "s1")
 
     def test_admin_approval_queues_claimed_payment_work(self):
         bot = DummyBot()
@@ -745,10 +786,11 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         }
         statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
         created = []
+        admin_notifications = []
         nested_call_sent = {"value": False}
         client = DummySaleClient()
         purchase_plan.is_admin = lambda _user_id: True
-        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
 
         def create_sale_user_with_note(*args, **kwargs):
             created.append(args)
@@ -767,6 +809,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(store["receipt-payment"]["server_id"], "s1")
         self.assertEqual(store["receipt-payment"]["updates"][-1]["previous_status"], "processing")
         self.assertEqual(statuses.count(("receipt-payment", "completed")), 1)
+        self.assertEqual(admin_notifications[0][1]["server_name"], "Germany")
+        self.assertEqual(admin_notifications[0][1]["server_id"], "s1")
         self.assertTrue(any(answer[1].get("text") == "Already processed: processing" for answer in bot.callback_answers))
 
     def test_receipt_approval_leaves_payment_processing_when_completion_persistence_fails(self):
@@ -935,7 +979,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
             }
         }
         statuses, field_updates, _claims = install_payment_store(purchase_plan, store)
-        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        admin_notifications = []
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
         purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: self.fail("new user creation should not run for renewal payments")
         FakeCryptoPayment.statuses = {"renew-payment": {"result": {"status": "paid"}}}
 
@@ -954,6 +999,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(statuses.count(("renew-payment", "completed")), 1)
         self.assertEqual(len([fields for _pid, fields in field_updates if fields.get("renewal_after_state") == {"status": "active"}]), 1)
         self.assertEqual(store["renew-payment"]["status"], "completed")
+        self.assertEqual(admin_notifications[0][1]["server_name"], "Germany")
+        self.assertEqual(admin_notifications[0][1]["server_id"], "s1")
 
     def test_crypto_check_completes_sale_with_username_and_server(self):
         bot = DummyBot()
@@ -970,8 +1017,9 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
             }
         }
         statuses, _field_updates, _claims = install_payment_store(purchase_plan, store)
+        admin_notifications = []
         purchase_plan.create_sale_user_with_note = lambda *args, **kwargs: ("s1988a", {"ok": True}, DummySaleClient())
-        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: None
+        purchase_plan.send_admin_payment_notification = lambda *args, **kwargs: admin_notifications.append((args, kwargs))
         FakeCryptoPayment.statuses = {"crypto-payment": {"result": {"status": "paid"}}}
 
         purchase_plan.handle_check_payment(types.SimpleNamespace(
@@ -987,6 +1035,8 @@ class CryptoPaymentDiscountTests(unittest.TestCase):
         self.assertEqual(store["crypto-payment"]["server_id"], "s1")
         self.assertEqual(store["crypto-payment"]["updates"][-1]["previous_status"], "processing")
         self.assertEqual(bot.sent_photos[-1][1]["caption"], "completed s1988a https://sub.example/s1988a")
+        self.assertEqual(admin_notifications[0][1]["server_name"], "Germany")
+        self.assertEqual(admin_notifications[0][1]["server_id"], "s1")
 
     def test_crypto_check_rejects_non_owner_without_processing_payment(self):
         bot = DummyBot()
