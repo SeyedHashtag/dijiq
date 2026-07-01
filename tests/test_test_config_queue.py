@@ -1,7 +1,10 @@
 import importlib.util
+import json
 import sys
+import tempfile
 import types
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -13,6 +16,7 @@ MODULE_PATH = (
     / "utils"
     / "test_config.py"
 )
+TEST_CONFIG_STORE_PATH = MODULE_PATH.with_name("test_config_store.py")
 
 
 class DummyBot:
@@ -82,6 +86,12 @@ def install_stubs():
     utils_pkg.__path__ = []
     sys.modules["utils"] = utils_pkg
 
+    store_spec = importlib.util.spec_from_file_location("utils.test_config_store", TEST_CONFIG_STORE_PATH)
+    store_module = importlib.util.module_from_spec(store_spec)
+    sys.modules[store_spec.name] = store_module
+    store_spec.loader.exec_module(store_module)
+    utils_pkg.test_config_store = store_module
+
     command_stub = types.ModuleType("utils.command")
     command_stub.bot = DummyBot()
     command_stub.is_admin = lambda user_id: False
@@ -128,6 +138,9 @@ spec.loader.exec_module(test_config_module)
 
 class TestConfigQueueTests(unittest.TestCase):
     def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        test_config_module.TEST_CONFIGS_FILE = str(Path(self.tmpdir.name) / "test_configs.json")
         self.executor = HoldingExecutor()
         self.create_calls = []
         test_config_module.TEST_CONFIG_EXECUTOR = self.executor
@@ -170,6 +183,54 @@ class TestConfigQueueTests(unittest.TestCase):
         self.assertEqual(kwargs["telegram_username"], "buyer")
         self.assertEqual(test_config_module.TEST_CONFIG_INFLIGHT, set())
         self.assertEqual(test_config_module.bot.edits[0][0][0], "⏳ Creating your test configuration...")
+
+    def test_creation_claim_prevents_duplicates_and_stale_claim_recovers(self):
+        now = datetime(2026, 6, 9, 12, 0, 0)
+
+        self.assertTrue(test_config_module._claim_test_config_creation(123, now=now))
+        self.assertFalse(test_config_module._claim_test_config_creation(123, now=now + timedelta(minutes=1)))
+        self.assertTrue(test_config_module._claim_test_config_creation(123, now=now + timedelta(minutes=16)))
+
+    def test_releasing_failed_creation_removes_placeholder(self):
+        self.assertTrue(test_config_module._claim_test_config_creation(123))
+
+        test_config_module._release_test_config_creation(123)
+
+        self.assertEqual(test_config_module.load_test_configs(), {})
+
+    def test_finalizing_creation_preserves_recovered_history_and_clears_claim(self):
+        Path(test_config_module.TEST_CONFIGS_FILE).write_text(json.dumps({
+            "123": {
+                "telegram_id": 123,
+                "used_at": "2026-05-01 12:00:00",
+                "reset_at": "2026-06-09 11:00:00",
+                "historical_configs": [{"username": "t123", "server_id": "s1"}],
+            }
+        }), encoding="utf-8")
+        self.assertTrue(test_config_module._claim_test_config_creation(123))
+
+        test_config_module.mark_test_config_used(123, username="t123a", server_id="s2")
+
+        entry = test_config_module.load_test_configs()["123"]
+        self.assertEqual(entry["username"], "t123a")
+        self.assertEqual(entry["server_id"], "s2")
+        self.assertEqual(entry["historical_configs"][0]["username"], "t123")
+        self.assertNotIn("creation_pending_at", entry)
+
+    def test_recovered_historical_user_is_ineligible_until_admin_reset(self):
+        Path(test_config_module.TEST_CONFIGS_FILE).write_text(json.dumps({
+            "123": {
+                "telegram_id": 123,
+                "used_at": "2026-01-01 12:00:00",
+                "historical_configs": [{"username": "t123", "server_id": "s1"}],
+            }
+        }), encoding="utf-8")
+        self.assertTrue(test_config_module._has_used_test_config_from(test_config_module.load_test_configs(), 123))
+
+        count = test_config_module.reset_test_users(mode="expired")
+
+        self.assertEqual(count, 1)
+        self.assertFalse(test_config_module._has_used_test_config_from(test_config_module.load_test_configs(), 123))
 
 
 if __name__ == "__main__":

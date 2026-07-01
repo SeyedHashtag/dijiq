@@ -18,12 +18,14 @@ from utils.username_utils import (
     build_user_note,
 )
 from utils.telegram_safe import safe_answer_callback_query, safe_edit_message_text, safe_send_message, safe_send_photo
+from utils import test_config_store
 
 TEST_CONFIGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_configs.json'
 TEST_SETTINGS_FILE = '/etc/dijiq/core/scripts/telegrambot/test_settings.json'
 TEST_WAITING_LIST_FILE = '/etc/dijiq/core/scripts/telegrambot/waiting_test_users.json'
 TEST_TRAFFIC_GB = 1
 TEST_DAYS = 30
+TEST_CREATION_CLAIM_TIMEOUT_MINUTES = 15
 TEST_CONFIG_JOB_LOCK = threading.Lock()
 TEST_CONFIG_INFLIGHT = set()
 
@@ -63,18 +65,10 @@ def is_test_creation_disabled():
     return settings.get("creation_disabled", False)
 
 def load_test_configs():
-    try:
-        if os.path.exists(TEST_CONFIGS_FILE):
-            with open(TEST_CONFIGS_FILE, 'r') as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
+    return test_config_store.load_test_configs(TEST_CONFIGS_FILE)
 
 def save_test_configs(configs):
-    os.makedirs(os.path.dirname(TEST_CONFIGS_FILE), exist_ok=True)
-    with open(TEST_CONFIGS_FILE, 'w') as f:
-        json.dump(configs, f, indent=4)
+    test_config_store.save_test_configs(TEST_CONFIGS_FILE, configs)
 
 def load_waiting_users():
     try:
@@ -91,11 +85,41 @@ def save_waiting_users(users):
     with open(TEST_WAITING_LIST_FILE, 'w') as f:
         json.dump(users, f, indent=4)
 
-def _has_used_test_config_from(configs, user_id):
+def _parse_config_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S')
+    except (TypeError, ValueError):
+        return None
+
+
+def _creation_claim_is_active(entry, now=None):
+    if not isinstance(entry, dict):
+        return False
+    claimed_at = _parse_config_time(entry.get('creation_pending_at'))
+    if claimed_at is None:
+        return False
+    return (now or datetime.datetime.now()) - claimed_at < datetime.timedelta(
+        minutes=TEST_CREATION_CLAIM_TIMEOUT_MINUTES
+    )
+
+
+def _has_used_test_config_from(configs, user_id, now=None):
     key = str(user_id)
     if key not in configs:
         return False
     entry = configs[key]
+    if not isinstance(entry, dict):
+        return False
+    if _creation_claim_is_active(entry, now=now):
+        return True
+    if entry.get('creation_pending_at') and not any(
+        entry.get(field) for field in ('used_at', 'username', 'historical_configs')
+    ):
+        return False
+    if not any(entry.get(field) for field in ('used_at', 'username', 'historical_configs', 'reset_at')):
+        return False
     reset_at_str = entry.get('reset_at')
     if reset_at_str:
         # User was reset — check if they have received a new test config since the reset
@@ -132,13 +156,22 @@ def add_to_waiting_list(user_id, username=None, language=None):
     save_waiting_users(waiting_users)
     return True
 
-def _mark_test_config_used_in_memory(configs, user_id, username=None, language=None, telegram_username=None, server_id=None):
+def _mark_test_config_used_in_memory(
+    configs,
+    user_id,
+    username=None,
+    language=None,
+    telegram_username=None,
+    server_id=None,
+    used_at=None,
+):
     key = str(user_id)
     # Preserve existing history fields (reset_at, reset_count, original used_at, etc.)
     existing = configs.get(key, {})
     entry = dict(existing)
-    entry['used_at'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    entry['used_at'] = used_at or datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     entry['telegram_id'] = user_id
+    entry.pop('creation_pending_at', None)
     if username:
         entry['username'] = username
     if language:
@@ -151,16 +184,51 @@ def _mark_test_config_used_in_memory(configs, user_id, username=None, language=N
     configs[key] = entry
 
 def mark_test_config_used(user_id, username=None, language=None, telegram_username=None, server_id=None):
-    configs = load_test_configs()
-    _mark_test_config_used_in_memory(
-        configs,
-        user_id,
-        username=username,
-        language=language,
-        telegram_username=telegram_username,
-        server_id=server_id,
-    )
-    save_test_configs(configs)
+    def mutate(configs):
+        _mark_test_config_used_in_memory(
+            configs,
+            user_id,
+            username=username,
+            language=language,
+            telegram_username=telegram_username,
+            server_id=server_id,
+        )
+
+    test_config_store.update_test_configs(TEST_CONFIGS_FILE, mutate)
+
+
+def _claim_test_config_creation(user_id, now=None):
+    now = now or datetime.datetime.now()
+    now_value = now.strftime('%Y-%m-%d %H:%M:%S')
+    key = str(user_id)
+
+    def mutate(configs):
+        entry = dict(configs.get(key) or {})
+        if _creation_claim_is_active(entry, now=now):
+            return False
+        entry.pop('creation_pending_at', None)
+        if _has_used_test_config_from({key: entry}, key, now=now):
+            return False
+        entry.setdefault('telegram_id', user_id)
+        entry['creation_pending_at'] = now_value
+        configs[key] = entry
+        return True
+
+    return bool(test_config_store.update_test_configs(TEST_CONFIGS_FILE, mutate))
+
+
+def _release_test_config_creation(user_id):
+    key = str(user_id)
+
+    def mutate(configs):
+        entry = configs.get(key)
+        if not isinstance(entry, dict):
+            return
+        entry.pop('creation_pending_at', None)
+        if not any(entry.get(field) for field in ('used_at', 'username', 'historical_configs', 'reset_at')):
+            configs.pop(key, None)
+
+    test_config_store.update_test_configs(TEST_CONFIGS_FILE, mutate)
 
 
 def reset_test_users(mode='expired'):
@@ -172,29 +240,26 @@ def reset_test_users(mode='expired'):
 
     Returns the number of users that were reset.
     """
-    configs = load_test_configs()
     now = datetime.datetime.now()
     reset_ts = now.strftime('%Y-%m-%d %H:%M:%S')
-    count = 0
-    for key, entry in configs.items():
-        # Skip users who are already in a reset-eligible state
-        if not has_used_test_config(key):
-            continue
-        if mode == 'expired':
-            used_at_str = entry.get('used_at')
-            if not used_at_str:
+
+    def mutate(configs):
+        count = 0
+        for key, entry in configs.items():
+            if not isinstance(entry, dict) or _creation_claim_is_active(entry, now=now):
                 continue
-            try:
-                used_at = datetime.datetime.strptime(used_at_str, '%Y-%m-%d %H:%M:%S')
-            except Exception:
+            if not _has_used_test_config_from(configs, key, now=now):
                 continue
-            if (now - used_at).days < 30:
-                continue  # Config still active, skip
-        entry['reset_at'] = reset_ts
-        entry['reset_count'] = entry.get('reset_count', 0) + 1
-        count += 1
-    save_test_configs(configs)
-    return count
+            if mode == 'expired':
+                used_at = _parse_config_time(entry.get('used_at'))
+                if used_at is None or (now - used_at).days < 30:
+                    continue
+            entry['reset_at'] = reset_ts
+            entry['reset_count'] = entry.get('reset_count', 0) + 1
+            count += 1
+        return count
+
+    return test_config_store.update_test_configs(TEST_CONFIGS_FILE, mutate)
 
 @bot.message_handler(func=lambda message: any(
     message.text == translations["test_config"] 
@@ -395,35 +460,48 @@ def _create_test_config_with_client(
 ):
     if _has_used_test_config_from(test_configs, user_id):
         return False
-
-    username = allocate_username("t", user_id, existing_usernames)
-    note_payload = build_user_note(
-        username=username,
-        traffic_limit=TEST_TRAFFIC_GB,
-        expiration_days=TEST_DAYS,
-        unlimited=True,
-        note_text="test_config",
-    )
-
-    result = api_client.add_user(
-        username,
-        TEST_TRAFFIC_GB,
-        TEST_DAYS,
-        unlimited=True,
-        note=note_payload,
-    )
-    if result is None:
-        result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
-        if result is not None:
-            logging.getLogger("dijiq.usernames").warning(
-                "Created test user without note fallback. user_id=%s username=%s",
-                user_id,
-                username,
-            )
-
-    if not result:
+    if not _claim_test_config_creation(user_id):
         return False
 
+    try:
+        username = allocate_username("t", user_id, existing_usernames)
+        note_payload = build_user_note(
+            username=username,
+            traffic_limit=TEST_TRAFFIC_GB,
+            expiration_days=TEST_DAYS,
+            unlimited=True,
+            note_text="test_config",
+        )
+        result = api_client.add_user(
+            username,
+            TEST_TRAFFIC_GB,
+            TEST_DAYS,
+            unlimited=True,
+            note=note_payload,
+        )
+        if result is None:
+            result = api_client.add_user(username, TEST_TRAFFIC_GB, TEST_DAYS, unlimited=True)
+            if result is not None:
+                logging.getLogger("dijiq.usernames").warning(
+                    "Created test user without note fallback. user_id=%s username=%s",
+                    user_id,
+                    username,
+                )
+    except Exception:
+        _release_test_config_creation(user_id)
+        raise
+
+    if not result:
+        _release_test_config_creation(user_id)
+        return False
+
+    mark_test_config_used(
+        user_id,
+        username=username,
+        language=language,
+        telegram_username=telegram_username,
+        server_id=api_client.server_id,
+    )
     _mark_test_config_used_in_memory(
         test_configs,
         user_id,
@@ -443,11 +521,14 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
     if is_test_creation_disabled() and not ignore_creation_disabled:
         return False
 
-    configs = load_test_configs()
-    if _has_used_test_config_from(configs, user_id):
+    if not _claim_test_config_creation(user_id):
         return False
 
-    multi_api = MultiServerAPI()
+    try:
+        multi_api = MultiServerAPI()
+    except Exception:
+        _release_test_config_creation(user_id)
+        raise
 
     def allocate(existing_usernames):
         return allocate_username("t", user_id, existing_usernames)
@@ -477,10 +558,13 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
                 )
         return result
 
-    username, result, api_client = multi_api.create_user_with_retry(allocate, create)
+    try:
+        username, result, api_client = multi_api.create_user_with_retry(allocate, create)
+    except Exception:
+        _release_test_config_creation(user_id)
+        raise
     if result:
-        _mark_test_config_used_in_memory(
-            configs,
+        mark_test_config_used(
             user_id,
             username=username,
             language=language,
@@ -489,8 +573,9 @@ def create_test_config(user_id, chat_id, is_automatic=False, language=None, tele
         )
         user_uri_data = api_client.get_user_uri(username)
         _send_created_test_config(chat_id, username, user_uri_data, is_automatic=is_automatic)
-        save_test_configs(configs)
         return True
+
+    _release_test_config_creation(user_id)
 
     if not is_automatic:
         bot.send_message(
@@ -841,8 +926,6 @@ def handle_waiting_chunk(call):
             processed_count += 1
             if processed_count % 25 == 0:
                 save_waiting_users(waiting_users)
-                if test_configs is not None:
-                    save_test_configs(test_configs)
         else:
             failure_count += 1
 
@@ -850,8 +933,6 @@ def handle_waiting_chunk(call):
 
     if state_changed:
         save_waiting_users(waiting_users)
-        if test_configs is not None:
-            save_test_configs(test_configs)
 
     remaining_count = len(waiting_users)
     text, markup = build_waiting_management_menu()

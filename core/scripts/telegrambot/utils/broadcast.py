@@ -3,6 +3,7 @@ from utils.command import bot, is_admin, ADMIN_USER_IDS
 from utils.common import create_main_markup
 from utils.api_client import MultiServerAPI
 from utils.reseller import get_all_resellers
+from utils import test_config_store
 import re
 import json
 import os
@@ -11,6 +12,7 @@ from datetime import datetime, timedelta
 
 BROADCAST_FAILED_USERS_PATH = "/etc/dijiq/core/scripts/telegrambot/broadcast_failed_users.json"
 BROADCAST_LOGS_DIR = "/etc/dijiq/core/scripts/telegrambot/broadcast_logs"
+TEST_CONFIGS_FILE = "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
 
 
 def load_failed_broadcast_users():
@@ -235,9 +237,6 @@ def get_user_ids(filter_type):
 
         return active_paid_ids
 
-    # For test users, use the test_configs.json file
-    test_config_path = "/etc/dijiq/core/scripts/telegrambot/test_configs.json"
-
     if filter_type == 'approved_resellers':
         try:
             user_ids = {
@@ -262,11 +261,7 @@ def get_user_ids(filter_type):
         user_ids = set()
         excluded_by_reason = {}
         try:
-            if not os.path.exists(test_config_path):
-                print(f"Test config file not found: {test_config_path}")
-                return [], {}
-            with open(test_config_path, 'r') as f:
-                test_users = json.load(f)
+            test_users = test_config_store.load_test_configs(TEST_CONFIGS_FILE)
             now = datetime.now()
             for telegram_id, info in test_users.items():
                 used_at_str = info.get('used_at')

@@ -95,6 +95,11 @@ def install_stubs():
     reseller_stub.get_all_resellers = lambda: {}
     sys.modules["utils.reseller"] = reseller_stub
 
+    test_config_store_stub = types.ModuleType("utils.test_config_store")
+    test_config_store_stub.load_test_configs = lambda path: {}
+    sys.modules["utils.test_config_store"] = test_config_store_stub
+    utils_pkg.test_config_store = test_config_store_stub
+
 
 def load_broadcast_module():
     install_stubs()
@@ -142,6 +147,22 @@ class BroadcastTargetingTests(unittest.TestCase):
         user_ids, excluded = broadcast.get_user_ids("all")
 
         self.assertEqual(user_ids, [])
+        self.assertEqual(excluded, {})
+
+    def test_recovered_historical_test_user_is_available_to_broadcasts(self):
+        broadcast = load_broadcast_module()
+        broadcast.test_config_store.load_test_configs = lambda path: {
+            "12345": {
+                "telegram_id": 12345,
+                "used_at": "2020-01-01 12:00:00",
+                "historical_configs": [{"username": "t12345", "server_id": "s1"}],
+            }
+        }
+        broadcast.load_failed_broadcast_users = lambda: set()
+
+        user_ids, excluded = broadcast.get_user_ids("all_test")
+
+        self.assertEqual(user_ids, ["12345"])
         self.assertEqual(excluded, {})
 
 
