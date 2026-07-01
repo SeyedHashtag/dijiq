@@ -19,9 +19,14 @@ class DummyBot:
         self.events = events
         self.replies = []
         self.sent_messages = []
+        self.message_handlers = []
 
     def message_handler(self, *args, **kwargs):
-        return lambda func: func
+        def decorator(func):
+            self.message_handlers.append((func, args, kwargs))
+            return func
+
+        return decorator
 
     def reply_to(self, *args, **kwargs):
         self.events.append("reply")
@@ -79,9 +84,9 @@ class TBotStartTests(unittest.TestCase):
         if executor is not None and hasattr(executor, "shutdown"):
             executor.shutdown(wait=False, cancel_futures=True)
 
-    def make_message(self, user_id=123):
+    def make_message(self, user_id=123, text="/start"):
         return types.SimpleNamespace(
-            text="/start",
+            text=text,
             from_user=types.SimpleNamespace(
                 id=user_id,
                 username="buyer",
@@ -104,6 +109,33 @@ class TBotStartTests(unittest.TestCase):
 
         self.assertEqual(events, ["reply", "enqueue"])
         self.assertEqual(bot.replies[0][0][1], "Welcome!")
+
+    def test_orphaned_admin_cancel_restores_admin_main_keyboard(self):
+        module, bot, events = load_tbot_module()
+        module.is_admin = lambda user_id: user_id == 123
+        message = self.make_message(text="❌ Cancel")
+
+        module.handle_admin_cancel_fallback(message)
+
+        self.assertEqual(events, ["reply"])
+        self.assertEqual(bot.replies[0][0][1], "Operation canceled.")
+        self.assertEqual(
+            bot.replies[0][1]["reply_markup"],
+            {"markup": {"is_admin": True}},
+        )
+
+    def test_admin_cancel_fallback_filter_is_admin_and_exact_text_only(self):
+        module, bot, _events = load_tbot_module()
+        module.is_admin = lambda user_id: user_id == 123
+        handler = next(
+            item for item in bot.message_handlers
+            if item[0] is module.handle_admin_cancel_fallback
+        )
+        predicate = handler[2]["func"]
+
+        self.assertTrue(predicate(self.make_message(text="❌ Cancel")))
+        self.assertFalse(predicate(self.make_message(user_id=999, text="❌ Cancel")))
+        self.assertFalse(predicate(self.make_message(text="Cancel")))
 
     def test_start_job_enqueue_dedupes_per_user(self):
         module, _bot, _events = load_tbot_module()

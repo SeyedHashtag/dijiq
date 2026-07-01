@@ -103,6 +103,17 @@ def send_welcome(message):
                     language=language,
                 )
 
+
+@bot.message_handler(func=lambda message: is_admin(message.from_user.id) and message.text == "❌ Cancel")
+def handle_admin_cancel_fallback(message):
+    safe_reply_to(
+        bot,
+        message,
+        "Operation canceled.",
+        reply_markup=create_main_markup(is_admin=True),
+    )
+
+
 def monitoring_thread():
     while True:
         monitor_system_resources()
