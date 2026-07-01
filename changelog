@@ -1,3 +1,10 @@
+## v1.16.0
+✨ Calculate expiration and renewal status from account creation dates, including accurate days remaining
+🐛 Repair legacy cleanup state and server assignments while safely rediscovering expired accounts after deletion
+🛠️ Add a fallback Cancel action for admins and show escaped server names and IDs in user details and payment notifications
+🐛 Calculate unpaid receipt-checker totals from the aggregate open-account amount and configured share percentage
+✅ Add regression coverage for expiration handling, cleanup migration, admin cancellation, checker totals, and server display
+
 ## v1.15.26
 ⚡ Queue crypto payment status checks and reseller renewal confirmations in background workers with duplicate-action protection
 🐛 Preserve exact reseller customer selections and renewals for duplicate usernames by using stable config indexes while supporting legacy callbacks
