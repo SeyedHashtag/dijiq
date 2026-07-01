@@ -442,6 +442,42 @@ def _safe_gb(byte_count):
     return round(float(byte_count) / GB_BYTES, 3)
 
 
+def _parse_account_creation_time(value):
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith('Z'):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _expiration_deadline(user_data):
+    if not isinstance(user_data, dict):
+        return None
+    expiration_days = _safe_int(user_data.get('expiration_days'))
+    created_at = _parse_account_creation_time(user_data.get('account_creation_date'))
+    if expiration_days is None or expiration_days < 0 or created_at is None:
+        return None
+    return created_at + timedelta(days=expiration_days)
+
+
+def _days_remaining(user_data, now=None):
+    expiration_days = _safe_int((user_data or {}).get('expiration_days'))
+    deadline = _expiration_deadline(user_data)
+    if deadline is None:
+        return expiration_days
+    current_date = (now or datetime.now()).date()
+    return (deadline.date() - current_date).days
+
+
 def _state_key(server_id, username):
     return f"{server_id or 'primary'}:{username}"
 
@@ -484,7 +520,7 @@ def _is_already_missing_record(record):
     )
 
 
-def is_user_expired(user_data):
+def is_user_expired(user_data, now=None):
     if not isinstance(user_data, dict):
         return False
 
@@ -493,6 +529,10 @@ def is_user_expired(user_data):
 
     expiration_days = _safe_int(user_data.get('expiration_days'))
     if expiration_days is not None and expiration_days <= 0:
+        return True
+
+    deadline = _expiration_deadline(user_data)
+    if deadline is not None and (now or datetime.now()).date() >= deadline.date():
         return True
 
     max_download_bytes = _safe_bytes(user_data.get('max_download_bytes'))
@@ -512,13 +552,20 @@ def capture_last_state(user_data, now=None):
     download_bytes = _safe_bytes(user_data.get('download_bytes'))
     max_download_bytes = _safe_bytes(user_data.get('max_download_bytes'))
     used_bytes = upload_bytes + download_bytes
+    expiration_deadline = _expiration_deadline(user_data)
     remaining_bytes = None
     if max_download_bytes > 0:
         remaining_bytes = max(0, max_download_bytes - used_bytes)
 
     return {
         'captured_at': _now_str(now),
-        'days_remaining': _safe_int(user_data.get('expiration_days')),
+        'days_remaining': _days_remaining(user_data, now=now),
+        'account_creation_date': user_data.get('account_creation_date'),
+        'expiration_date': (
+            expiration_deadline.date().isoformat()
+            if expiration_deadline is not None
+            else None
+        ),
         'gb_remaining': _safe_gb(remaining_bytes),
         'gb_limit': _safe_gb(max_download_bytes) if max_download_bytes > 0 else None,
         'gb_used': _safe_gb(used_bytes),
@@ -943,7 +990,63 @@ def _lookup_user_from_context(context, username, preferred_server_id=None):
     return None, None, 'missing'
 
 
-def discover_cleanup_candidates(include_already_missing=False, stores=None):
+def _unique_server_matches_from_context(context, username):
+    if not isinstance(context, dict):
+        return []
+    matches = context.get('usernames', {}).get(str(username or '').strip().lower()) or []
+    unique_matches = {}
+    for server_id, client, user_data in matches:
+        server_id = str(server_id or getattr(client, 'server_id', None) or 'primary')
+        unique_matches.setdefault(server_id.lower(), (server_id, client, user_data))
+    return list(unique_matches.values())
+
+
+def _migrate_unambiguous_legacy_primary_state(state, lookup_context, local_candidates):
+    if not isinstance(state, dict) or lookup_context.get('unavailable'):
+        return
+
+    local_sources = {'test', 'customer', 'reseller_customer'}
+    serverless_candidates = {}
+    for candidate in local_candidates or []:
+        if candidate.get('server_id') or candidate.get('source') not in local_sources:
+            continue
+        username = str(candidate.get('username') or '').strip().lower()
+        if username:
+            serverless_candidates.setdefault(username, []).append(candidate)
+
+    for old_key, entry in list(state.items()):
+        if not isinstance(entry, dict) or entry.get('source') not in local_sources:
+            continue
+        if str(entry.get('server_id') or 'primary').lower() != 'primary':
+            continue
+
+        username = str(entry.get('username') or '').strip()
+        if not username or lookup_context.get('exact', {}).get(_state_key('primary', username).lower()):
+            continue
+        matching_candidates = [
+            candidate
+            for candidate in serverless_candidates.get(username.lower(), [])
+            if candidate.get('source') == entry.get('source')
+        ]
+        if not matching_candidates:
+            continue
+
+        matches = _unique_server_matches_from_context(lookup_context, username)
+        if len(matches) != 1:
+            continue
+        server_id, _client, _user_data = matches[0]
+        if server_id.lower() == 'primary':
+            continue
+
+        new_key = _state_key(server_id, username)
+        if new_key in state:
+            continue
+        entry['server_id'] = server_id
+        state[new_key] = entry
+        state.pop(old_key, None)
+
+
+def discover_cleanup_candidates(include_already_missing=False, include_deleted=False, stores=None):
     candidates = []
 
     test_configs = stores.get('test_configs') if isinstance(stores, dict) else _load_json_file(TEST_CONFIGS_FILE, {})
@@ -951,7 +1054,8 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
         for telegram_id, entry in test_configs.items():
             if not isinstance(entry, dict):
                 continue
-            if _is_deleted_record(entry) and not (include_already_missing and _is_already_missing_record(entry)):
+            was_deleted = _is_deleted_record(entry)
+            if was_deleted and not include_deleted and not (include_already_missing and _is_already_missing_record(entry)):
                 continue
             username = str(entry.get('username') or '').strip()
             if not username:
@@ -962,6 +1066,7 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
                 'server_id': entry.get('server_id'),
                 'telegram_user_id': str(entry.get('telegram_id') or telegram_id),
                 '_record_ref': ('test', str(telegram_id)),
+                '_record_was_deleted': was_deleted,
             })
 
     payments = stores.get('payments') if isinstance(stores, dict) else _load_json_file(PAYMENTS_FILE, {})
@@ -969,7 +1074,8 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
         for payment_id, record in payments.items():
             if not _completed_payment(record):
                 continue
-            if _is_deleted_record(record) and not (include_already_missing and _is_already_missing_record(record)):
+            was_deleted = _is_deleted_record(record)
+            if was_deleted and not include_deleted and not (include_already_missing and _is_already_missing_record(record)):
                 continue
             username = str(record.get('username') or '').strip()
             if not username:
@@ -980,6 +1086,7 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
                 'server_id': record.get('server_id'),
                 'telegram_user_id': str(record.get('user_id') or ''),
                 '_record_ref': ('payment', str(payment_id)),
+                '_record_was_deleted': was_deleted,
             })
 
     resellers = stores.get('resellers') if isinstance(stores, dict) else _load_json_file(RESELLERS_FILE, {})
@@ -993,7 +1100,8 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
             for index, config in enumerate(configs):
                 if not isinstance(config, dict):
                     continue
-                if _is_deleted_record(config) and not (include_already_missing and _is_already_missing_record(config)):
+                was_deleted = _is_deleted_record(config)
+                if was_deleted and not include_deleted and not (include_already_missing and _is_already_missing_record(config)):
                     continue
                 username = str(config.get('username') or '').strip()
                 if not username:
@@ -1004,11 +1112,15 @@ def discover_cleanup_candidates(include_already_missing=False, stores=None):
                     'server_id': config.get('server_id'),
                     'reseller_id': str(reseller_id),
                     '_record_ref': ('reseller', str(reseller_id), index),
+                    '_record_was_deleted': was_deleted,
                 })
 
     deduped = {}
     for candidate in candidates:
-        deduped.setdefault(_state_key(candidate.get('server_id'), candidate['username']), candidate)
+        key = _state_key(candidate.get('server_id'), candidate['username']).lower()
+        existing = deduped.get(key)
+        if existing is None or (existing.get('_record_was_deleted') and not candidate.get('_record_was_deleted')):
+            deduped[key] = candidate
     return list(deduped.values())
 
 
@@ -1067,7 +1179,12 @@ def _candidate_matches_server_candidates(candidate, usernames, exact_keys):
     return _state_key(server_id, username).lower() in exact_keys
 
 
-def discover_matching_cleanup_candidates(server_candidates, include_already_missing=False, local_candidates=None):
+def discover_matching_cleanup_candidates(
+    server_candidates,
+    include_already_missing=False,
+    local_candidates=None,
+    lookup_context=None,
+):
     usernames, exact_keys, exact_candidates, username_candidates = _server_candidate_match_sets(server_candidates)
     if not usernames:
         return []
@@ -1085,6 +1202,19 @@ def discover_matching_cleanup_candidates(server_candidates, include_already_miss
         server_id = candidate.get('server_id')
         server_candidate = None
         if server_id:
+            server_candidate = exact_candidates.get(_state_key(server_id, username).lower())
+        elif lookup_context is not None:
+            if lookup_context.get('unavailable'):
+                continue
+            matches = _unique_server_matches_from_context(lookup_context, username)
+            if len(matches) != 1:
+                continue
+            server_id, _client, _user_data = matches[0]
+            candidate = {
+                **candidate,
+                'server_id': server_id,
+                '_server_id_inferred': True,
+            }
             server_candidate = exact_candidates.get(_state_key(server_id, username).lower())
         else:
             username_matches = username_candidates.get(username.lower(), [])
@@ -1150,7 +1280,7 @@ def discover_already_missing_cleanup_candidates(state):
     return candidates
 
 
-def _scan_server_cleanup_candidates(multi_api):
+def _scan_server_cleanup_candidates(multi_api, now=None):
     candidates = []
     lookup_context = _new_server_lookup_context()
     if multi_api is None:
@@ -1169,7 +1299,7 @@ def _scan_server_cleanup_candidates(multi_api):
             continue
 
         for username, user_data in _iter_named_user_records(users):
-            if not username or not is_user_expired(user_data):
+            if not username or not is_user_expired(user_data, now=now):
                 continue
             candidates.append({
                 'source': 'server_user',
@@ -1183,8 +1313,8 @@ def _scan_server_cleanup_candidates(multi_api):
     return candidates, lookup_context
 
 
-def discover_server_cleanup_candidates(multi_api):
-    candidates, _lookup_context = _scan_server_cleanup_candidates(multi_api)
+def discover_server_cleanup_candidates(multi_api, now=None):
+    candidates, _lookup_context = _scan_server_cleanup_candidates(multi_api, now=now)
     return candidates
 
 
@@ -1454,18 +1584,21 @@ def run_expired_user_cleanup(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, 
 
         multi_api = multi_api or MultiServerAPI()
         record_stores = _load_cleanup_record_stores()
-        server_candidates, lookup_context = _scan_server_cleanup_candidates(multi_api)
-        state_candidates = discover_state_cleanup_candidates(state)
-        already_missing_candidates = discover_already_missing_cleanup_candidates(state)
+        server_candidates, lookup_context = _scan_server_cleanup_candidates(multi_api, now=now)
         local_candidates = discover_cleanup_candidates(
             include_already_missing=True,
+            include_deleted=True,
             stores=record_stores,
         )
+        _migrate_unambiguous_legacy_primary_state(state, lookup_context, local_candidates)
+        state_candidates = discover_state_cleanup_candidates(state)
+        already_missing_candidates = discover_already_missing_cleanup_candidates(state)
         candidates = _merge_cleanup_candidates(
             discover_matching_cleanup_candidates(
                 _merge_cleanup_candidates(server_candidates, state_candidates, already_missing_candidates),
                 include_already_missing=True,
                 local_candidates=local_candidates,
+                lookup_context=lookup_context,
             ),
             state_candidates,
             already_missing_candidates,
@@ -1474,12 +1607,16 @@ def run_expired_user_cleanup(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, 
 
         for candidate in candidates:
             username = candidate.get('username')
+            if candidate.get('_server_id_inferred') and candidate.get('_record_ref'):
+                _update_candidate_record(
+                    candidate,
+                    {'server_id': candidate.get('server_id')},
+                    stores=record_stores,
+                )
             key = _state_key(candidate.get('server_id'), username)
             entry = state.get(key) if isinstance(state.get(key), dict) else None
             if entry and entry.get('source') == 'server_user' and entry.get('cleanup_status') == 'notified':
                 _convert_server_user_to_manual_review(entry, now_value)
-            if entry and entry.get('cleanup_status') == 'deleted':
-                continue
 
             if candidate.get('_lookup_status') == 'found':
                 api_client = candidate.get('_api_client')
@@ -1498,6 +1635,17 @@ def run_expired_user_cleanup(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, 
                         preferred_server_id=candidate.get('server_id'),
                     )
 
+            user_expired = lookup_status == 'found' and is_user_expired(user_data, now=now)
+            if entry and entry.get('cleanup_status') == 'deleted':
+                if not user_expired:
+                    continue
+                state.pop(key, None)
+                _clear_candidate_delete_metadata(candidate, stores=record_stores)
+                entry = None
+
+            if user_expired and candidate.get('_record_was_deleted'):
+                _clear_candidate_delete_metadata(candidate, stores=record_stores)
+
             if lookup_status == 'unavailable':
                 if entry:
                     if entry.get('cleanup_status') == 'already_missing':
@@ -1510,7 +1658,7 @@ def run_expired_user_cleanup(grace_hours=EXPIRED_CLEANUP_GRACE_HOURS, now=None, 
                     entry['last_checked_at'] = now_value
                 continue
 
-            if lookup_status == 'found' and not is_user_expired(user_data):
+            if lookup_status == 'found' and not user_expired:
                 if entry:
                     if _is_duplicate_payment_manual_review(entry):
                         entry['last_state'] = capture_last_state(user_data, now=now)

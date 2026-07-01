@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 PAYMENTS_FILE = '/etc/dijiq/core/scripts/telegrambot/payments.json'
@@ -63,6 +63,41 @@ def _gb_from_bytes(byte_count):
     return round(float(byte_count) / GB_BYTES, 3)
 
 
+def _parse_account_creation_time(value):
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith('Z'):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _expiration_deadline(user_data):
+    if not isinstance(user_data, dict):
+        return None
+    expiration_days = _safe_int(user_data.get('expiration_days'))
+    created_at = _parse_account_creation_time(user_data.get('account_creation_date'))
+    if expiration_days is None or expiration_days < 0 or created_at is None:
+        return None
+    return created_at + timedelta(days=expiration_days)
+
+
+def _days_remaining(user_data, now=None):
+    expiration_days = _safe_int((user_data or {}).get('expiration_days'))
+    deadline = _expiration_deadline(user_data)
+    if deadline is None:
+        return expiration_days
+    return (deadline.date() - (now or datetime.now()).date()).days
+
+
 def _now_str():
     return datetime.now().strftime(TIMESTAMP_FORMAT)
 
@@ -83,7 +118,7 @@ def _escape_markdown(value):
     return text
 
 
-def capture_user_state(user_data):
+def capture_user_state(user_data, now=None):
     user_data = user_data or {}
     upload_bytes = _safe_bytes(user_data.get('upload_bytes'))
     download_bytes = _safe_bytes(user_data.get('download_bytes'))
@@ -95,7 +130,7 @@ def capture_user_state(user_data):
 
     return {
         'captured_at': _now_str(),
-        'days_remaining': _safe_int(user_data.get('expiration_days')),
+        'days_remaining': _days_remaining(user_data, now=now),
         'gb_remaining': _gb_from_bytes(remaining_bytes),
         'gb_limit': _gb_from_bytes(max_download_bytes) if max_download_bytes > 0 else None,
         'gb_used': _gb_from_bytes(used_bytes),
@@ -121,7 +156,7 @@ def expected_after_state(plan_gb, days):
     }
 
 
-def is_user_expired(user_data):
+def is_user_expired(user_data, now=None):
     if not isinstance(user_data, dict):
         return False
     if not bool(user_data.get('blocked', False)):
@@ -129,6 +164,10 @@ def is_user_expired(user_data):
 
     expiration_days = _safe_int(user_data.get('expiration_days'))
     if expiration_days is not None and expiration_days <= 0:
+        return True
+
+    deadline = _expiration_deadline(user_data)
+    if deadline is not None and (now or datetime.now()).date() >= deadline.date():
         return True
 
     max_download_bytes = _safe_bytes(user_data.get('max_download_bytes'))

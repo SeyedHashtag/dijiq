@@ -264,6 +264,175 @@ class ExpiredCleanupTests(unittest.TestCase):
         self.assertFalse(self.cleanup.is_user_expired(unblocked_exhausted_traffic))
         self.assertFalse(self.cleanup.is_user_expired(blocked_active_user))
 
+    def test_time_expiry_uses_creation_date_plus_plan_duration(self):
+        expired_by_date = {
+            "blocked": True,
+            "expiration_days": 30,
+            "account_creation_date": "2026-05-01",
+            "upload_bytes": self.cleanup.GB_BYTES,
+            "download_bytes": self.cleanup.GB_BYTES,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        manually_blocked_but_not_due = {
+            **expired_by_date,
+            "account_creation_date": "2026-06-01",
+        }
+
+        self.assertTrue(self.cleanup.is_user_expired(expired_by_date, now=self.now))
+        self.assertFalse(self.cleanup.is_user_expired(manually_blocked_but_not_due, now=self.now))
+        self.assertLessEqual(
+            self.cleanup.capture_last_state(expired_by_date, now=self.now)["days_remaining"],
+            0,
+        )
+
+    def test_legacy_record_without_server_id_is_persisted_to_unique_live_server(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        client = FakeClient("s2", {"t101": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s2": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertIn("s2:t101", state)
+        self.assertNotIn("primary:t101", state)
+        self.assertEqual(state["s2:t101"]["cleanup_status"], "notified")
+        self.assertEqual(saved_test["server_id"], "s2")
+        self.assertEqual(len(self.cleanup._test_bot.sent_messages), 1)
+
+    def test_legacy_primary_pending_state_moves_to_unique_live_server(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {
+                "telegram_id": 101,
+                "username": "t101",
+                "cleanup_status": "notified",
+            }
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        self.write_json(self.cleanup.STATE_FILE, {
+            "primary:t101": {
+                "username": "t101",
+                "server_id": "primary",
+                "source": "test",
+                "telegram_user_id": "101",
+                "cleanup_status": "notified",
+                "notified_at": "2026-06-09 08:00:00",
+                "delete_after": "2026-06-11 08:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = FakeClient("s2", {"t101": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s2": client}))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertNotIn("primary:t101", state)
+        self.assertEqual(state["s2:t101"]["cleanup_status"], "notified")
+        self.assertEqual(state["s2:t101"]["notified_at"], "2026-06-09 08:00:00")
+        self.assertEqual(saved_test["server_id"], "s2")
+        self.assertEqual(self.cleanup._test_bot.sent_messages, [])
+
+    def test_ambiguous_serverless_record_routes_expired_user_to_manual_review(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "shared"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        active_user = {
+            "blocked": False,
+            "expiration_days": 30,
+            "upload_bytes": 0,
+            "download_bytes": 0,
+            "max_download_bytes": 5 * self.cleanup.GB_BYTES,
+        }
+        clients = {
+            "primary": FakeClient("primary", {"shared": active_user}),
+            "s2": FakeClient("s2", {"shared": self.expired_user()}),
+        }
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI(clients))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertEqual(state["s2:shared"]["cleanup_status"], "manual_review")
+        self.assertEqual(state["s2:shared"]["source"], "server_user")
+        self.assertNotIn("primary:shared", state)
+        self.assertNotIn("server_id", saved_test)
+        self.assertNotIn("cleanup_status", saved_test)
+        self.assertEqual(self.cleanup._test_bot.sent_messages, [])
+
+    def test_serverless_record_is_not_inferred_while_any_server_is_unavailable(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {"telegram_id": 101, "username": "t101"}
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        clients = {
+            "s2": FakeClient("s2", {"t101": self.expired_user()}),
+            "s3": FakeClient("s3", unavailable=True),
+        }
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI(clients))
+
+        state = self.read_json(self.cleanup.STATE_FILE)
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertEqual(state["s2:t101"]["cleanup_status"], "manual_review")
+        self.assertNotIn("server_id", saved_test)
+        self.assertNotIn("cleanup_status", saved_test)
+        self.assertEqual(self.cleanup._test_bot.sent_messages, [])
+
+    def test_reappeared_deleted_user_starts_a_fresh_grace_period(self):
+        self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
+            "101": {
+                "telegram_id": 101,
+                "username": "t101",
+                "server_id": "s1",
+                "cleanup_status": "deleted",
+                "cleanup_deleted_at": "2026-06-01 12:00:00",
+                "cleanup_delete_result": "deleted",
+            }
+        })
+        self.write_json(self.cleanup.PAYMENTS_FILE, {})
+        self.write_json(self.cleanup.RESELLERS_FILE, {})
+        self.write_json(self.cleanup.STATE_FILE, {
+            "s1:t101": {
+                "username": "t101",
+                "server_id": "s1",
+                "source": "test",
+                "telegram_user_id": "101",
+                "cleanup_status": "deleted",
+                "delete_result": "deleted",
+                "deleted_at": "2026-06-01 12:00:00",
+                "last_state": {"days_remaining": 0},
+            }
+        })
+        client = FakeClient("s1", {"t101": self.expired_user()})
+
+        self.cleanup.run_expired_user_cleanup(now=self.now, multi_api=FakeMultiAPI({"s1": client}))
+
+        pending_state = self.read_json(self.cleanup.STATE_FILE)["s1:t101"]
+        saved_test = self.read_json(self.cleanup.TEST_CONFIGS_FILE)["101"]
+        self.assertEqual(client.deleted, [])
+        self.assertEqual(pending_state["cleanup_status"], "notified")
+        self.assertEqual(pending_state["delete_after"], "2026-06-11 12:00:00")
+        self.assertEqual(saved_test["cleanup_status"], "notified")
+        self.assertNotIn("cleanup_deleted_at", saved_test)
+        self.assertNotIn("cleanup_delete_result", saved_test)
+        self.assertEqual(len(self.cleanup._test_bot.sent_messages), 1)
+
+        self.cleanup.run_expired_user_cleanup(
+            now=self.now + timedelta(hours=49),
+            multi_api=FakeMultiAPI({"s1": client}),
+        )
+
+        self.assertEqual(client.deleted, ["t101"])
+        self.assertEqual(self.read_json(self.cleanup.STATE_FILE)["s1:t101"]["cleanup_status"], "deleted")
+
     def test_cleanup_renews_pending_user_when_unblocked_even_if_days_expired(self):
         self.write_json(self.cleanup.TEST_CONFIGS_FILE, {
             "101": {"telegram_id": 101, "username": "t101", "server_id": "s1"}

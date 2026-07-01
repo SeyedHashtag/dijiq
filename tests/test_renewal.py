@@ -164,6 +164,31 @@ class RenewalTests(unittest.TestCase):
         self.assertEqual(offer["expected_after_state"]["gb_used"], 0.0)
         self.assertEqual(len(offer["token"]), 16)
 
+    def test_customer_offer_accepts_time_expired_api_duration_shape(self):
+        payments = {"base-1": self.base_payment()}
+        time_expired_user = {
+            "blocked": True,
+            "expiration_days": 30,
+            "account_creation_date": "2000-01-01",
+            "upload_bytes": GB_BYTES,
+            "download_bytes": GB_BYTES,
+            "max_download_bytes": 5 * GB_BYTES,
+            "status": "Offline",
+        }
+        client = FakeClient("s1", {"alice": time_expired_user})
+
+        offer = self.renewal.find_customer_renewal_offer(
+            123,
+            "alice",
+            client,
+            client.get_user("alice"),
+            self.plans,
+            payments=payments,
+        )
+
+        self.assertTrue(offer["eligible"])
+        self.assertLessEqual(offer["before_state"]["days_remaining"], 0)
+
     def test_customer_offer_rejects_missing_active_blocked_active_deleted_and_plan_mismatch(self):
         payments = {"base-1": self.base_payment()}
         client = FakeClient("s1", {"alice": self.expired_user()})
