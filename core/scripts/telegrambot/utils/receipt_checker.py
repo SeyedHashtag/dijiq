@@ -387,11 +387,14 @@ def build_receipt_checker_stats(payments, checker_id=None):
     stats['converted_approved_total'] = normalize_toman_amount(stats['converted_approved_total'])
     stats['owed_total'] = normalize_toman_amount(stats['owed_total'])
     stats['owed_total_usd'] = calculate_checker_share_amount(stats['owed_total_usd'], 100)
-    stats['unpaid_total'] = max(0.0, normalize_toman_amount(stats['owed_total'] - stats['paid_total']))
     stats['paid_open_account_total'] = normalize_toman_amount(stats['paid_open_account_total'])
     stats['open_account_total'] = max(
         0.0,
         normalize_toman_amount(stats['approved_total'] - stats['paid_open_account_total'])
+    )
+    stats['unpaid_total'] = calculate_checker_share_amount_toman(
+        stats['open_account_total'],
+        share_percent,
     )
     stats['unpaid_total_usd'] = max(0.0, calculate_checker_share_amount(stats['owed_total_usd'] - stats['paid_total_usd'], 100))
 

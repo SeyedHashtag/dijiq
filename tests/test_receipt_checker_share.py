@@ -194,6 +194,59 @@ class ReceiptCheckerShareTests(unittest.TestCase):
         self.assertEqual(stats["unpaid_total"], 58.0)
         self.assertEqual(stats["open_account_total"], 576.0)
 
+    def test_checker_balance_uses_one_aggregate_percentage_calculation(self):
+        payments = {
+            "approved": {
+                "routed_to_checker": True,
+                "receipt_checker_user_id": 42,
+                "receipt_type": "regular",
+                "status": "completed",
+                "checker_accounting_amount_toman": 155968,
+                "checker_share_amount_toman": 15601,
+            },
+        }
+        self.module.save_checker_settlements([
+            {
+                "checker_user_id": 42,
+                "amount_toman": 15375,
+                "open_account_amount_toman": 153758,
+                "checker_share_percent_snapshot": 10,
+            },
+        ])
+
+        with patch.dict(os.environ, {
+            "RECEIPT_CHECKER_USER_ID": "42",
+            "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "RECEIPT_CHECKER_SHARE_PERCENT": "10",
+        }, clear=False):
+            stats = self.module.build_receipt_checker_stats(payments)
+
+        self.assertEqual(stats["open_account_total"], 2210.0)
+        self.assertEqual(stats["unpaid_total"], 221.0)
+
+    def test_aggregate_balance_uses_configured_nineteen_percent_share(self):
+        payments = {
+            f"approved-{index}": {
+                "routed_to_checker": True,
+                "receipt_checker_user_id": 42,
+                "receipt_type": "regular",
+                "status": "completed",
+                "checker_accounting_amount_toman": 1,
+            }
+            for index in range(3)
+        }
+
+        with patch.dict(os.environ, {
+            "RECEIPT_CHECKER_USER_ID": "42",
+            "RECEIPT_CHECKER_TYPES": "regular,settlement",
+            "RECEIPT_CHECKER_SHARE_PERCENT": "19",
+        }, clear=False):
+            stats = self.module.build_receipt_checker_stats(payments)
+
+        self.assertEqual(stats["owed_total"], 0.0)
+        self.assertEqual(stats["open_account_total"], 3.0)
+        self.assertEqual(stats["unpaid_total"], 1.0)
+
     def test_add_checker_settlement_checkpoint_audit(self):
         snapshot = {
             "share_percent": 10.0,
