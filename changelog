@@ -1,3 +1,9 @@
+## v1.16.1
+✨ Add atomic, file-locked storage for test configuration records and concurrent updates
+🐛 Prevent duplicate test configuration creation with recoverable creation claims
+✨ Recover verified orphaned test accounts into cleanup history, notifications, and broadcast targeting
+✅ Add regression coverage for test configuration storage, concurrent claims, orphan recovery, cleanup, and broadcasts
+
 ## v1.16.0
 ✨ Calculate expiration and renewal status from account creation dates, including accurate days remaining
 🐛 Repair legacy cleanup state and server assignments while safely rediscovering expired accounts after deletion
